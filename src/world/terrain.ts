@@ -380,12 +380,16 @@ export class TerrainRenderer {
       normals[nStart + k * 3 + 2] = nz;
     }
 
-    // Bright snow, tinted cool blue as faces steepen. Slope is the only shading cue that
-    // reads reliably at every time of day, and it makes the banks legible at speed.
-    const steep = clamp01((1 - ny) * 3.2);
-    const r = lerp(1.0, 0.62, steep);
-    const g = lerp(1.0, 0.78, steep);
-    const b = lerp(1.0, 0.95, steep);
+    // Warm white on the flats falling to a rich cool blue as faces steepen.
+    //
+    // Slope is doing double duty here. It is the shading cue that reads at any time of day,
+    // and — more importantly — it is what makes the gulley legible at speed: the banks are
+    // the steep surfaces, so they colour themselves in and the player can see the shape of
+    // the corridor ahead without any markers, gates or minimap.
+    const steep = clamp01((1 - ny) * 3.0);
+    const r = lerp(1.0, 0.46, steep);
+    const g = lerp(0.995, 0.66, steep);
+    const b = lerp(0.96, 0.93, steep);
 
     for (let k = 0; k < 3; k++) {
       colors[c++] = r;

@@ -164,8 +164,10 @@ export class Rider {
     shadow.bakeCurrentTransformIntoVertices();
     const shadowMat = new StandardMaterial("shadowMat", scene);
     shadowMat.diffuseColor = new Color3(0, 0, 0);
-    shadowMat.emissiveColor = new Color3(0.16, 0.28, 0.42);
-    shadowMat.alpha = 0.3;
+    // Blue rather than grey, matching the blue the terrain uses for its own shading. A
+    // neutral dark shadow reads as a dirty smudge against bright snow.
+    shadowMat.emissiveColor = new Color3(0.36, 0.55, 0.78);
+    shadowMat.alpha = 0.34;
     shadowMat.disableLighting = true;
     shadowMat.backFaceCulling = false;
     shadow.material = shadowMat;
@@ -233,7 +235,7 @@ export class Rider {
     const shrink = 1 / (1 + height * 0.16);
     this.shadow.scaling.set(shrink, 1, shrink);
     const mat = this.shadow.material as StandardMaterial;
-    mat.alpha = lerp(0.32, 0.05, clamp01(height / 7));
+    mat.alpha = lerp(0.34, 0.05, clamp01(height / 7));
   }
 
   dispose(): void {
