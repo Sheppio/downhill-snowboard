@@ -72,6 +72,11 @@ Patch means "the same game, working properly". Minor means "if you had a feel fo
 changed" — which is the distinction worth having when someone comes back to a build after a
 week and wants to know whether their muscle memory still applies.
 
+**Do not bump for CI or test-only changes.** Workflow config, test timeouts, new tests, the
+browser check — none of it reaches the built game, so moving the number for it only adds noise
+to the one signal that is supposed to mean something changed on the phone. The commit hash
+already identifies those builds exactly.
+
 Nothing enforces this, so it is on whoever makes the change. The stamp gains a `-dirty` suffix
 on an uncommitted tree, which is how you tell a phone is showing a local build.
 
