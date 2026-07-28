@@ -18,7 +18,7 @@
  */
 
 import { fbm1, noise1 } from "../core/noise";
-import { clamp01, smoothstep } from "../core/math";
+import { clamp01, lerp, smoothstep } from "../core/math";
 
 /** Constant fall-line gradient. tan(22°) ≈ 0.40 — steep, which is where the speed comes from. */
 export const SLOPE = 0.40;
@@ -79,6 +79,54 @@ export function makeCourseParams(seed: number): CourseParams {
   };
 }
 
+// --- How the course escalates with distance ------------------------------------------------
+//
+// Every other difficulty ramp in the game finishes by ~1300m: obstacle density pins at its
+// maximum and the clear channel reaches its floor. Past that the course stopped getting
+// harder at all, so a long run turned into an endurance test at fixed difficulty.
+//
+// This ramp continues the escalation by growing the centreline weave — the gulley itself
+// snakes harder the further down you get.
+//
+// Why the *centreline* rather than the racing line's meander within it: measurement. Ramping
+// the gate offset amplitude from 0.6 to 0.85 moved the sustained crossing angle by 0.2° and
+// the peak turn-rate demand by five points — it relocates the racing line without making it
+// meaningfully harder to hold. The centreline dominates the lateral motion, so it is the term
+// with real authority: x1.3 here moves the sustained crossing angle from 16.2° to 18.9°.
+//
+// Amplitude only. Shortening the wavelength instead is not merely aggressive but structurally
+// wrong: `scale` is the divisor on the noise/sine argument, so making it a function of z
+// reparameterises the domain non-linearly, injecting curvature unrelated to the intended
+// shape and leaving a kink where the ramp ends. Measured, that produced peaks of 651% of full
+// lock against 74% for the equivalent amplitude change.
+const WEAVE_GAIN_START = 1300;
+const WEAVE_GAIN_END = 4200;
+/**
+ * Ceiling on the weave growth.
+ *
+ * Chosen empirically as the largest gain that still lets the reference pilot complete every
+ * daily seed of the year — measured over 53 seeds ridden to 6000m:
+ *
+ *     gain   seeds completing   deep mean speed   deep line error
+ *     1.0        53/53             30.41 m/s          0.37 m
+ *     1.3        53/53             29.70 m/s          0.48 m
+ *     1.35       52/53             29.58 m/s          0.49 m
+ *     1.8        44/53             28.53 m/s          0.65 m
+ *
+ * So 1.3 buys a 30% increase in how far the pilot drifts off the clear line deep in a run,
+ * for no loss of the completability guarantee; 1.35 starts costing seeds.
+ *
+ * It also sits inside the crossing-angle budget documented on `makeCourseParams`: the summed
+ * worst case is ~0.87 today and ~1.41 is where an earlier, tighter set made seeds
+ * unfollowable, so a gain of 1.3 takes it to ~1.14 — still clear of that line.
+ */
+const WEAVE_GAIN_MAX = 1.3;
+
+/** How much the centreline weave is amplified at a given distance down the mountain. */
+export function weaveGain(z: number): number {
+  return lerp(1, WEAVE_GAIN_MAX, clamp01((z - WEAVE_GAIN_START) / (WEAVE_GAIN_END - WEAVE_GAIN_START)));
+}
+
 /**
  * Lateral centre of the gulley at a given distance down the mountain.
  * The run-in is held straight so the player starts pointing down a clean line.
@@ -86,11 +134,14 @@ export function makeCourseParams(seed: number): CourseParams {
 export function centreX(params: CourseParams, z: number): number {
   const t = z; // z is distance travelled down the mountain
   const ramp = smoothstep(0, RUN_IN_LENGTH * 1.5, t);
+  // Constant below WEAVE_GAIN_START, so everything above it is untouched — see weaveGain
+  const gain = weaveGain(t);
 
   let x = 0;
   for (const w of params.waves) {
-    x += w.amp * Math.sin((t / w.wavelength) * Math.PI * 2 + w.phase);
-    x -= w.amp * Math.sin(w.phase); // anchor the start at x = 0
+    const amp = w.amp * gain;
+    x += amp * Math.sin((t / w.wavelength) * Math.PI * 2 + w.phase);
+    x -= amp * Math.sin(w.phase); // anchor the start at x = 0
   }
   return x * ramp;
 }

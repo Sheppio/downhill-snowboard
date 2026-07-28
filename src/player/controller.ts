@@ -44,7 +44,7 @@ const CARVE_DRAG = 0.33;
 const CARVE_EXPONENT = 1.5;
 
 /** Yaw rate at full lock with full authority, rad/s. */
-const MAX_TURN_RATE = 2.1;
+export const MAX_TURN_RATE = 2.1;
 /** Steering is much weaker in the air — you can rotate, but there is no edge to carve on. */
 const AIR_TURN_FACTOR = 0.35;
 
@@ -74,6 +74,26 @@ const LANDING_PENALTY = 0.22;
 const CLEAN_LANDING = 4;
 
 const START_SPEED = 7;
+
+/**
+ * How much of the maximum turn rate is available at a given speed.
+ *
+ * Near-zero at a standstill (no edge to bite), and eased back at very high speed so top-end
+ * riding feels committed rather than darty.
+ *
+ * The falloff is gentle on purpose. Cornering radius is speed / turn-rate, so cutting
+ * authority hard at speed sets a minimum radius — and once the top speed went to 120km/h that
+ * minimum grew past the tightest curves the racing line actually contains, making parts of
+ * some seeds physically impossible to follow.
+ *
+ * Exported because it is half of the budget the course is tuned against: `course.test.ts`
+ * checks that the racing line never demands more turn rate than this leaves available.
+ */
+export function turnAuthorityAt(speed: number): number {
+  const spinUp = smoothstep(0, 5, speed);
+  const highSpeed = lerp(1, 0.82, clamp01((speed - 16) / 24));
+  return spinUp * highSpeed;
+}
 
 export interface RiderSnapshot {
   x: number;
@@ -311,20 +331,8 @@ export class RiderController {
     this.lastSurfaceVy = surfaceVy;
   }
 
-  /**
-   * How much of the maximum turn rate is available right now.
-   *
-   * Near-zero at a standstill (no edge to bite), and eased back at very high speed so top-end
-   * riding feels committed rather than darty.
-   */
   private turnAuthority(): number {
-    const spinUp = smoothstep(0, 5, this.speed);
-    // The falloff is gentle on purpose. Cornering radius is speed / turn-rate, so cutting
-    // authority hard at speed sets a minimum radius — and once the top speed went to 120km/h
-    // that minimum grew past the tightest curves the racing line actually contains, making
-    // parts of some seeds physically impossible to follow.
-    const highSpeed = lerp(1, 0.82, clamp01((this.speed - 16) / 24));
-    return spinUp * highSpeed;
+    return turnAuthorityAt(this.speed);
   }
 
   /** Visual bank angle, in radians. Leans harder the faster you carve. */

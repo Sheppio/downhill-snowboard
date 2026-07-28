@@ -43,7 +43,7 @@ describe("every course can be completed", () => {
       const terrain = new TerrainField(hashString(phrase));
       const obstacles = makeField(phrase);
 
-      for (const o of obstacles.range(0, 5000)) {
+      for (const o of obstacles.range(0, 8000)) {
         const clear = Math.abs(o.x - gateX(terrain.params, o.z));
         // Must clear the channel width at that point, and never breach the hard floor
         expect(
@@ -60,7 +60,7 @@ describe("every course can be completed", () => {
     // out for being off course while following it.
     for (const phrase of [...yearOfDailySeeds(), "alpine", "a"]) {
       const terrain = new TerrainField(hashString(phrase));
-      for (let z = 0; z < 5000; z += 3) {
+      for (let z = 0; z < 8000; z += 3) {
         const offset = Math.abs(gateX(terrain.params, z) - centreX(terrain.params, z));
         const fraction = offset / halfWidth(terrain.params, z);
         expect(fraction, `seed "${phrase}" at ${z}m`).toBeLessThan(OUT_OF_BOUNDS_FRACTION - 0.4);
@@ -73,6 +73,17 @@ describe("every course can be completed", () => {
     // than inspecting geometry and hoping the numbers imply playability, actually ride each
     // course and see whether a crude autopilot survives it. If this ever fails, some date
     // would ship a course nobody could complete.
+    //
+    // This is the *simulated* half of the guarantee, and it is necessarily bounded by how far
+    // it is practical to ride 57 seeds. The analytic half lives in course.test.ts and sweeps
+    // to 8000m, so the two together cover both "a real rider gets through the part everyone
+    // plays" and "the geometry never becomes impossible at any distance".
+    //
+    // Worth knowing what this number is not: it is the *pilot's* limit as much as the
+    // course's. Ridden to 6000m the pilot completes all 53 daily seeds at the current weave
+    // gain of 1.3 and starts losing seeds at 1.35 — so if difficulty is ever raised past that
+    // point, check whether the failures are the course being unfair or simply this
+    // deliberately crude autopilot cutting corners, before assuming the former.
     const seeds = [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"];
     const RUN_DISTANCE = 3000;
 

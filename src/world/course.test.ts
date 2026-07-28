@@ -1,0 +1,180 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  centreX,
+  gateX,
+  halfWidth,
+  makeCourseParams,
+  weaveGain,
+  type CourseParams,
+} from "./course";
+import { dailySeed, hashString } from "../core/rng";
+import { MAX_TURN_RATE, turnAuthorityAt } from "../player/controller";
+
+/**
+ * Top speed the game actually reaches. Measured by riding: the pilot is at ~30 m/s within the
+ * first 250m and peaks a little over 34.
+ */
+const V_TOP = 34;
+
+/** A year of daily seeds, so the competition mode is checked over its real input space. */
+function yearOfDailySeeds(): string[] {
+  const out: string[] = [];
+  const start = new Date("2026-01-01T12:00:00Z");
+  for (let d = 0; d < 365; d += 7) {
+    out.push(dailySeed(new Date(start.getTime() + d * 86400_000)));
+  }
+  return out;
+}
+
+function params(phrase: string): CourseParams {
+  return makeCourseParams(hashString(phrase));
+}
+
+/** Slope and curvature of the racing line at z, by central difference. */
+function lineDerivatives(p: CourseParams, z: number): { slope: number; curvature: number } {
+  const h = 1;
+  const g0 = gateX(p, z - h);
+  const g1 = gateX(p, z);
+  const g2 = gateX(p, z + h);
+  const slope = (g2 - g0) / (2 * h);
+  const second = (g2 - 2 * g1 + g0) / (h * h);
+  return { slope, curvature: Math.abs(second) / Math.pow(1 + slope * slope, 1.5) };
+}
+
+/**
+ * The geometric half of the completability guarantee.
+ *
+ * The other half — actually riding every seed with the reference pilot — lives in
+ * obstacles.test.ts and is bounded by how far it is practical to simulate. These checks are
+ * cheap analytic sweeps, so they run far past where any run realistically ends and hold at
+ * any distance rather than up to one.
+ */
+describe("the racing line is physically rideable", () => {
+  const MAX_Z = 8000;
+
+  it("never demands more turn rate than the rider has", () => {
+    // Following x = g(z) at speed v needs a yaw rate of curvature * v. If that ever exceeds
+    // what the rider can produce at full lock, the line is not merely hard, it is impossible
+    // — no input holds it. Everyone on that seed would meet the same wall.
+    const budget = MAX_TURN_RATE * turnAuthorityAt(V_TOP);
+
+    for (const phrase of [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"]) {
+      const p = params(phrase);
+      for (let z = 0; z < MAX_Z; z += 1) {
+        const { curvature } = lineDerivatives(p, z);
+        const demand = curvature * V_TOP;
+        expect(
+          demand,
+          `seed "${phrase}" at ${z}m demands ${demand.toFixed(2)} rad/s of ` +
+            `${budget.toFixed(2)} available`,
+        ).toBeLessThan(budget);
+      }
+    }
+  }, 120_000);
+
+  it("keeps the centreline inside its documented crossing-angle budget", () => {
+    // The budget on `makeCourseParams` is stated as the summed worst case of 2*PI*amp/λ over
+    // the waves — 0.87 today, 1.41 where an earlier set became unfollowable. It is a property
+    // of the wave set alone, so it is checked in exactly those terms. Since weaveGain scales
+    // every amplitude, the binding case is wherever the gain tops out.
+    const gain = weaveGain(1e6);
+    for (const phrase of [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"]) {
+      const p = params(phrase);
+      const summed = p.waves.reduce(
+        (acc, w) => acc + (2 * Math.PI * (w.amp * gain)) / w.wavelength,
+        0,
+      );
+      expect(summed, `seed "${phrase}" sums to ${summed.toFixed(2)} at x${gain} gain`).toBeLessThan(
+        1.41,
+      );
+    }
+  });
+
+  it("never demands a sustained crossing angle no rider could hold", () => {
+    // Separate from the turn rate: this is the sustained demand rather than the transient one.
+    // A line permanently angled across the fall line would be followable moment to moment and
+    // still unrideable, because holding that edge scrubs off all the speed.
+    //
+    // Measured on the racing line itself, so it includes the gate offset and the width
+    // variation on top of the centreline — a stricter quantity than the analytic budget above
+    // and not comparable to it. Brief peaks are fine and real: the reference pilot completes
+    // every daily seed while touching 55° for a metre or two. What would not be fine is that
+    // angle being held, so the bound is on a 60m rolling mean.
+    //
+    // The ceiling is set from the measured distribution rather than picked: across a year of
+    // daily seeds the per-seed maximum runs to a median of 44.8° and a worst case of 51.9°
+    // (it was 45.8° before this ramp existed, so a tidy-looking 45° bound would have failed
+    // on the unmodified course). 60° clears the worst case while still catching a blow-up.
+    const WINDOW = 60;
+    for (const phrase of [...yearOfDailySeeds(), "alpine", "a"]) {
+      const p = params(phrase);
+      let rolling = 0;
+      const buf: number[] = [];
+      for (let z = 0; z < MAX_Z; z += 2) {
+        const a = Math.abs(Math.atan(lineDerivatives(p, z).slope));
+        buf.push(a);
+        rolling += a;
+        if (buf.length > WINDOW / 2) rolling -= buf.shift()!;
+        if (buf.length < WINDOW / 2) continue;
+        const mean = ((rolling / buf.length) * 180) / Math.PI;
+        expect(mean, `seed "${phrase}" holds ${mean.toFixed(0)}° across ${WINDOW}m at ${z}m`).toBeLessThan(
+          60,
+        );
+      }
+    }
+  }, 120_000);
+});
+
+describe("difficulty keeps escalating past the old plateau", () => {
+  it("leaves the course below 1300m exactly as it was", () => {
+    // Everything else in the game stops ramping by ~1300m, which is where this one starts.
+    // Holding the earlier stretch identical means saved per-seed bests still describe the
+    // same course over the part of the run nearly every attempt actually covers.
+    expect(weaveGain(0)).toBe(1);
+    expect(weaveGain(600)).toBe(1);
+    expect(weaveGain(1300)).toBe(1);
+    expect(weaveGain(1301)).toBeGreaterThan(1);
+  });
+
+  it("makes the gulley snake harder the further down you get", () => {
+    // Compare like with like: the mean crossing angle over a long stretch, early versus deep.
+    const angleOver = (p: CourseParams, from: number, to: number) => {
+      let sum = 0;
+      let n = 0;
+      for (let z = from; z < to; z += 1) {
+        sum += Math.abs(Math.atan(lineDerivatives(p, z).slope));
+        n++;
+      }
+      return ((sum / n) * 180) / Math.PI;
+    };
+
+    let early = 0;
+    let deep = 0;
+    const seeds = yearOfDailySeeds();
+    for (const phrase of seeds) {
+      const p = params(phrase);
+      early += angleOver(p, 300, 1300);
+      deep += angleOver(p, 4200, 5200);
+    }
+    early /= seeds.length;
+    deep /= seeds.length;
+
+    expect(deep, `deep ${deep.toFixed(1)}° vs early ${early.toFixed(1)}°`).toBeGreaterThan(
+      early * 1.1,
+    );
+  }, 60_000);
+
+  it("keeps the weave inside the gulley it is steering", () => {
+    // A bigger centreline swing moves the whole corridor, not the rider within it — so this
+    // guards the thing that would actually break: the racing line drifting out of the
+    // rideable floor as the amplitude grows.
+    for (const phrase of [...yearOfDailySeeds(), "alpine"]) {
+      const p = params(phrase);
+      for (let z = 0; z < 8000; z += 3) {
+        const offset = Math.abs(gateX(p, z) - centreX(p, z)) / halfWidth(p, z);
+        expect(offset, `seed "${phrase}" at ${z}m`).toBeLessThan(1);
+      }
+    }
+  }, 60_000);
+});
