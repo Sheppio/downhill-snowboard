@@ -23,6 +23,21 @@ export function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/**
+ * Quintic smoothstep — like `smoothstep`, but with zero *second* derivative at both edges.
+ *
+ * Worth the extra multiply wherever a ramp scales something large and the result is
+ * differentiated twice. Cubic smoothstep's second derivative is 6 at t=0 and -6 at t=1, so a
+ * ramp that fades a big value in leaves a curvature step at the moment it finishes. In the
+ * course run-in that step was the single tightest corner in the game: the racing line's
+ * demand jumped to 81% of the rider's full lock at 119m and fell back to 43% by 125m, purely
+ * because the ramp ended there.
+ */
+export function smootherstep(edge0: number, edge1: number, x: number): number {
+  const t = invLerp(edge0, edge1, x);
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
 /** Cosine interpolation — smoother than linear for value noise, and cheap enough. */
 export function smoothLerp(a: number, b: number, t: number): number {
   return lerp(a, b, t * t * (3 - 2 * t));

@@ -18,7 +18,7 @@
  */
 
 import { fbm1, noise1 } from "../core/noise";
-import { clamp01, lerp, smoothstep } from "../core/math";
+import { clamp01, lerp, smootherstep } from "../core/math";
 
 /** Constant fall-line gradient. tan(22°) ≈ 0.40 — steep, which is where the speed comes from. */
 export const SLOPE = 0.40;
@@ -133,7 +133,10 @@ export function weaveGain(z: number): number {
  */
 export function centreX(params: CourseParams, z: number): number {
   const t = z; // z is distance travelled down the mountain
-  const ramp = smoothstep(0, RUN_IN_LENGTH * 1.5, t);
+  // Quintic, not cubic: this ramp scales the full wave sum (~55m by the time it finishes), so
+  // a ramp with a second-derivative step at its end put a curvature spike there — see
+  // smootherstep. Cubic made 119m the tightest corner in the game, ten seconds into every run.
+  const ramp = smootherstep(0, RUN_IN_LENGTH * 1.5, t);
   // Constant below WEAVE_GAIN_START, so everything above it is untouched — see weaveGain
   const gain = weaveGain(t);
 
@@ -160,8 +163,10 @@ export function halfWidth(params: CourseParams, z: number): number {
   const w = HALF_WIDTH_BASE + n * 11;
   const clamped = Math.max(HALF_WIDTH_MIN, Math.min(HALF_WIDTH_MAX, w));
 
-  // Open the run-in wide so the first seconds are forgiving
-  const ramp = smoothstep(0, RUN_IN_LENGTH, t);
+  // Open the run-in wide so the first seconds are forgiving. Quintic for the same reason as
+  // centreX: the racing line is offset by a fraction of this width, so a curvature step here
+  // feeds straight into the line the rider has to hold.
+  const ramp = smootherstep(0, RUN_IN_LENGTH, t);
   return clamped + (1 - ramp) * 10;
 }
 

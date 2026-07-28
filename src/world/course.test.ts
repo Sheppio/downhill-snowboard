@@ -73,6 +73,38 @@ describe("the racing line is physically rideable", () => {
     }
   }, 120_000);
 
+  it("does not put the tightest corner in the run-in", () => {
+    // The run-in exists to let the player settle in, so it must not contain the hardest
+    // corner on the mountain. It used to, and not by design: the ramp that fades the
+    // centreline in was cubic, whose second derivative steps from 6 to -6 across its end.
+    // Multiplied by a wave sum that has grown to ~55m by then, that manufactured a corner at
+    // 119m demanding 94% of full lock — worse than anything in the body of the course, ten
+    // seconds into every run, and it vanished six metres later.
+    //
+    // Compared as turn-rate demand (curvature * speed) rather than curvature alone, because
+    // the rider is still accelerating through the run-in: measured by riding, the worst of it
+    // is met at about 31 m/s against 34 in the body of the course, so the same curvature is
+    // genuinely cheaper there. Holding the run-in to the same *curvature* fails by 2% on one
+    // seed, which says more about the comparison than about the course.
+    const RUN_IN_END = 400;
+    const RUN_IN_SPEED = 31;
+    for (const phrase of [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"]) {
+      const p = params(phrase);
+      let runIn = 0;
+      let rest = 0;
+      for (let z = 0; z < RUN_IN_END; z += 0.5) {
+        runIn = Math.max(runIn, lineDerivatives(p, z).curvature * RUN_IN_SPEED);
+      }
+      for (let z = RUN_IN_END; z < MAX_Z; z += 1) {
+        rest = Math.max(rest, lineDerivatives(p, z).curvature * V_TOP);
+      }
+      expect(
+        runIn,
+        `seed "${phrase}" is tightest in the run-in (${runIn.toFixed(3)} vs ${rest.toFixed(3)} rad/s)`,
+      ).toBeLessThanOrEqual(rest);
+    }
+  }, 120_000);
+
   it("keeps the centreline inside its documented crossing-angle budget", () => {
     // The budget on `makeCourseParams` is stated as the summed worst case of 2*PI*amp/λ over
     // the waves — 0.87 today, 1.41 where an earlier set became unfollowable. It is a property
