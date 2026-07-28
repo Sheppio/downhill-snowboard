@@ -178,6 +178,38 @@ describe("collision", () => {
     expect(obstacles.hitTest(first!.x + first!.radius + 0.75, first!.z, 0.6, first!.y)).toBeNull();
   });
 
+  it("is forgiving by a tenth at the edges", () => {
+    // A hit the player did not believe in is worse than one they got away with, because the
+    // run ends on it. This checks the gap between what the mesh occupies and what actually
+    // stops you — grazing the outer tenth of a tree has to be a miss.
+    const obstacles = makeField("forgiveness");
+    const [o] = obstacles.range(20, 600);
+    expect(o).toBeDefined();
+
+    const riderRadius = 0.6;
+    // Just inside the drawn footprint, but outside the collider
+    const graze = o!.radius * 0.95 + riderRadius;
+    expect(obstacles.hitTest(o!.x + graze, o!.z, riderRadius, o!.y)).toBeNull();
+
+    // Well inside it, still a hit — the forgiveness is a sliver, not a hole
+    const solid = o!.radius * 0.8 + riderRadius;
+    expect(obstacles.hitTest(o!.x + solid, o!.z, riderRadius, o!.y)).toBe(o);
+  });
+
+  it("keeps the forgiveness out of course generation", () => {
+    // The same number must not quietly loosen how tightly the course packs. Obstacles are
+    // spaced and held off the racing line by their full radius, so a seed generates exactly
+    // the same mountain as it did before collision became generous.
+    const terrain = new TerrainField(hashString("alpine"));
+    const obstacles = makeField("alpine");
+    for (const o of obstacles.range(0, 2000)) {
+      const clear = Math.abs(o.x - gateX(terrain.params, o.z));
+      expect(clear).toBeGreaterThanOrEqual(
+        Math.min(gateClearance(terrain.params, o.z), GATE_CLEARANCE_MIN),
+      );
+    }
+  });
+
   it("lets the rider clear an obstacle by jumping over it", () => {
     // Collision used to be a pure XZ test, which made every collider an infinitely tall
     // cylinder: no amount of air ever got the rider over anything.

@@ -88,6 +88,23 @@ export interface Obstacle {
   spin: number;
 }
 
+/**
+ * How much of an obstacle's footprint actually stops the rider.
+ *
+ * Collision is generous by a tenth, because a hit that the player did not believe in is worse
+ * than one they got away with: a run ends instantly, and being knocked off by a gap that
+ * looked clear reads as the game being unfair rather than as a mistake.
+ *
+ * Applied here rather than to `radius` itself, deliberately. `radius` is also what spaces
+ * obstacles apart and holds them clear of the racing line, and shrinking it there would let
+ * the course generate tighter than it was tuned for — the same seeds would quietly become
+ * harder. This way the mountain is untouched and only the test against it softens.
+ *
+ * Not applied to height. Clearing the top of something is already unambiguous on screen, and
+ * a tenth off the top would mean visibly passing through the crown of a tree.
+ */
+const COLLIDER_FORGIVENESS = 0.9;
+
 const TREE_RADIUS = 0.7;
 const ROCK_RADIUS = 0.95;
 
@@ -253,7 +270,7 @@ export class ObstacleField {
 
         const dx = x - o.x;
         const dz = z - o.z;
-        const reach = o.radius + riderRadius;
+        const reach = o.radius * COLLIDER_FORGIVENESS + riderRadius;
         if (dx * dx + dz * dz < reach * reach) return o;
       }
     }
