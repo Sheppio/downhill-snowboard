@@ -60,12 +60,19 @@ export class ChaseCamera {
   update(rider: RiderController, field: TerrainField, dt: number): void {
     const params: CourseParams = field.params;
 
+    // Everything here reads the *interpolated* rider transform. Chasing the raw stepped
+    // position re-introduces exactly the jitter the interpolation exists to remove.
+    const rx = rider.renderX;
+    const ry = rider.renderY;
+    const rz = rider.renderZ;
+    const rHeading = rider.renderHeading;
+
     // Where the gulley is heading, as a yaw angle
-    const ahead = rider.z + COURSE_LOOK;
-    const courseYaw = Math.atan2(centreX(params, ahead) - rider.x, COURSE_LOOK);
+    const ahead = rz + COURSE_LOOK;
+    const courseYaw = Math.atan2(centreX(params, ahead) - rx, COURSE_LOOK);
 
     // Blend rider heading with course direction, taking the short way round the circle
-    const blended = rider.heading + wrapAngle(courseYaw - rider.heading) * COURSE_LEAD;
+    const blended = rHeading + wrapAngle(courseYaw - rHeading) * COURSE_LEAD;
     this.yaw = this.initialised ? dampAngle(this.yaw, blended, YAW_SMOOTHING, dt) : blended;
 
     const speedT = clamp01(rider.speed / 34);
@@ -76,11 +83,11 @@ export class ChaseCamera {
     const cos = Math.cos(this.yaw);
 
     // Sit behind the rider along the blended yaw
-    const wantX = rider.x - sin * distance;
-    const wantZ = rider.z - cos * distance;
+    const wantX = rx - sin * distance;
+    const wantZ = rz - cos * distance;
     // Ride above the terrain, not the rider — stops the camera clipping into a bank behind
     const groundBehind = field.heightAt(wantX, wantZ);
-    const wantY = Math.max(rider.y, groundBehind) + height;
+    const wantY = Math.max(ry, groundBehind) + height;
 
     if (!this.initialised) {
       this.camera.position.set(wantX, wantY, wantZ);
@@ -93,11 +100,7 @@ export class ChaseCamera {
       p.y = expDamp(p.y, wantY, POS_SMOOTHING * 0.02, dt);
     }
 
-    this.target.set(
-      rider.x + sin * LOOK_AHEAD,
-      rider.y + LOOK_HEIGHT,
-      rider.z + cos * LOOK_AHEAD,
-    );
+    this.target.set(rx + sin * LOOK_AHEAD, ry + LOOK_HEIGHT, rz + cos * LOOK_AHEAD);
     this.camera.setTarget(this.target);
 
     // Widening the FOV with speed is the cheapest possible sense of rush

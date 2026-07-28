@@ -193,8 +193,9 @@ export class Rider {
     // pose it crashed in for every subsequent run.
     if (this.root.rotationQuaternion) this.root.rotationQuaternion = null;
 
-    this.root.position.set(rider.x, rider.y, rider.z);
-    this.root.rotation.y = rider.heading; // mesh forward is +z, matching heading 0 = downhill
+    // Interpolated position, not the raw stepped one — see RiderController.renderX
+    this.root.position.set(rider.renderX, rider.renderY, rider.renderZ);
+    this.root.rotation.y = rider.renderHeading; // mesh forward is +z; heading 0 = downhill
 
     // Lean into the carve
     this.lean = expDamp(this.lean, rider.leanAngle, 0.0005, dt);
@@ -203,8 +204,8 @@ export class Rider {
     // Both are negated against the raw gradient — rotation.x positive drops the nose, and the
     // slope along travel is negative going downhill, so the sign has to flip for the rider to
     // point down the hill rather than rear up out of it.
-    const fx = Math.sin(rider.heading);
-    const fz = Math.cos(rider.heading);
+    const fx = Math.sin(rider.renderHeading);
+    const fz = Math.cos(rider.renderHeading);
     const alongSlope = rider.gradX * fx + rider.gradZ * fz;
     const crossSlope = rider.gradX * fz - rider.gradZ * fx;
 
@@ -230,8 +231,8 @@ export class Rider {
     this.body.scaling.y = 1 - this.crouch * 0.5;
 
     // Shadow stays flat on the ground and fades as the rider gets air
-    this.shadow.position.set(rider.x, groundY + 0.06, rider.z);
-    const height = Math.max(0, rider.y - groundY);
+    this.shadow.position.set(rider.renderX, groundY + 0.06, rider.renderZ);
+    const height = Math.max(0, rider.renderY - groundY);
     const shrink = 1 / (1 + height * 0.16);
     this.shadow.scaling.set(shrink, 1, shrink);
     const mat = this.shadow.material as StandardMaterial;

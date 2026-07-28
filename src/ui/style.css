@@ -82,7 +82,26 @@ body {
 }
 
 .hud-row-bottom {
-  justify-content: center;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+/* Frame rate, deliberately small and quiet — a diagnostic, not a stat to play against.
+   The spacer opposite keeps the distance readout optically centred. */
+.stat-fps {
+  font-size: 13px;
+  font-weight: 700;
+  gap: 0.25em;
+  opacity: 0.75;
+  min-width: 58px;
+}
+
+.stat-fps .unit {
+  font-size: 9px;
+}
+
+.stat-fps-spacer {
+  visibility: hidden;
 }
 
 .stat {

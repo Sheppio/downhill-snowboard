@@ -255,7 +255,7 @@ class Game {
     this.terrain.update(c.z);
     this.obstacleRenderer.update(c.z);
 
-    const groundY = this.field.heightAt(c.x, c.z);
+    const groundY = this.field.heightAt(c.renderX, c.renderZ);
     this.rider.sync(c, groundY, dt);
     this.camera.update(c, this.field, dt);
 
@@ -264,15 +264,15 @@ class Game {
     const speedT = clamp01(c.speed / 30);
     const carveT = clamp01(Math.abs(c.steer)) * speedT;
     const sprayAmount = c.airborne ? 0 : 0.3 * speedT + 0.85 * Math.pow(carveT, 1.2);
-    this.spray.update(c.x, groundY + 0.1, c.z, c.heading, sprayAmount, c.steer);
+    this.spray.update(c.renderX, groundY + 0.1, c.renderZ, c.renderHeading, sprayAmount, c.steer);
 
     if (c.lastLandingImpact > 6) {
-      this.spray.burst(c.x, groundY + 0.15, c.z);
+      this.spray.burst(c.renderX, groundY + 0.15, c.renderZ);
       c.lastLandingImpact = 0;
     }
 
     this.score.update(c.distance, c.speed);
-    this.hud.updateHud(c.speed, c.distance, this.score.value);
+    this.hud.updateHud(c.speed, c.distance, this.score.value, this.engine.getFps());
 
     // Obstacles
     const hit = this.obstacles.hitTest(c.x, c.z, RIDER_RADIUS);

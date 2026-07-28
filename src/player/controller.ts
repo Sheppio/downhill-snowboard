@@ -112,6 +112,12 @@ export class RiderController {
   /** Previous step's surface-following vertical velocity, for the launch curvature test. */
   private lastSurfaceVy = 0;
 
+  // State one physics step back, used only to interpolate what gets drawn
+  private prevX = 0;
+  private prevY = 0;
+  private prevZ = 0;
+  private prevHeading = 0;
+
   constructor(private readonly field: TerrainField) {
     this.reset();
   }
@@ -132,15 +138,58 @@ export class RiderController {
     this.gradX = gx;
     this.gradZ = gz;
     this.lastSurfaceVy = this.speed * gz; // heading is 0, so forward is +z
+
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.prevZ = this.z;
+    this.prevHeading = this.heading;
   }
 
   /** Advance the simulation. `frameDt` is real elapsed seconds; stepping is fixed internally. */
   update(frameDt: number, steerDemand: number): void {
     this.accumulator += Math.min(frameDt, MAX_FRAME_TIME);
     while (this.accumulator >= FIXED_DT) {
+      // Remember the state we are stepping *from*, so rendering can interpolate between the
+      // two most recent physics steps rather than snapping to whichever one it happens to
+      // land on. Without this the rider visibly jitters: at 60fps against a 120Hz step the
+      // frame boundaries drift, so some frames consume no steps and others consume three,
+      // and the rider stutters by tens of centimetres frame to frame.
+      this.prevX = this.x;
+      this.prevY = this.y;
+      this.prevZ = this.z;
+      this.prevHeading = this.heading;
+
       this.step(FIXED_DT, steerDemand);
       this.accumulator -= FIXED_DT;
     }
+  }
+
+  /**
+   * How far past the latest physics step the current frame is, 0..1.
+   *
+   * Purely a rendering concern. Collision and scoring always use the exact stepped state, so
+   * interpolation can never feed back into the simulation and cannot affect determinism.
+   */
+  private get alpha(): number {
+    return clamp01(this.accumulator / FIXED_DT);
+  }
+
+  /** Smoothed position for drawing. */
+  get renderX(): number {
+    return lerp(this.prevX, this.x, this.alpha);
+  }
+
+  get renderY(): number {
+    return lerp(this.prevY, this.y, this.alpha);
+  }
+
+  get renderZ(): number {
+    return lerp(this.prevZ, this.z, this.alpha);
+  }
+
+  /** Smoothed heading for drawing, taking the short way round the circle. */
+  get renderHeading(): number {
+    return this.prevHeading + angleDelta(this.prevHeading, this.heading) * this.alpha;
   }
 
   private step(dt: number, steerDemand: number): void {

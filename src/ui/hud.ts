@@ -32,6 +32,7 @@ export class Hud {
   private readonly score = must("hud-score");
   private readonly mult = must("hud-mult");
   private readonly dist = must("hud-dist");
+  private readonly fps = must("hud-fps");
 
   private readonly oob = must("oob");
   private readonly oobFill = must("oob-fill");
@@ -122,7 +123,8 @@ export class Hud {
   }
 
   /** Called every frame while riding. Kept to plain text writes — no layout thrash. */
-  updateHud(speedMs: number, distance: number, score: number): void {
+  updateHud(speedMs: number, distance: number, score: number, fps: number): void {
+    this.fps.textContent = String(Math.round(fps));
     this.speed.textContent = String(Math.round(speedMs * 3.6));
     this.dist.textContent = String(Math.floor(distance));
     this.score.textContent = score.toLocaleString();

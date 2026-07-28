@@ -204,13 +204,17 @@ export class SnowSpray {
     ps.maxLifeTime = 0.7;
     ps.emitRate = 0;
     ps.blendMode = ParticleSystem.BLENDMODE_STANDARD;
-    ps.gravity = new Vector3(0, -7, 0);
-    // Directions are world space, so keep the cone mostly vertical and outward — it then
-    // reads as a rooster tail whichever way the rider happens to be pointing.
-    ps.direction1 = new Vector3(-1.8, 1.8, -1.8);
-    ps.direction2 = new Vector3(1.8, 4.0, 1.8);
+    // Directions are world space, so keep the cone mostly outward — it then reads as a
+    // rooster tail whichever way the rider happens to be pointing.
+    //
+    // Kept low deliberately. The upward component used to reach ~1.2m, which is head height
+    // on the rider, so the spray drifted between the camera and the character it is meant to
+    // be selling. Capped at about 0.4m it stays around the board where it belongs.
+    ps.direction1 = new Vector3(-2.0, 0.3, -2.0);
+    ps.direction2 = new Vector3(2.0, 2.3, 2.0);
     ps.minEmitPower = 1.4;
-    ps.maxEmitPower = 4.2;
+    ps.maxEmitPower = 3.6;
+    ps.gravity = new Vector3(0, -9.5, 0); // settles quickly rather than hanging in shot
     ps.updateSpeed = 0.016;
     ps.start();
 
@@ -240,7 +244,7 @@ export class SnowSpray {
     const t = clamp01(intensity);
     this.system.emitRate = t * MAX_EMIT_RATE;
     // Harder carves throw bigger, longer-lived clumps, not just more of them
-    this.system.maxSize = 0.5 + t * 0.5;
+    this.system.maxSize = 0.42 + t * 0.34;
     this.system.maxLifeTime = 0.6 + t * 0.5;
   }
 
