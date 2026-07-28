@@ -175,8 +175,7 @@ export class TerrainRenderer {
     const mat = new StandardMaterial("snow", scene);
     // Vertex colours carry all the shading detail; the material just needs to not fight them.
     mat.diffuseColor = new Color3(1, 1, 1);
-    mat.specularColor = new Color3(0.12, 0.16, 0.22);
-    mat.specularPower = 64;
+    mat.specularColor = Color3.Black(); // see the note on lights in scenery.ts
     mat.emissiveColor = new Color3(0.06, 0.09, 0.13); // lifts the shadow side out of mud
     mat.backFaceCulling = true;
     this.material = mat;

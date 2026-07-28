@@ -44,8 +44,15 @@ export function setupSky(scene: Scene): { sun: DirectionalLight } {
   // Warm low sun from behind-left, so slopes facing the player catch the light
   const sun = new DirectionalLight("sun", new Vector3(-0.45, -0.82, 0.36), scene);
   sun.diffuse = new Color3(1, 0.95, 0.8);
-  sun.specular = new Color3(0.7, 0.75, 0.85);
   sun.intensity = 1.15;
+
+  // Specular off on every light. Babylon compiles the specular term into a material's
+  // fragment shader if *any* light has a non-black specular colour, so this is paid per
+  // pixel across the whole screen — and snow drawn with flat shading and vertex colours
+  // shows essentially none of it. The game is fill-rate bound looking down the fall line,
+  // where terrain covers nearly the entire frame, so per-pixel work is the thing to cut.
+  sun.specular = Color3.Black();
+  ambient.specular = Color3.Black();
 
   return { sun };
 }
