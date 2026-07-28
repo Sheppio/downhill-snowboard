@@ -209,14 +209,35 @@ const tracks = await page.evaluate(() => {
       if (dy > 0 && dy < 0.3) onGround++;
     }
   }
-  return { visible, onGround };
+
+  // Longest gap between consecutive samples where either end is drawn at all
+  let longestSpan = 0;
+  const samples = col.length / 4 / 2;
+  for (let i = 0; i < samples - 1; i++) {
+    const a = i * 2;
+    const b = (i + 1) * 2;
+    const lit = col[a * 4 + 3] > 0.01 || col[b * 4 + 3] > 0.01;
+    if (!lit) continue;
+    const d = Math.hypot(pos[b * 3] - pos[a * 3], pos[b * 3 + 2] - pos[a * 3 + 2]);
+    if (d > longestSpan) longestSpan = d;
+  }
+  return { visible, onGround, longestSpan };
 });
 if (!tracks || tracks.visible < 20) {
   fail(`board left no visible tracks: ${JSON.stringify(tracks)}`);
 } else if (tracks.onGround < tracks.visible * 0.9) {
   fail(`tracks not sitting on the snow: ${tracks.onGround}/${tracks.visible} at ground level`);
+} else if (tracks.longestSpan > 5) {
+  // Samples are laid 0.7m apart, so any quad spanning metres is stray geometry. Unused ring
+  // slots used to be parked at the world origin, which drew a wedge from the live trail all
+  // the way back to the top of the course. The alpha-only check above could never see it:
+  // the far end of that wedge is at alpha 0.
+  fail(`stray track geometry: a quad spans ${tracks.longestSpan.toFixed(0)}m`);
 } else {
-  console.log(`✓ board tracks laid on the snow (${tracks.visible} live vertices)`);
+  console.log(
+    `✓ board tracks laid on the snow (${tracks.visible} live vertices, ` +
+      `longest quad ${tracks.longestSpan.toFixed(2)}m)`,
+  );
 }
 
 // --- Retry, and the same seed must rebuild the same course ---------------------------------

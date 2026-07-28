@@ -295,7 +295,8 @@ class Game {
     this.hud.updateHud(c.speed, c.distance, this.score.value, this.engine.getFps());
 
     // Obstacles
-    const hit = this.obstacles.hitTest(c.x, c.z, RIDER_RADIUS);
+    // Physics position, not the interpolated render one, so collisions stay deterministic
+    const hit = this.obstacles.hitTest(c.x, c.z, RIDER_RADIUS, c.y);
     if (hit) {
       this.beginCrash(hit.x, hit.z);
       return;

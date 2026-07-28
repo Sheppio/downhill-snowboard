@@ -41,7 +41,12 @@ const HOVER = 0.045;
 
 /** Fraction of the trail's length spent fading out at the far end. */
 const FADE_FRACTION = 0.45;
-const MAX_ALPHA = 0.5;
+/**
+ * Strength of the mark at its freshest. Kept light: a board leaves a compressed line in snow,
+ * not a paint stripe, and at 0.5 with the old colour it composited to roughly 0.28 of
+ * contrast against the snow, which read as a dark scar.
+ */
+const MAX_ALPHA = 0.3;
 
 export class SnowTracks {
   private readonly mesh: Mesh;
@@ -86,7 +91,7 @@ export class SnowTracks {
 
     const mat = new StandardMaterial("tracksMat", scene);
     mat.disableLighting = true; // a flat tint reads as compressed snow; lighting muddies it
-    mat.emissiveColor = new Color3(0.44, 0.6, 0.82);
+    mat.emissiveColor = new Color3(0.62, 0.76, 0.93);
     mat.diffuseColor = Color3.Black();
     mat.specularColor = Color3.Black();
     mat.backFaceCulling = false;
@@ -169,12 +174,21 @@ export class SnowTracks {
       const out = i * 2;
 
       if (i >= count) {
-        // Unused slot: collapse it and make it invisible
+        // Unused slot. Collapse it onto the newest *real* sample, not onto the world origin.
+        //
+        // The index buffer always covers every slot, so the quad spanning the trail's head to
+        // the first unused slot is always drawn. Parking unused vertices at (0, 0, 0) put that
+        // quad's far end at the top of the course — and since alpha is interpolated across a
+        // triangle, it rendered as a long wedge stretching from the live trail all the way
+        // back to the start. Duplicating the newest sample instead makes those quads
+        // zero-area, so they genuinely disappear.
+        const src = count > 0 ? ((oldest + count - 1) % MAX_SAMPLES) * 2 : -1;
         for (let k = 0; k < 2; k++) {
-          positions[(out + k) * 3] = 0;
-          positions[(out + k) * 3 + 1] = 0;
-          positions[(out + k) * 3 + 2] = 0;
-          colors[(out + k) * 4 + 3] = 0;
+          const dst = out + k;
+          positions[dst * 3] = src < 0 ? 0 : this.px[src + k]!;
+          positions[dst * 3 + 1] = src < 0 ? 0 : this.py[src + k]!;
+          positions[dst * 3 + 2] = src < 0 ? 0 : this.pz[src + k]!;
+          colors[dst * 4 + 3] = 0;
         }
         continue;
       }

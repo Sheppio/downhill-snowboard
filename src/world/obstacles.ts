@@ -81,6 +81,8 @@ export interface Obstacle {
   y: number;
   /** Collision radius on the XZ plane. */
   radius: number;
+  /** Height of the top above `y`. Clear this and you have jumped it. */
+  height: number;
   kind: ObstacleKind;
   scale: number;
   spin: number;
@@ -88,6 +90,17 @@ export interface Obstacle {
 
 const TREE_RADIUS = 0.7;
 const ROCK_RADIUS = 0.95;
+
+/**
+ * Heights of the built meshes at scale 1, measured from their geometry: the tree's snow cap
+ * apex sits at 4.78, and the rock's cap at 0.76.
+ *
+ * These make the collider match what the player can see. Trees end up 3.8-7.2m tall and are
+ * effectively unjumpable; rocks are 0.5-1.1m and can be cleared with a decent launch. That
+ * gradient is the point — it gives airtime something to be *for*.
+ */
+const TREE_HEIGHT = 4.78;
+const ROCK_HEIGHT = 0.76;
 
 /**
  * Distance at the top of the mountain with no obstacles at all.
@@ -138,6 +151,7 @@ export class ObstacleField {
         const kind = rng.chance(TREE_SHARE) ? ObstacleKind.Tree : ObstacleKind.Rock;
         const scale = kind === ObstacleKind.Tree ? rng.range(0.8, 1.5) : rng.range(0.7, 1.4);
         const radius = (kind === ObstacleKind.Tree ? TREE_RADIUS : ROCK_RADIUS) * scale;
+        const height = (kind === ObstacleKind.Tree ? TREE_HEIGHT : ROCK_HEIGHT) * scale;
 
         // Try a few positions before giving up, so a crowded slice still fills in rather than
         // silently losing obstacles to the first unlucky roll.
@@ -179,6 +193,7 @@ export class ObstacleField {
             z,
             y: this.field.heightAt(x, z),
             radius,
+            height,
             kind,
             scale,
             spin: rng.range(0, Math.PI * 2),
@@ -222,13 +237,20 @@ export class ObstacleField {
    *
    * Only the few slices around the rider are considered, so this is a handful of distance
    * checks per frame regardless of how long the run gets.
+   *
+   * `riderY` is the height of the board. Without it this was a pure XZ circle test, which
+   * made every collider an infinitely tall cylinder: you could clear a tree by a wide margin
+   * and still be knocked off it, and no amount of air ever got you over anything.
    */
-  hitTest(x: number, z: number, riderRadius: number): Obstacle | null {
+  hitTest(x: number, z: number, riderRadius: number, riderY: number): Obstacle | null {
     const first = Math.floor((z - 4) / SLICE_LENGTH);
     const last = Math.floor((z + 4) / SLICE_LENGTH);
 
     for (let i = first; i <= last; i++) {
       for (const o of this.slice(i)) {
+        // Cleared the top, so it passes underneath
+        if (riderY >= o.y + o.height) continue;
+
         const dx = x - o.x;
         const dz = z - o.z;
         const reach = o.radius + riderRadius;

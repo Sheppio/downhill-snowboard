@@ -85,7 +85,7 @@ describe("every course can be completed", () => {
       let worstOff = 0;
       for (let i = 0; i < 60 * 300 && rider.distance < RUN_DISTANCE; i++) {
         rider.update(1 / 60, pilotSteer(terrain.params, rider));
-        hit = obstacles.hitTest(rider.x, rider.z, RIDER_RADIUS);
+        hit = obstacles.hitTest(rider.x, rider.z, RIDER_RADIUS, rider.y);
         if (hit) break;
         const off =
           Math.abs(rider.x - centreX(terrain.params, rider.z)) / halfWidth(terrain.params, rider.z);
@@ -162,16 +162,50 @@ describe("collision", () => {
     const [first] = obstacles.range(20, 600);
     expect(first).toBeDefined();
 
-    expect(obstacles.hitTest(first!.x, first!.z, 0.6)).toBe(first);
+    expect(obstacles.hitTest(first!.x, first!.z, 0.6, first!.y)).toBe(first);
     // Just outside the combined radius, no hit
-    expect(obstacles.hitTest(first!.x + first!.radius + 0.75, first!.z, 0.6)).toBeNull();
+    expect(obstacles.hitTest(first!.x + first!.radius + 0.75, first!.z, 0.6, first!.y)).toBeNull();
+  });
+
+  it("lets the rider clear an obstacle by jumping over it", () => {
+    // Collision used to be a pure XZ test, which made every collider an infinitely tall
+    // cylinder: no amount of air ever got the rider over anything.
+    const obstacles = makeField("jumping");
+    const all = obstacles.range(20, 1200);
+    const rock = all.find((o) => o.kind === ObstacleKind.Rock);
+    const tree = all.find((o) => o.kind === ObstacleKind.Tree);
+    expect(rock).toBeDefined();
+    expect(tree).toBeDefined();
+
+    // At board level, both still stop the run
+    expect(obstacles.hitTest(rock!.x, rock!.z, 0.6, rock!.y)).toBe(rock);
+    expect(obstacles.hitTest(tree!.x, tree!.z, 0.6, tree!.y)).toBe(tree);
+
+    // Just over the top of each, they pass underneath
+    expect(obstacles.hitTest(rock!.x, rock!.z, 0.6, rock!.y + rock!.height + 0.01)).toBeNull();
+    expect(obstacles.hitTest(tree!.x, tree!.z, 0.6, tree!.y + tree!.height + 0.01)).toBeNull();
+
+    // Just below the top, they still hit — the test is the real height, not a blanket pass
+    expect(obstacles.hitTest(rock!.x, rock!.z, 0.6, rock!.y + rock!.height - 0.05)).toBe(rock);
+    expect(obstacles.hitTest(tree!.x, tree!.z, 0.6, tree!.y + tree!.height - 0.05)).toBe(tree);
+  });
+
+  it("makes rocks jumpable and trees essentially not", () => {
+    // The gradient is the point: rocks reward a launch, trees have to be steered around.
+    const obstacles = makeField("heights");
+    const all = obstacles.range(20, 2000);
+    const rocks = all.filter((o) => o.kind === ObstacleKind.Rock);
+    const trees = all.filter((o) => o.kind === ObstacleKind.Tree);
+
+    for (const r of rocks) expect(r.height).toBeLessThan(1.2);
+    for (const t of trees) expect(t.height).toBeGreaterThan(3.5);
   });
 
   it("finds nothing on the clear racing line", () => {
     const terrain = new TerrainField(hashString("clear-line"));
     const obstacles = makeField("clear-line");
     for (let z = 20; z < 3000; z += 1.5) {
-      expect(obstacles.hitTest(gateX(terrain.params, z), z, 0.6)).toBeNull();
+      expect(obstacles.hitTest(gateX(terrain.params, z), z, 0.6, terrain.heightAt(gateX(terrain.params, z), z))).toBeNull();
     }
   });
 });
