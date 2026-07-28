@@ -50,40 +50,85 @@ export function setupSky(scene: Scene): { sun: DirectionalLight } {
   return { sun };
 }
 
+/** How far below eye level the backdrop's skirt reaches. */
+const BACKDROP_BASE = -900;
+/** Height of the shoulder ring where the visible mountain colour begins. */
+const BACKDROP_SHOULDER = -70;
+const BACKDROP_RADIUS = 900;
+const BACKDROP_SEGMENTS = 180; // fine enough to resolve the highest ridge frequency
+
 /**
- * Distant mountain peaks ringing the horizon.
+ * Distant mountain range ringing the horizon.
  *
- * One static mesh parented to the camera's XZ position, so it never needs regenerating and
- * always sits at the horizon. Seeded, so the backdrop is part of what makes a seed distinct.
+ * Two details matter, and the original version got both wrong so the peaks floated visibly
+ * in mid-air:
+ *
+ *  1. It must follow the camera's **height**, not just its XZ. The mountain drops about 270m
+ *     per kilometre travelled, so a backdrop pinned to world y=0 climbs into the sky as the
+ *     player descends.
+ *
+ *  2. It needs a **skirt** reaching far below eye level. The terrain only extends a few
+ *     hundred metres before fog takes over, so anything between that edge and the backdrop is
+ *     open sky — and a range whose base sits above the terrain's far edge shows its cut-off
+ *     bottom hanging in that gap. The skirt drops well below the sightline and fades to
+ *     exactly the sky colour, so wherever terrain does not cover it, it is invisible.
+ *
+ * Built as a continuous ring rather than separate triangles, so it reads as a mountain range
+ * with no gaps between peaks. Seeded, so the skyline is part of what makes a seed distinct.
  */
 export function createBackdrop(scene: Scene, seed: number): Mesh {
   const rng = makeRng(seed ^ 0x517cc1b7);
-  const peaks = 34;
-  const radius = 900;
 
   const positions: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
 
-  for (let i = 0; i < peaks; i++) {
-    const a0 = (i / peaks) * Math.PI * 2;
-    const a1 = ((i + 1.35) / peaks) * Math.PI * 2; // overlap so there are no gaps
-    const mid = (a0 + a1) / 2;
-    const height = rng.range(110, 260);
-    const dist = radius * rng.range(0.85, 1.15);
+  // Triangle waves rather than sines, because sines give rounded humps and these want to read
+  // as sharp alpine summits. Frequencies are integers so the ridgeline wraps seamlessly, and
+  // deliberately high: the camera only ever sees about a sixth of the ring, so low
+  // frequencies put a single broad mound on screen instead of a range of peaks.
+  const phase = [rng.range(0, 1), rng.range(0, 1), rng.range(0, 1)];
+  const tri = (x: number): number => {
+    const f = x - Math.floor(x);
+    return 1 - Math.abs(f * 2 - 1);
+  };
+  // Kept modest on purpose. At 900m these subtend about 9 degrees, roughly a sixth of the
+  // vertical field of view — distant scenery framing the horizon. Twice this height filled
+  // half the screen with pale grey and flattened the whole image.
+  const ridgeAt = (t: number): number =>
+    28 + 78 * tri(t * 9 + phase[0]!) + 34 * tri(t * 17 + phase[1]!) + 13 * tri(t * 31 + phase[2]!);
 
-    const base = positions.length / 3;
-    positions.push(Math.sin(a0) * dist, -40, Math.cos(a0) * dist);
-    positions.push(Math.sin(a1) * dist, -40, Math.cos(a1) * dist);
-    positions.push(Math.sin(mid) * dist, height, Math.cos(mid) * dist);
+  for (let i = 0; i <= BACKDROP_SEGMENTS; i++) {
+    const t = i / BACKDROP_SEGMENTS;
+    const a = t * Math.PI * 2;
+    const sin = Math.sin(a);
+    const cos = Math.cos(a);
+    const peak = ridgeAt(t);
 
-    // Hazy blue at the base fading to bright snow at the summit — cheap aerial perspective
-    const tint = rng.range(0.86, 1.0);
-    colors.push(0.55 * tint, 0.72 * tint, 0.88 * tint, 1);
-    colors.push(0.55 * tint, 0.72 * tint, 0.88 * tint, 1);
-    colors.push(0.98 * tint, 0.99 * tint, 1.0 * tint, 1);
+    // Three rings: invisible skirt, hazy shoulder, snowy summit
+    positions.push(sin * BACKDROP_RADIUS, BACKDROP_BASE, cos * BACKDROP_RADIUS);
+    positions.push(sin * BACKDROP_RADIUS, BACKDROP_SHOULDER, cos * BACKDROP_RADIUS);
+    positions.push(sin * BACKDROP_RADIUS, peak, cos * BACKDROP_RADIUS);
 
-    indices.push(base, base + 2, base + 1);
+    // Base is exactly the sky colour, so the skirt vanishes against it wherever terrain
+    // does not already hide it. Above that, hazy blue lifting to snow — aerial perspective.
+    const tint = 0.9 + 0.1 * tri(t * 5 + phase[2]!);
+    colors.push(SKY_COLOUR.r, SKY_COLOUR.g, SKY_COLOUR.b, 1);
+    colors.push(0.47 * tint, 0.66 * tint, 0.88 * tint, 1);
+    colors.push(0.97 * tint, 0.985 * tint, 1.0 * tint, 1);
+  }
+
+  // Two quad bands per segment, wound to face inward toward the camera at the centre
+  for (let i = 0; i < BACKDROP_SEGMENTS; i++) {
+    const a = i * 3;
+    const b = (i + 1) * 3;
+    for (let ring = 0; ring < 2; ring++) {
+      const a0 = a + ring;
+      const a1 = a + ring + 1;
+      const b0 = b + ring;
+      const b1 = b + ring + 1;
+      indices.push(a0, b0, a1, a1, b0, b1);
+    }
   }
 
   const mesh = new Mesh("backdrop", scene);

@@ -241,7 +241,10 @@ class Game {
         break;
     }
 
-    this.backdrop.position.set(this.camera.camera.position.x, 0, this.camera.camera.position.z);
+    // Follow the camera in all three axes. Pinning it to world y=0 leaves the range hanging
+    // in the sky once the player has descended a few hundred metres.
+    const cam = this.camera.camera.position;
+    this.backdrop.position.set(cam.x, cam.y, cam.z);
     this.scene.render();
   }
 
