@@ -102,6 +102,7 @@ body {
 /* Frame rate, deliberately small and quiet — a diagnostic, not a stat to play against.
    The spacer opposite keeps the distance readout optically centred. */
 .stat-fps {
+  -webkit-text-stroke: 0.06em var(--ink);
   font-size: 13px;
   font-weight: 700;
   gap: 0.25em;
@@ -119,13 +120,16 @@ body {
   gap: 0.18em;
   font-weight: 800;
   color: var(--snow);
-  /* Chunky cartoon outline keeps the text legible against bright snow */
-  text-shadow:
-    -2px -2px 0 var(--ink),
-    2px -2px 0 var(--ink),
-    -2px 2px 0 var(--ink),
-    2px 2px 0 var(--ink),
-    0 4px 0 rgba(11, 57, 84, 0.35);
+  /* Chunky cartoon outline, so the text stays legible against bright snow.
+     A real stroke rather than offset text-shadow copies: four corner shadows only cover the
+     diagonals, so the outline thins at the top, bottom and sides of curved glyphs and reads
+     as an emboss, and being fixed pixel offsets they are proportionally enormous on small
+     text and clog up the letterforms. `paint-order: stroke fill` keeps the stroke behind the
+     fill so it cannot eat into the glyph; em units keep the weight right at every size.
+     Both properties inherit, so the smaller readouts nested here only override the width. */
+  -webkit-text-stroke: 0.085em var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 0.045em 0 rgba(11, 57, 84, 0.3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -156,6 +160,7 @@ body {
 .mult {
   font-size: clamp(12px, 3.4vw, 18px);
   color: var(--mint);
+  -webkit-text-stroke: 0.06em var(--ink);
   transition: opacity 0.2s ease;
 }
 
@@ -223,11 +228,8 @@ body {
   font-weight: 900;
   letter-spacing: 0.06em;
   color: var(--snow);
-  text-shadow:
-    -2px -2px 0 var(--berry),
-    2px -2px 0 var(--berry),
-    -2px 2px 0 var(--berry),
-    2px 2px 0 var(--berry);
+  -webkit-text-stroke: 0.07em var(--berry);
+  paint-order: stroke fill;
 }
 
 #oob-bar {
@@ -280,12 +282,9 @@ body {
   font-weight: 900;
   letter-spacing: 0.04em;
   color: var(--sky);
-  text-shadow:
-    -3px -3px 0 var(--ink),
-    3px -3px 0 var(--ink),
-    -3px 3px 0 var(--ink),
-    3px 3px 0 var(--ink),
-    0 8px 0 rgba(11, 57, 84, 0.25);
+  -webkit-text-stroke: 0.06em var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 0.075em 0 rgba(11, 57, 84, 0.22);
 }
 
 .panel h2 {
@@ -310,11 +309,8 @@ body {
   line-height: 1;
   color: var(--sun);
   font-variant-numeric: tabular-nums;
-  text-shadow:
-    -3px -3px 0 var(--ink),
-    3px -3px 0 var(--ink),
-    -3px 3px 0 var(--ink),
-    3px 3px 0 var(--ink);
+  -webkit-text-stroke: 0.055em var(--ink);
+  paint-order: stroke fill;
 }
 
 .best {
