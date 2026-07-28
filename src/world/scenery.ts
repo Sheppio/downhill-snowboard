@@ -223,6 +223,13 @@ export class SnowSpray {
    * rather than from under the middle of it.
    */
   update(x: number, y: number, z: number, heading: number, intensity: number, edge = 0): void {
+    // Babylon leaves `manualEmitCount` at 0 once it has consumed a burst, and its update
+    // treats *any* value greater than -1 as "manual mode" — so it then emits zero particles
+    // and never looks at emitRate again. One landing or crash burst would therefore kill all
+    // rate-based spray for the rest of the page session. Restoring -1 hands control back.
+    // Checking for exactly 0 matters: a burst queued earlier this frame is still pending.
+    if (this.system.manualEmitCount === 0) this.system.manualEmitCount = -1;
+
     this.emitter.position.set(x, y, z);
     this.emitter.rotation.y = heading;
 

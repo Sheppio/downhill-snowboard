@@ -176,6 +176,22 @@ const end = {
 console.log("✓ end screen:", JSON.stringify(end));
 if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
 
+// --- Snow spray must survive a crash --------------------------------------------------------
+// Regression: a burst leaves Babylon's manualEmitCount at 0, which silently switches the
+// system to manual mode forever, so all rate-based spray died after the first crash. Only
+// visible on a *second* run, which is exactly what a single-run smoke test never reaches.
+await restart();
+await page.waitForTimeout(1500);
+const spray = await page.evaluate(() => {
+  const s = window.__game.spray.system;
+  return { active: s.getActiveCount(), rate: s.emitRate, manual: s.manualEmitCount };
+});
+if (spray.active < 5) {
+  fail(`no snow spray on a run after a crash: ${JSON.stringify(spray)}`);
+} else {
+  console.log(`✓ spray still emitting after a crash (${spray.active} particles)`);
+}
+
 // --- Retry, and the same seed must rebuild the same course ---------------------------------
 const before = await page.evaluate(() => {
   const g = window.__game;
