@@ -283,6 +283,46 @@ if (!tracks || tracks.visible < 20) {
   );
 }
 
+// --- The rider's shadow must lie on the snow, not in a horizontal plane through it ---------
+// It is a flat blob about a metre across, and the fall line is 0.40, so a blob that ignores
+// the slope has its uphill half buried in the hill and its downhill half floating. What you
+// see of it is the intersection with the ground: a hard-edged semicircle rather than a shadow.
+// Measured as the worst gap between any shadow vertex and the terrain directly beneath it.
+const shadow = await page.evaluate(() => {
+  const g = window.__game;
+  const mesh = g.scene.meshes.find((m) => m.name === "riderShadow");
+  if (!mesh) return { found: false };
+  const verts = mesh.getVerticesData("position");
+  mesh.computeWorldMatrix(true);
+  const world = mesh.getWorldMatrix();
+  let worst = 0;
+  let extent = 0;
+  for (let i = 0; i < verts.length; i += 3) {
+    // Transform by hand rather than reaching for Vector3, which is not exposed on window
+    const x = verts[i], y = verts[i + 1], z = verts[i + 2];
+    const m = world.m;
+    const wx = x * m[0] + y * m[4] + z * m[8] + m[12];
+    const wy = x * m[1] + y * m[5] + z * m[9] + m[13];
+    const wz = x * m[2] + y * m[6] + z * m[10] + m[14];
+    const gap = Math.abs(wy - g.field.heightAt(wx, wz));
+    if (gap > worst) worst = gap;
+    const r = Math.hypot(wx - mesh.position.x, wz - mesh.position.z);
+    if (r > extent) extent = r;
+  }
+  return { found: true, worst, extent, verts: verts.length / 3 };
+});
+if (!shadow.found) fail("no rider shadow in the scene");
+else if (shadow.worst > 0.2)
+  fail(
+    `shadow does not follow the slope: a vertex sits ${shadow.worst.toFixed(2)}m off the snow ` +
+      `(blob extends ${shadow.extent.toFixed(2)}m)`,
+  );
+else
+  console.log(
+    `✓ shadow lies on the slope (worst gap ${shadow.worst.toFixed(3)}m across ` +
+      `${shadow.extent.toFixed(2)}m of blob)`,
+  );
+
 // --- Retry, and the same seed must rebuild the same course ---------------------------------
 const before = await page.evaluate(() => {
   const g = window.__game;

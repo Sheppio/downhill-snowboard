@@ -13,10 +13,10 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
-import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 
 import { clamp, clamp01, expDamp, lerp } from "../core/math";
 import type { RiderController } from "./controller";
@@ -31,6 +31,84 @@ const PALETTE = {
   boardEdge: new Color3(0.13, 0.24, 0.36),
   goggles: new Color3(0.1, 0.16, 0.24),
 };
+
+/**
+ * The blob shadow's shape, in metres. Longer than it is wide, because what casts it is a
+ * board rather than a ball.
+ */
+const SHADOW_LENGTH = 1.05;
+const SHADOW_WIDTH = 0.62;
+/**
+ * Radii of the alpha falloff rings, as fractions of the edge, with the alpha at each.
+ *
+ * Most of the blob is solid and only the outer fifth fades. A gentler ramp than this looks
+ * correct in isolation and disappears in play: seen at a shallow angle against bright snow,
+ * a shadow that is mostly gradient reads as nothing at all.
+ */
+const SHADOW_RINGS: [radius: number, alpha: number][] = [
+  [0.0, 1],
+  [0.62, 1],
+  [0.84, 0.6],
+  [1.0, 0],
+];
+const SHADOW_SEGMENTS = 32;
+
+// Scratch values for the shadow's orientation, reused every frame rather than reallocated
+const SHADOW_UP = new Vector3();
+const SHADOW_FWD = new Vector3();
+const SHADOW_RIGHT = new Vector3();
+const SHADOW_BASIS = new Matrix();
+
+/**
+ * A soft-edged elliptical blob, lying in the XZ plane with its long axis along +z.
+ *
+ * Built by hand rather than with CreateDisc for the alpha falloff: a disc of flat colour has a
+ * hard rim, and a hard rim on a solid tint does not read as a shadow at all — it reads as a
+ * sticker on the snow. The alpha is carried in vertex colours so it stays one draw call, and
+ * the material's own alpha still scales the whole thing for the airborne fade.
+ */
+function makeShadowMesh(scene: Scene): Mesh {
+  const mesh = new Mesh("riderShadow", scene);
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+
+  // Centre vertex, then one ring of vertices per falloff step
+  for (const [r, a] of SHADOW_RINGS) {
+    const count = r === 0 ? 1 : SHADOW_SEGMENTS;
+    for (let i = 0; i < count; i++) {
+      const theta = (i / SHADOW_SEGMENTS) * Math.PI * 2;
+      positions.push(Math.cos(theta) * r * SHADOW_WIDTH, 0, Math.sin(theta) * r * SHADOW_LENGTH);
+      normals.push(0, 1, 0);
+      colors.push(1, 1, 1, a); // white; the tint comes from the material's emissive
+    }
+  }
+
+  // Fan from the centre to the first ring, then a strip between each pair of rings
+  for (let i = 0; i < SHADOW_SEGMENTS; i++) {
+    const next = (i + 1) % SHADOW_SEGMENTS;
+    indices.push(0, 1 + next, 1 + i);
+  }
+  for (let ring = 1; ring < SHADOW_RINGS.length - 1; ring++) {
+    const inner = 1 + (ring - 1) * SHADOW_SEGMENTS;
+    const outer = inner + SHADOW_SEGMENTS;
+    for (let i = 0; i < SHADOW_SEGMENTS; i++) {
+      const next = (i + 1) % SHADOW_SEGMENTS;
+      indices.push(inner + i, inner + next, outer + i);
+      indices.push(outer + i, inner + next, outer + next);
+    }
+  }
+
+  const vd = new VertexData();
+  vd.positions = positions;
+  vd.colors = colors;
+  vd.normals = normals;
+  vd.indices = indices;
+  vd.applyToMesh(mesh);
+  mesh.hasVertexAlpha = true;
+  return mesh;
+}
 
 function makeMaterial(scene: Scene, name: string, colour: Color3, emissive = 0.22): StandardMaterial {
   const mat = new StandardMaterial(name, scene);
@@ -157,11 +235,9 @@ export class Rider {
 
     // --- Blob shadow.
     // A real-time shadow map for one small character costs an extra render pass every frame
-    // on a phone, for something the cartoon style does not miss. A soft disc does the job of
+    // on a phone, for something the cartoon style does not miss. A soft blob does the job of
     // grounding the rider for almost nothing.
-    const shadow = CreateDisc("riderShadow", { radius: 0.85, tessellation: 16 }, scene);
-    shadow.rotation.x = Math.PI / 2;
-    shadow.bakeCurrentTransformIntoVertices();
+    const shadow = makeShadowMesh(scene);
     const shadowMat = new StandardMaterial("shadowMat", scene);
     shadowMat.diffuseColor = new Color3(0, 0, 0);
     // Blue rather than grey, matching the blue the terrain uses for its own shading. A
@@ -170,10 +246,15 @@ export class Rider {
     shadowMat.alpha = 0.34;
     shadowMat.disableLighting = true;
     shadowMat.backFaceCulling = false;
+    // The blob is deliberately near-coplanar with the snow it sits on, so the small lift in
+    // sync() is not enough on its own to stop it z-fighting at distance.
+    shadowMat.zOffset = -6;
     shadow.material = shadowMat;
     shadow.isPickable = false;
+    shadow.alphaIndex = 6; // after the terrain and the board tracks, before the spray
     this.materials.push(shadowMat);
     this.shadow = shadow;
+    this.shadow.rotationQuaternion = Quaternion.Identity();
   }
 
   setEnabled(on: boolean): void {
@@ -230,8 +311,26 @@ export class Rider {
     this.body.position.y = -this.crouch;
     this.body.scaling.y = 1 - this.crouch * 0.5;
 
-    // Shadow stays flat on the ground and fades as the rider gets air
-    this.shadow.position.set(rider.renderX, groundY + 0.06, rider.renderZ);
+    // --- Shadow.
+    // It lies *on* the slope rather than in a horizontal plane, which is the whole difference
+    // between a shadow and a grey semicircle. The fall line is 0.40, so across a blob a metre
+    // wide the snow rises and falls about 0.2m; a horizontal disc lifted 0.06m therefore had
+    // its uphill half buried in the hill and only its downhill half showing.
+    this.shadow.position.set(rider.renderX, groundY + 0.05, rider.renderZ);
+
+    // Basis from the surface normal and the direction of travel: y to the normal, z along the
+    // board, x across it. Built as axes rather than Euler angles so the blob cannot twist as
+    // the heading passes through the poles.
+    const nLen = Math.hypot(rider.gradX, 1, rider.gradZ);
+    SHADOW_UP.set(-rider.gradX / nLen, 1 / nLen, -rider.gradZ / nLen);
+    SHADOW_FWD.set(fx, 0, fz);
+    Vector3.CrossToRef(SHADOW_UP, SHADOW_FWD, SHADOW_RIGHT);
+    SHADOW_RIGHT.normalize();
+    Vector3.CrossToRef(SHADOW_RIGHT, SHADOW_UP, SHADOW_FWD);
+    Matrix.FromXYZAxesToRef(SHADOW_RIGHT, SHADOW_UP, SHADOW_FWD, SHADOW_BASIS);
+    Quaternion.FromRotationMatrixToRef(SHADOW_BASIS, this.shadow.rotationQuaternion!);
+
+    // Shrinks and fades as the rider gets air
     const height = Math.max(0, rider.renderY - groundY);
     const shrink = 1 / (1 + height * 0.16);
     this.shadow.scaling.set(shrink, 1, shrink);
