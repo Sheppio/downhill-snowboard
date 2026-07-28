@@ -351,6 +351,23 @@ class Game {
     if (transform) {
       this.rider.root.position.copyFrom(transform.position);
       this.rider.root.rotationQuaternion = transform.rotation.clone();
+
+      // The shadow is not parented to the rider — it lies on the snow with its own
+      // orientation — so it has to be driven here too. Without this it stayed where the
+      // crash began while the rider tumbled off down the hill.
+      const p = transform.position;
+      const [gx, gz] = this.field.gradientAt(p.x, p.z);
+      const yaw = transform.rotation.toEulerAngles().y;
+      this.rider.placeShadow(
+        p.x,
+        p.y,
+        p.z,
+        this.field.heightAt(p.x, p.z),
+        gx,
+        gz,
+        Math.sin(yaw),
+        Math.cos(yaw),
+      );
     }
 
     const f = this.wipeout.focus;

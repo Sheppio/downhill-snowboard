@@ -232,20 +232,34 @@ await page.waitForFunction(() => window.__game.state === "crashing", null, { tim
   .then(() => console.log("✓ collision detected, wipeout started"))
   .catch(() => fail("rider did not crash into the obstacle"));
 
-// Havok must actually move the body, not leave it frozen
+// Havok must actually move the body, not leave it frozen — and the shadow must go with it.
+// The shadow is not parented to the rider, so during a wipeout it is only in the right place
+// if something is explicitly driving it; it used to stay where the crash began while the
+// rider tumbled away, leaving a blob sitting on empty snow.
 const tumble = await page.evaluate(async () => {
   const g = window.__game;
+  const shadowMesh = g.scene.meshes.find((m) => m.name === "riderShadow");
   const start = g.wipeout.focus.clone();
-  await new Promise((r) => setTimeout(r, 900));
+  let worstLag = 0;
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 30));
+    const f = g.wipeout.focus;
+    const lag = Math.hypot(shadowMesh.position.x - f.x, shadowMesh.position.z - f.z);
+    if (lag > worstLag) worstLag = lag;
+  }
   const now = g.wipeout.focus;
   return {
     moved: Math.hypot(now.x - start.x, now.y - start.y, now.z - start.z),
+    worstLag,
     physicsBodies: g.scene.getPhysicsEngine()?.getBodies?.().length ?? -1,
   };
 });
 await shot("05-wipeout");
 if (tumble.moved < 1) fail(`crash body barely moved (${tumble.moved.toFixed(2)}m) — is Havok stepping?`);
 else console.log(`✓ Havok tumble: body travelled ${tumble.moved.toFixed(1)}m`);
+if (tumble.worstLag > 1.5)
+  fail(`shadow left behind during the wipeout: ${tumble.worstLag.toFixed(2)}m from the body`);
+else console.log(`✓ shadow follows the wipeout (worst lag ${tumble.worstLag.toFixed(2)}m)`);
 
 // --- End screen ----------------------------------------------------------------------------
 await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
@@ -362,6 +376,37 @@ else
   console.log(
     `✓ shadow lies on the slope (worst gap ${shadow.worst.toFixed(3)}m across ` +
       `${shadow.extent.toFixed(2)}m of blob)`,
+  );
+
+// --- The shadow must read as height ---------------------------------------------------------
+// Spread and fade are what tell the player how high they are, since the rider itself barely
+// moves on screen with the camera following it. Sampled at heights a real jump reaches: a
+// typical launch is ~0.25m and a good one peaks near 2.4m, and the curves used to be scaled
+// for 7m, so the shadow hardly changed for the whole of any actual air.
+await restart();
+const height = await page.evaluate(() => {
+  const g = window.__game;
+  const mesh = g.scene.meshes.find((m) => m.name === "riderShadow");
+  const c = g.controller;
+  const ground = g.field.heightAt(c.x, c.z);
+  const sample = (h) => {
+    g.rider.placeShadow(c.x, ground + h, c.z, ground, 0, 0, 0, 1);
+    return { spread: mesh.scaling.x, alpha: mesh.material.alpha };
+  };
+  return { ground: sample(0), low: sample(0.8), peak: sample(2.4), silly: sample(30) };
+});
+const grew = height.peak.spread / height.ground.spread;
+const faded = height.peak.alpha / height.ground.alpha;
+if (!(grew > 1.4))
+  fail(`shadow barely spreads with height: x${grew.toFixed(2)} at a 2.4m jump`);
+else if (!(faded < 0.75))
+  fail(`shadow barely fades with height: ${(faded * 100).toFixed(0)}% alpha at a 2.4m jump`);
+else if (height.silly.spread > 2.5)
+  fail(`shadow is unbounded: x${height.silly.spread.toFixed(1)} at 30m up`);
+else
+  console.log(
+    `✓ shadow reads as height (at a 2.4m jump: x${grew.toFixed(2)} wider, ` +
+      `${(faded * 100).toFixed(0)}% as strong)`,
   );
 
 // --- Retry, and the same seed must rebuild the same course ---------------------------------

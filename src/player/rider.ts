@@ -53,6 +53,26 @@ const SHADOW_RINGS: [radius: number, alpha: number][] = [
 ];
 const SHADOW_SEGMENTS = 32;
 
+/**
+ * How the blob answers height off the snow.
+ *
+ * A shadow spreads and weakens as its occluder lifts away from the surface, and that spread is
+ * most of what tells a player how high they are — the rider itself barely moves on screen,
+ * because the camera follows it.
+ *
+ * The numbers are sized against the air the game actually produces, which is the part that was
+ * wrong before: measured across seeds, a typical launch is about 0.25m and a good one peaks
+ * near 2.4m. Fading out over 7m, as it did, meant the shadow hardly changed for the whole of
+ * any real jump. Full spread and near-full fade now land at 4m, so an ordinary jump uses most
+ * of the range, and the cap keeps a wipeout that flings the rider high from painting a
+ * dinner plate on the snow.
+ */
+const SHADOW_ALPHA = 0.34;
+const SHADOW_MIN_ALPHA = 0.06;
+const SHADOW_FADE_HEIGHT = 4;
+const SHADOW_SPREAD_PER_M = 0.3;
+const SHADOW_MAX_SPREAD = 2.2;
+
 // Scratch values for the shadow's orientation, reused every frame rather than reallocated
 const SHADOW_UP = new Vector3();
 const SHADOW_FWD = new Vector3();
@@ -311,18 +331,39 @@ export class Rider {
     this.body.position.y = -this.crouch;
     this.body.scaling.y = 1 - this.crouch * 0.5;
 
-    // --- Shadow.
+    this.placeShadow(rider.renderX, rider.renderY, rider.renderZ, groundY, rider.gradX, rider.gradZ, fx, fz);
+  }
+
+  /**
+   * Put the blob shadow on the snow beneath a world position.
+   *
+   * Separate from `sync` because the wipeout drives the rider from a Havok body and never
+   * calls `sync` — which left the shadow parked wherever the crash began while the rider
+   * tumbled away from it.
+   *
+   * `fx`/`fz` are the facing direction the blob's long axis lines up with.
+   */
+  placeShadow(
+    x: number,
+    y: number,
+    z: number,
+    groundY: number,
+    gradX: number,
+    gradZ: number,
+    fx: number,
+    fz: number,
+  ): void {
     // It lies *on* the slope rather than in a horizontal plane, which is the whole difference
     // between a shadow and a grey semicircle. The fall line is 0.40, so across a blob a metre
     // wide the snow rises and falls about 0.2m; a horizontal disc lifted 0.06m therefore had
     // its uphill half buried in the hill and only its downhill half showing.
-    this.shadow.position.set(rider.renderX, groundY + 0.05, rider.renderZ);
+    this.shadow.position.set(x, groundY + 0.05, z);
 
     // Basis from the surface normal and the direction of travel: y to the normal, z along the
     // board, x across it. Built as axes rather than Euler angles so the blob cannot twist as
     // the heading passes through the poles.
-    const nLen = Math.hypot(rider.gradX, 1, rider.gradZ);
-    SHADOW_UP.set(-rider.gradX / nLen, 1 / nLen, -rider.gradZ / nLen);
+    const nLen = Math.hypot(gradX, 1, gradZ);
+    SHADOW_UP.set(-gradX / nLen, 1 / nLen, -gradZ / nLen);
     SHADOW_FWD.set(fx, 0, fz);
     Vector3.CrossToRef(SHADOW_UP, SHADOW_FWD, SHADOW_RIGHT);
     SHADOW_RIGHT.normalize();
@@ -330,12 +371,15 @@ export class Rider {
     Matrix.FromXYZAxesToRef(SHADOW_RIGHT, SHADOW_UP, SHADOW_FWD, SHADOW_BASIS);
     Quaternion.FromRotationMatrixToRef(SHADOW_BASIS, this.shadow.rotationQuaternion!);
 
-    // Shrinks and fades as the rider gets air
-    const height = Math.max(0, rider.renderY - groundY);
-    const shrink = 1 / (1 + height * 0.16);
-    this.shadow.scaling.set(shrink, 1, shrink);
+    // Spreads and thins with height, the way a real shadow does as its occluder moves away
+    // from the surface. It used to shrink instead, which is backwards, and both curves were
+    // scaled for heights the game does not produce: fading out over 7m when a good jump peaks
+    // near 2.4m meant the shadow barely changed for the whole of any actual air.
+    const height = Math.max(0, y - groundY);
+    const spread = Math.min(1 + height * SHADOW_SPREAD_PER_M, SHADOW_MAX_SPREAD);
+    this.shadow.scaling.set(spread, 1, spread);
     const mat = this.shadow.material as StandardMaterial;
-    mat.alpha = lerp(0.34, 0.05, clamp01(height / 7));
+    mat.alpha = lerp(SHADOW_ALPHA, SHADOW_MIN_ALPHA, clamp01(height / SHADOW_FADE_HEIGHT));
   }
 
   dispose(): void {
