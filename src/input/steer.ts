@@ -120,8 +120,17 @@ export class SteerInput {
     };
 
     const onMove = (e: PointerEvent) => {
-      // Only touches that are actually down; a mouse moving across the canvas is not a steer
-      if (!this.pointers.has(e.pointerId)) return;
+      // Adopt a pressed pointer we are not already tracking, rather than ignoring it.
+      //
+      // The map is meant to mirror what is physically on the glass, and it can fall out of
+      // step with that: reset() runs on every startRun, pause and resume and clears it while
+      // fingers are still down, and a pointerdown can be missed if it lands on the HUD. A
+      // finger in that state used to be dead until it was lifted and pressed again, which is
+      // felt as the *other* finger misbehaving.
+      //
+      // `buttons` is what keeps this honest — it is non-zero only while something is actually
+      // pressed, so a mouse moving across the canvas still does not steer.
+      if (!this.pointers.has(e.pointerId) && e.buttons === 0) return;
       this.pointers.set(e.pointerId, e.clientX);
       this.recompute();
       e.preventDefault();
@@ -163,6 +172,14 @@ export class SteerInput {
     el.addEventListener("pointermove", onMove, opts);
     el.addEventListener("pointerup", onUp, opts);
     el.addEventListener("pointercancel", onUp, opts);
+    // Releases are also watched on the window, because a release the game never hears is the
+    // worst failure this input can have: the touch stays in the average for ever, and lifting
+    // the *other* finger then hands control to a finger that is no longer on the screen.
+    // Pointer capture is supposed to guarantee the release comes back here, but it can fail —
+    // setPointerCapture throws once the browser has dropped the pointer, and the HUD overlays
+    // the canvas. onUp ignores ids it does not know, so hearing an event twice is harmless.
+    window.addEventListener("pointerup", onUp, opts);
+    window.addEventListener("pointercancel", onUp, opts);
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
     // Losing focus mid-turn would otherwise leave the rider locked into a carve
@@ -174,6 +191,8 @@ export class SteerInput {
       () => el.removeEventListener("pointermove", onMove, opts),
       () => el.removeEventListener("pointerup", onUp, opts),
       () => el.removeEventListener("pointercancel", onUp, opts),
+      () => window.removeEventListener("pointerup", onUp, opts),
+      () => window.removeEventListener("pointercancel", onUp, opts),
       () => window.removeEventListener("keydown", keyDown),
       () => window.removeEventListener("keyup", keyUp),
       () => window.removeEventListener("blur", onBlur),

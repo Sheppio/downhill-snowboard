@@ -145,6 +145,47 @@ else
       `${handover.left.toFixed(2)} → ${handover.after}`,
   );
 
+// --- A finger still on the glass after a reset must not be stranded ------------------------
+// input.reset() runs on startRun, pause and resume, and clears the map of live touches while
+// those touches are still physically down. A finger that survived a reset used to be ignored
+// for good — its moves skipped and its release skipped — which is felt as the *other* finger
+// behaving strangely, intermittently, with no obvious trigger.
+await restart();
+const stranded = await page.evaluate(() => {
+  const canvas = document.querySelector("#game");
+  const r = canvas.getBoundingClientRect();
+  const send = (type, pointerId, fraction, buttons = 1) =>
+    canvas.dispatchEvent(
+      new PointerEvent(type, {
+        pointerId,
+        buttons,
+        clientX: r.left + r.width * fraction,
+        clientY: r.top + r.height * 0.7,
+        bubbles: true,
+        cancelable: true,
+        pointerType: "touch",
+      }),
+    );
+  const g = window.__game;
+  const steer = () => g.input.value;
+
+  send("pointerdown", 201, 0.97);
+  const held = steer();
+  g.pause();
+  const paused = steer(); // reset() has dropped the steer, which is intended
+  g.resume();
+  send("pointermove", 201, 0.97); // same finger, never lifted
+  const afterResume = steer();
+  send("pointerup", 201, 0.97);
+  return { held, paused, afterResume, after: steer() };
+});
+if (!(stranded.held > 0.8)) fail(`finger down gave ${stranded.held.toFixed(2)}`);
+else if (stranded.paused !== 0) fail(`pause did not drop the steer: ${stranded.paused}`);
+else if (!(stranded.afterResume > 0.8))
+  fail(`finger stranded by reset: steer was ${stranded.afterResume.toFixed(2)} after resume`);
+else if (stranded.after !== 0) fail(`release after a reset was ignored: ${stranded.after}`);
+else console.log(`✓ a finger held across a pause steers again on resume`);
+
 // --- Pause -----------------------------------------------------------------------------------
 await restart();
 await page.click("#btn-pause");

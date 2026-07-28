@@ -27,9 +27,9 @@ class FakeElement {
     /* the tests build a fresh element each time */
   }
 
-  emit(type: string, pointerId: number, clientX: number): void {
+  emit(type: string, pointerId: number, clientX: number, buttons = 1): void {
     for (const fn of this.listeners.get(type) ?? []) {
-      fn({ pointerId, clientX, preventDefault() {} });
+      fn({ pointerId, clientX, buttons, preventDefault() {} });
     }
   }
 }
@@ -50,6 +50,13 @@ beforeEach(() => {
     removeEventListener() {},
   };
 });
+
+/** Fire an event on `window` rather than the canvas — a release that lands somewhere else. */
+const emitWindow = (type: string, pointerId: number, clientX: number, buttons = 0) => {
+  for (const fn of keyListeners.get(type) ?? []) {
+    fn({ pointerId, clientX, buttons, preventDefault() {} });
+  }
+};
 
 let el: FakeElement;
 let steer: SteerInput;
@@ -151,10 +158,49 @@ describe("two-finger steering", () => {
     expect(steer.touchCount).toBe(1);
   });
 
-  it("ignores movement from a pointer that is not down", () => {
-    // A mouse crossing the canvas with no button held must not steer the rider.
-    el.emit("pointermove", 7, at(1));
+  it("does not strand a finger that was down when the run restarted", () => {
+    // reset() runs on every startRun, pause and resume, and it clears the map while the
+    // fingers it describes are still physically on the glass. A finger that survives a reset
+    // used to be ignored for good — its moves skipped and its release skipped — so the next
+    // touch appeared to misbehave until that hand was lifted and put back down.
+    el.emit("pointerdown", 1, at(0.9));
+    steer.reset();
     expect(steer.value).toBe(0);
+
+    el.emit("pointermove", 1, at(0.9)); // same finger, still down, now moving
+    expect(steer.value, "a finger still on the glass must steer again").toBeGreaterThan(0);
+  });
+
+  it("does not leave a phantom finger when a release lands off the canvas", () => {
+    // Pointer capture normally guarantees the release comes back to the canvas, but it can
+    // fail — setPointerCapture throws if the browser has already dropped the pointer, and the
+    // HUD sits over the canvas. A missed release leaves a touch in the average for ever, so
+    // lifting the *other* finger hands control to a ghost rather than to the finger still down.
+    el.emit("pointerdown", 1, at(1)); // hard right
+    el.emit("pointerdown", 2, at(0)); // hard left
+    expect(steer.value).toBe(0);
+
+    emitWindow("pointerup", 1, at(1)); // right thumb lifts, but not over the canvas
+    expect(steer.touchCount, "the lifted finger must be forgotten").toBe(1);
+    expect(steer.value).toBeCloseTo(-1, 5);
+  });
+
+  it("forgets a cancelled touch wherever the cancel arrives", () => {
+    // The browser cancels touches for reasons the game never sees — a system gesture, a call
+    // arriving. A cancel that is not heard is indistinguishable from a finger held down.
+    el.emit("pointerdown", 1, at(1));
+    el.emit("pointerdown", 2, at(0.9));
+    emitWindow("pointercancel", 1, at(1));
+    expect(steer.touchCount).toBe(1);
+    expect(steer.value).toBeGreaterThan(0.7);
+  });
+
+  it("still ignores a mouse moving with no button held", () => {
+    // The recovery above adopts unknown pointers, so this is the guard that stops it adopting
+    // a hovering mouse: a pointer with no button pressed is not a steer.
+    el.emit("pointermove", 7, at(1), 0); // buttons: 0 — nothing pressed
+    expect(steer.value).toBe(0);
+    expect(steer.touchCount).toBe(0);
     expect(steer.isEngaged).toBe(false);
   });
 
