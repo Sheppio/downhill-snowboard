@@ -12,6 +12,7 @@ import { clamp01 } from "./core/math";
 import { TerrainField, TerrainRenderer } from "./world/terrain";
 import { ObstacleField, ObstacleRenderer } from "./world/obstacles";
 import { createBackdrop, setupSky, SnowSpray } from "./world/scenery";
+import { SnowTracks } from "./world/tracks";
 import { OUT_OF_BOUNDS_FRACTION, lateralFraction } from "./world/course";
 import { RiderController } from "./player/controller";
 import { Rider } from "./player/rider";
@@ -60,6 +61,7 @@ class Game {
   private obstacleRenderer!: ObstacleRenderer;
   private controller!: RiderController;
   private wipeout!: Wipeout;
+  private tracks!: SnowTracks;
   private backdrop!: import("@babylonjs/core/Meshes/mesh").Mesh;
 
   private state: GameState = "menu";
@@ -176,6 +178,9 @@ class Game {
     this.obstacleRenderer = new ObstacleRenderer(this.scene, this.obstacles);
     this.controller = new RiderController(this.field);
     this.wipeout = new Wipeout(this.scene, this.field);
+    // Rebuilt per seed: the trail is baked in world space against a specific height field
+    this.tracks?.dispose();
+    this.tracks = new SnowTracks(this.scene, this.field);
     this.backdrop = createBackdrop(this.scene, numeric);
 
     this.terrain.prime(0);
@@ -205,6 +210,7 @@ class Game {
       this.camera.reset(this.controller);
     }
 
+    this.tracks.clear();
     this.score.reset();
     this.input.reset();
     this.oobTimer = 0;
@@ -278,6 +284,7 @@ class Game {
     const carveT = clamp01(Math.abs(c.steer)) * speedT;
     const sprayAmount = c.airborne ? 0 : 0.3 * speedT + 0.85 * Math.pow(carveT, 1.2);
     this.spray.update(c.renderX, groundY + 0.1, c.renderZ, c.renderHeading, sprayAmount, c.steer);
+    this.tracks.update(c.renderX, c.renderZ, c.renderHeading, c.steer, c.airborne);
 
     if (c.lastLandingImpact > 6) {
       this.spray.burst(c.renderX, groundY + 0.15, c.renderZ);

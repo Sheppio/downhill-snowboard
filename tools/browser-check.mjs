@@ -192,6 +192,33 @@ if (spray.active < 5) {
   console.log(`✓ spray still emitting after a crash (${spray.active} particles)`);
 }
 
+// --- Board tracks -----------------------------------------------------------------------------
+const tracks = await page.evaluate(() => {
+  const g = window.__game;
+  const m = g.scene.meshes.find((x) => x.name === "tracks");
+  if (!m) return null;
+  const pos = m.getVerticesData("position");
+  const col = m.getVerticesData("color");
+  let visible = 0;
+  let onGround = 0;
+  for (let i = 0; i < col.length / 4; i++) {
+    if (col[i * 4 + 3] > 0.01) {
+      visible++;
+      // Each vertex should sit just above the terrain it was laid on, not float or sink
+      const dy = pos[i * 3 + 1] - g.field.heightAt(pos[i * 3], pos[i * 3 + 2]);
+      if (dy > 0 && dy < 0.3) onGround++;
+    }
+  }
+  return { visible, onGround };
+});
+if (!tracks || tracks.visible < 20) {
+  fail(`board left no visible tracks: ${JSON.stringify(tracks)}`);
+} else if (tracks.onGround < tracks.visible * 0.9) {
+  fail(`tracks not sitting on the snow: ${tracks.onGround}/${tracks.visible} at ground level`);
+} else {
+  console.log(`✓ board tracks laid on the snow (${tracks.visible} live vertices)`);
+}
+
 // --- Retry, and the same seed must rebuild the same course ---------------------------------
 const before = await page.evaluate(() => {
   const g = window.__game;
