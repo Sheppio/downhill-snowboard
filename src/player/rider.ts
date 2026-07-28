@@ -67,8 +67,13 @@ const SHADOW_SEGMENTS = 32;
  * of the range, and the cap keeps a wipeout that flings the rider high from painting a
  * dinner plate on the snow.
  */
-const SHADOW_ALPHA = 0.34;
-const SHADOW_MIN_ALPHA = 0.06;
+/**
+ * Strength on the ground. Light on purpose: the sun in this scene is high and the snow bounces
+ * a great deal of light back, so a strong shadow reads as a decal stuck under the rider rather
+ * than as shading. It only has to say "the board is on the snow, and here".
+ */
+const SHADOW_ALPHA = 0.2;
+const SHADOW_MIN_ALPHA = 0.04;
 const SHADOW_FADE_HEIGHT = 4;
 const SHADOW_SPREAD_PER_M = 0.3;
 const SHADOW_MAX_SPREAD = 2.2;
