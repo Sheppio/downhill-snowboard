@@ -39,7 +39,9 @@ export function pilotSteer(
   const {
     // Lookahead is the whole story here. Too long and the pilot cuts corners badly — at 1.3s
     // it drifted over 5m off the line and crashed on courses a person could ride. These
-    // values hold it inside about 1m.
+    // values hold it inside about 1m. maxLookahead has to leave room for the top speed: at
+    // 33 m/s a 0.55s lookahead wants 18m, so a cap at 18 silently stops the pilot looking
+    // any further ahead exactly when it most needs to.
     //
     // That figure matters beyond the test passing: the clear channel is sized against this
     // pilot, so the pilot defines what "a rider good enough to complete any seed" means. It
@@ -48,7 +50,7 @@ export function pilotSteer(
     gain = 3.0,
     lookaheadTime = 0.55,
     minLookahead = 7,
-    maxLookahead = 18,
+    maxLookahead = 26,
   } = opts;
 
   const lookahead = clamp(rider.speed * lookaheadTime, minLookahead, maxLookahead);

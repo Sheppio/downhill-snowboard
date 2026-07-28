@@ -32,14 +32,14 @@ const GRAVITY = 9.81;
 // important one: it sets the price of a tight turn.
 
 /** Arcade exaggeration on gravity-along-slope. 1.0 would be physically honest but sluggish. */
-const SLOPE_ACCEL_SCALE = 1.6;
+const SLOPE_ACCEL_SCALE = 1.75;
 /** Constant board-on-snow friction, m/s². */
 const FRICTION = 0.6;
-/** Quadratic air resistance. Tuned with the above for a ~30 m/s (108 km/h) terminal speed. */
-const AIR_DRAG = 0.004;
+/** Quadratic air resistance. Tuned with the above for a ~120 km/h top speed in real play. */
+const AIR_DRAG = 0.0050;
 
 /** Speed lost to carving, at full lock, as a fraction of current speed per second. */
-const CARVE_DRAG = 0.45;
+const CARVE_DRAG = 0.33;
 /** Exponent on |steer|. Above 1 makes tight turns disproportionately expensive. */
 const CARVE_EXPONENT = 1.5;
 
@@ -58,6 +58,15 @@ const STEER_SMOOTHING = 0.0001;
  */
 const FALL_LINE_PULL = 1.6;
 const FALL_LINE_PULL_FADE = 11;
+
+/**
+ * How much more than gravity the terrain must demand before the rider leaves the ground.
+ *
+ * A real snowboarder absorbs rollers with their legs rather than launching off every crest,
+ * and without modelling that the rider spends most of a fast run in the air — where there is
+ * no edge to carve with and no control.
+ */
+const LAUNCH_TOLERANCE = 1.05;
 
 /** Speed lost per m/s of downward impact on landing. */
 const LANDING_PENALTY = 0.22;
@@ -200,18 +209,41 @@ export class RiderController {
       this.vy -= GRAVITY * dt;
       this.y += this.vy * dt;
       if (this.y <= groundY) {
-        const impact = Math.max(0, -this.vy);
+        // Impact is the vertical speed *in excess of what following the surface demands*.
+        // Measuring raw vy instead makes every landing look violent: on a 0.32 fall line at
+        // speed the surface itself drops ~10 m/s, so even a perfectly smooth touchdown
+        // scored as a heavy impact and paid a penalty for it.
+        const impact = Math.max(0, -this.vy - -surfaceVy);
         this.lastLandingImpact = impact;
-        if (impact > CLEAN_LANDING) {
-          this.speed = Math.max(0, this.speed - (impact - CLEAN_LANDING) * LANDING_PENALTY);
-        }
+
+        // Split the landing velocity about the surface normal. The normal component is
+        // absorbed by the snow; the tangential component carries on as speed. Throwing all
+        // of it away — the previous behaviour — meant every roller scrubbed the run down,
+        // and with the rider airborne a fifth of the time that quietly capped the top speed
+        // of the whole game no matter how the drag and slope were tuned.
+        const nLen = Math.hypot(ngx, 1, ngz);
+        const nx = -ngx / nLen;
+        const ny = 1 / nLen;
+        const nz = -ngz / nLen;
+
+        const vx = fx * this.speed;
+        const vz = fz * this.speed;
+        const vn = vx * nx + this.vy * ny + vz * nz;
+
+        // Horizontal part of the tangential velocity, to stay in the same units as `speed`
+        const carried = Math.hypot(vx - vn * nx, vz - vn * nz);
+        this.speed =
+          impact > CLEAN_LANDING
+            ? Math.max(0, carried - (impact - CLEAN_LANDING) * LANDING_PENALTY)
+            : carried;
+
         this.y = groundY;
         this.vy = surfaceVy;
         this.airborne = false;
       }
     } else {
       const demandedAccel = (surfaceVy - this.lastSurfaceVy) / dt;
-      if (demandedAccel < -GRAVITY) {
+      if (demandedAccel < -GRAVITY * LAUNCH_TOLERANCE) {
         // The crest has outrun gravity — go ballistic from the velocity we already had
         this.airborne = true;
         this.vy = this.lastSurfaceVy - GRAVITY * dt;
@@ -238,13 +270,17 @@ export class RiderController {
    */
   private turnAuthority(): number {
     const spinUp = smoothstep(0, 5, this.speed);
-    const highSpeed = lerp(1, 0.62, clamp01((this.speed - 13) / 22));
+    // The falloff is gentle on purpose. Cornering radius is speed / turn-rate, so cutting
+    // authority hard at speed sets a minimum radius — and once the top speed went to 120km/h
+    // that minimum grew past the tightest curves the racing line actually contains, making
+    // parts of some seeds physically impossible to follow.
+    const highSpeed = lerp(1, 0.82, clamp01((this.speed - 16) / 24));
     return spinUp * highSpeed;
   }
 
   /** Visual bank angle, in radians. Leans harder the faster you carve. */
   get leanAngle(): number {
-    return this.steer * 0.62 * clamp01(this.speed / 13);
+    return this.steer * 0.62 * clamp01(this.speed / 15);
   }
 
   /** Distance down the mountain. Zig-zagging does not inflate it, which keeps seeds fair. */

@@ -259,12 +259,12 @@ class Game {
     this.rider.sync(c, groundY, dt);
     this.camera.update(c, this.field, dt);
 
-    // Spray tracks how hard the board is being driven into the snow, so the carve mechanic
-    // is visible and not just felt
-    const sprayAmount = c.airborne
-      ? 0
-      : clamp01(Math.abs(c.steer) * (c.speed / 18)) * 0.9 + clamp01(c.speed / 40) * 0.1;
-    this.spray.update(c.x, groundY + 0.1, c.z, c.heading, sprayAmount);
+    // Spray is a readout of the carve mechanic, so it has to be legible: a steady rooster
+    // tail just from moving, growing sharply with how hard the rider is turning.
+    const speedT = clamp01(c.speed / 30);
+    const carveT = clamp01(Math.abs(c.steer)) * speedT;
+    const sprayAmount = c.airborne ? 0 : 0.3 * speedT + 0.85 * Math.pow(carveT, 1.2);
+    this.spray.update(c.x, groundY + 0.1, c.z, c.heading, sprayAmount, c.steer);
 
     if (c.lastLandingImpact > 6) {
       this.spray.burst(c.x, groundY + 0.15, c.z);

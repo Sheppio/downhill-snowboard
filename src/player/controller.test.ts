@@ -34,8 +34,16 @@ function probe(steer: number, startSpeed = 22) {
 
   const h0 = rider.heading;
   const dt = 1 / 120;
-  for (let i = 0; i < 120; i++) rider.update(dt, steer);
-  return { speedLost: startSpeed - rider.speed, turned: rider.heading - h0 };
+  // A short window on purpose. Over a full second a hard turn swings the rider far off the
+  // fall line, and the resulting loss of slope acceleration swamps the carve drag this is
+  // trying to measure — enough to make full lock look cheaper than three-quarter lock.
+  const steps = 30;
+  for (let i = 0; i < steps; i++) rider.update(dt, steer);
+  return {
+    speedLost: startSpeed - rider.speed,
+    turned: rider.heading - h0,
+    seconds: steps * dt,
+  };
 }
 
 /** A simple proportional pilot: aim at the centreline a little way ahead. */
@@ -74,7 +82,7 @@ describe("carving costs speed", () => {
   it("turns proportionally to how far the finger is from centre", () => {
     const gentle = probe(0.25).turned;
     const hard = probe(1).turned;
-    expect(gentle).toBeGreaterThan(0.05);
+    expect(gentle).toBeGreaterThan(0.02); // it turns at all over the short probe window
     // At a matched starting speed the turn rate is close to linear in steer
     expect(hard / gentle).toBeGreaterThan(2.5);
   });

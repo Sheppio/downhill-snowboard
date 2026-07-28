@@ -177,6 +177,9 @@ function createSnowflakeTexture(scene: Scene): DynamicTexture {
  * Emission rate is driven from steer and speed, so the spray is a readout of how hard the
  * player is carving — it makes the central mechanic visible rather than just felt.
  */
+/** Peak particles per second at full carve. */
+const MAX_EMIT_RATE = 900;
+
 export class SnowSpray {
   private readonly system: ParticleSystem;
   private readonly emitter: Mesh;
@@ -185,7 +188,7 @@ export class SnowSpray {
     this.emitter = new Mesh("sprayEmitter", scene);
     this.emitter.isPickable = false;
 
-    const ps = new ParticleSystem("spray", 420, scene);
+    const ps = new ParticleSystem("spray", 1400, scene);
     ps.particleTexture = createSnowflakeTexture(scene);
     ps.emitter = this.emitter;
     ps.minEmitBox = new Vector3(-0.35, 0, -0.5);
@@ -195,33 +198,48 @@ export class SnowSpray {
     ps.color2 = new Color4(0.86, 0.94, 1, 0.85);
     ps.colorDead = new Color4(1, 1, 1, 0);
 
-    ps.minSize = 0.14;
-    ps.maxSize = 0.52;
-    ps.minLifeTime = 0.22;
-    ps.maxLifeTime = 0.62;
+    ps.minSize = 0.16;
+    ps.maxSize = 0.55;
+    ps.minLifeTime = 0.3;
+    ps.maxLifeTime = 0.7;
     ps.emitRate = 0;
     ps.blendMode = ParticleSystem.BLENDMODE_STANDARD;
     ps.gravity = new Vector3(0, -7, 0);
-    ps.direction1 = new Vector3(-1.4, 1.6, -2.2);
-    ps.direction2 = new Vector3(1.4, 3.2, -0.4);
-    ps.minEmitPower = 1.2;
-    ps.maxEmitPower = 3.4;
+    // Directions are world space, so keep the cone mostly vertical and outward — it then
+    // reads as a rooster tail whichever way the rider happens to be pointing.
+    ps.direction1 = new Vector3(-1.8, 1.8, -1.8);
+    ps.direction2 = new Vector3(1.8, 4.0, 1.8);
+    ps.minEmitPower = 1.4;
+    ps.maxEmitPower = 4.2;
     ps.updateSpeed = 0.016;
     ps.start();
 
     this.system = ps;
   }
 
-  /** `intensity` 0..1 — how hard the board is being driven into the snow right now. */
-  update(x: number, y: number, z: number, heading: number, intensity: number): void {
+  /**
+   * `intensity` 0..1 — how hard the board is being driven into the snow right now.
+   * `edge` -1..1 — which edge is being carved, so the spray comes off that side of the board
+   * rather than from under the middle of it.
+   */
+  update(x: number, y: number, z: number, heading: number, intensity: number, edge = 0): void {
     this.emitter.position.set(x, y, z);
     this.emitter.rotation.y = heading;
-    this.system.emitRate = clamp01(intensity) * 320;
+
+    const bias = clamp01(Math.abs(edge)) * Math.sign(edge) * 0.5;
+    this.system.minEmitBox.x = -0.4 + bias;
+    this.system.maxEmitBox.x = 0.4 + bias;
+
+    const t = clamp01(intensity);
+    this.system.emitRate = t * MAX_EMIT_RATE;
+    // Harder carves throw bigger, longer-lived clumps, not just more of them
+    this.system.maxSize = 0.5 + t * 0.5;
+    this.system.maxLifeTime = 0.6 + t * 0.5;
   }
 
   burst(x: number, y: number, z: number): void {
     this.emitter.position.set(x, y, z);
-    this.system.manualEmitCount = 90;
+    this.system.manualEmitCount = 160;
   }
 
   stop(): void {

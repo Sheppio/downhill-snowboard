@@ -216,7 +216,7 @@ export class Rider {
     this.roll = expDamp(this.roll, targetRoll, 0.002, dt);
 
     // Crouch low at speed and through hard turns — sells effort without any animation data
-    const targetCrouch = clamp01(rider.speed / 30) * 0.16 + Math.abs(rider.steer) * 0.1;
+    const targetCrouch = clamp01(rider.speed / 34) * 0.16 + Math.abs(rider.steer) * 0.1;
     this.crouch = expDamp(this.crouch, rider.airborne ? 0.02 : targetCrouch, 0.002, dt);
 
     // Negative lean so the rider tilts *into* the turn. Rotation about +Z carries the head

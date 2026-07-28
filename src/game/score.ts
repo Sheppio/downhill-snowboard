@@ -13,10 +13,10 @@
 
 import { clamp01 } from "../core/math";
 
-/** Below this speed there is no bonus at all. About 47 km/h. */
-const CRUISE_SPEED = 13;
-/** Speed at which the bonus is maxed out. About 108 km/h. */
-const FAST_SPEED = 30;
+/** Below this speed there is no bonus at all. About 65 km/h. */
+const CRUISE_SPEED = 18;
+/** Speed at which the bonus is maxed out. About 122 km/h — a genuinely quick run. */
+const FAST_SPEED = 34;
 /** Maximum bonus. Deliberately small — this is a distance game with a speed kicker. */
 const MAX_BONUS = 0.35;
 

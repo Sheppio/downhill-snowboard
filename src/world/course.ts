@@ -20,8 +20,8 @@
 import { fbm1, noise1 } from "../core/noise";
 import { clamp01, smoothstep } from "../core/math";
 
-/** Constant fall-line gradient. tan(15°) ≈ 0.268 — a comfortable intermediate pitch. */
-export const SLOPE = 0.268;
+/** Constant fall-line gradient. tan(22°) ≈ 0.40 — steep, which is where the speed comes from. */
+export const SLOPE = 0.40;
 
 /** Nominal half-width of the rideable floor, in metres. */
 const HALF_WIDTH_BASE = 20;
@@ -153,7 +153,7 @@ export function gateOffset(params: CourseParams, z: number): number {
   // gradient stacks on top of the centreline's, and together they decide how sharply a rider
   // must cross the fall line to hold the clear line. Shorter than the centreline waves, so
   // the line genuinely weaves *within* the corridor instead of just drifting along with it.
-  return fbm1(params.gateSeed, z, { octaves: 2, scale: 115 }) * 0.6;
+  return fbm1(params.gateSeed, z, { octaves: 2, scale: 135 }) * 0.6;
 }
 
 /** World-space x of the clear racing line at a given distance down the mountain. */
@@ -173,9 +173,15 @@ export function gateX(params: CourseParams, z: number): number {
 // completable" a question about one number rather than about the behaviour of noise.
 
 /** Clearance through the opening stretch. Forgiving while the player settles in. */
-const GATE_CLEARANCE_START = 4.6;
-/** Floor once the course is at full difficulty. Tight enough to demand a real line. */
-export const GATE_CLEARANCE_MIN = 2.5;
+const GATE_CLEARANCE_START = 5.0;
+/**
+ * Floor once the course is at full difficulty.
+ *
+ * Sized against the top speed, not chosen in isolation: at 120 km/h the rider covers ground
+ * 40% faster than they used to, so the same gap is proportionally tighter. The difficulty is
+ * meant to come from the speed, not from a gap no reaction time can thread.
+ */
+export const GATE_CLEARANCE_MIN = 3.1;
 /** Distance over which the channel tightens to its floor. */
 const GATE_CLEARANCE_RAMP = 1200;
 /** How far the widest relief stretches open beyond the floor. */

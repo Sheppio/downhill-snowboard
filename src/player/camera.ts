@@ -68,7 +68,7 @@ export class ChaseCamera {
     const blended = rider.heading + wrapAngle(courseYaw - rider.heading) * COURSE_LEAD;
     this.yaw = this.initialised ? dampAngle(this.yaw, blended, YAW_SMOOTHING, dt) : blended;
 
-    const speedT = clamp01(rider.speed / 30);
+    const speedT = clamp01(rider.speed / 34);
     const distance = lerp(BASE_DISTANCE, BASE_DISTANCE + 2.2, speedT);
     const height = lerp(BASE_HEIGHT, BASE_HEIGHT + 0.7, speedT);
 

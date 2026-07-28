@@ -40,15 +40,23 @@ import {
 // keeping that number under SLOPE. `terrain.test.ts` asserts the invariant numerically across
 // many seeds — if you raise these, that test is what will catch you.
 
-// Measured: at 3.6 the steepest roller still descends at ~0.10 against a 0.268 fall line,
-// giving a comfortable margin. Roughly 2.25 would reach flat.
-const UNDULATION_AMP = 3.6;
+// These also decide how much *air* the rider gets, which pulls the opposite way: launching
+// needs curvature, and curvature and gradient are set by the same two numbers. A roller
+// steep enough to throw the rider is steep enough to threaten the no-stall rule, so the
+// headroom has to come from a steeper mountain rather than flatter rollers.
+const UNDULATION_AMP = 4.5;
 const UNDULATION_SCALE_X = 38;
-const UNDULATION_SCALE_Z = 95;
+const UNDULATION_SCALE_Z = 48;
 
-/** Fine ripples for surface interest. Small enough not to affect the gradient meaningfully. */
-const RIPPLE_AMP = 0.22;
-const RIPPLE_SCALE = 7;
+/**
+ * Fine ripples for surface interest.
+ *
+ * Kept small and long. Launch is decided by curvature, which scales as 1/wavelength^2, so
+ * short ripples dominate it however shallow they are: at 0.22m over a 7m wavelength these
+ * alone were throwing the rider into the air constantly once the top speed went up.
+ */
+const RIPPLE_AMP = 0.08;
+const RIPPLE_SCALE = 13;
 
 /** Undulation is flattened on the banks so the walls stay clean and readable. */
 const BANK_UNDULATION_DAMP = 0.25;
@@ -82,7 +90,9 @@ export class TerrainField {
 
     const undulation =
       fbm2(this.undulationSeed, x, z, {
-        octaves: 3,
+        // Two octaves, not three. The third had a third of the amplitude but a quarter of
+        // the wavelength, so it contributed more curvature than the other two combined.
+        octaves: 2,
         gain: 0.5,
         scale: UNDULATION_SCALE_X,
         scaleZ: UNDULATION_SCALE_Z,
