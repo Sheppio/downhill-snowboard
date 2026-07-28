@@ -5,7 +5,6 @@ import { TerrainField } from "./terrain";
 import {
   GATE_CLEARANCE_MIN,
   gateClearance,
-  RUN_IN_LENGTH,
   gateX,
   halfWidth,
   centreX,
@@ -108,16 +107,19 @@ describe("every course can be completed", () => {
 });
 
 describe("obstacle placement", () => {
-  it("leaves the run-in completely clear", () => {
+  it("gives a short clear start, then gets straight on with it", () => {
+    // Both halves matter. A run that starts mid-obstacle is unfair; a long empty stretch is
+    // just dead air before the game begins, which is what this used to be at 80m.
     for (const phrase of ["alpine", "daily-2026-07-28", "zzz"]) {
       const obstacles = makeField(phrase);
-      expect(obstacles.range(0, RUN_IN_LENGTH - 1)).toHaveLength(0);
+      expect(obstacles.range(0, 19)).toHaveLength(0);
+      expect(obstacles.range(0, 60).length, `seed "${phrase}" starts too empty`).toBeGreaterThan(3);
     }
   });
 
   it("gets harder the further you go", () => {
     const obstacles = makeField("difficulty");
-    const early = obstacles.range(RUN_IN_LENGTH, RUN_IN_LENGTH + 600).length;
+    const early = obstacles.range(20, 620).length;
     const late = obstacles.range(3000, 3600).length;
     expect(late).toBeGreaterThan(early);
   });
@@ -148,8 +150,8 @@ describe("obstacle placement", () => {
   it("actually produces a decent number of obstacles to dodge", () => {
     // Guard against the gate rejection being so aggressive that the course ends up empty.
     const obstacles = makeField("density");
-    const count = obstacles.range(RUN_IN_LENGTH, 2000).length;
-    const slices = (2000 - RUN_IN_LENGTH) / SLICE_LENGTH;
+    const count = obstacles.range(20, 2000).length;
+    const slices = (2000 - 20) / SLICE_LENGTH;
     expect(count / slices).toBeGreaterThan(0.8);
   });
 });
@@ -157,7 +159,7 @@ describe("obstacle placement", () => {
 describe("collision", () => {
   it("detects a hit exactly at the obstacle", () => {
     const obstacles = makeField("collide");
-    const [first] = obstacles.range(RUN_IN_LENGTH, 600);
+    const [first] = obstacles.range(20, 600);
     expect(first).toBeDefined();
 
     expect(obstacles.hitTest(first!.x, first!.z, 0.6)).toBe(first);
@@ -168,7 +170,7 @@ describe("collision", () => {
   it("finds nothing on the clear racing line", () => {
     const terrain = new TerrainField(hashString("clear-line"));
     const obstacles = makeField("clear-line");
-    for (let z = RUN_IN_LENGTH; z < 3000; z += 1.5) {
+    for (let z = 20; z < 3000; z += 1.5) {
       expect(obstacles.hitTest(gateX(terrain.params, z), z, 0.6)).toBeNull();
     }
   });

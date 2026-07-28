@@ -131,6 +131,37 @@ body {
   transition: opacity 0.2s ease;
 }
 
+/* Pause button. Sits in the top centre, between the speed and score readouts — the one
+   part of the screen a steering finger never reaches. Kept deliberately quiet so it does
+   not compete with the HUD numbers, but still a full-size touch target. */
+#btn-pause {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1;
+  letter-spacing: 1px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(11, 57, 84, 0.28);
+  transition:
+    transform 0.06s ease,
+    box-shadow 0.06s ease;
+}
+
+#btn-pause:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 rgba(11, 57, 84, 0.28);
+}
+
+.paused-title {
+  color: var(--ink-soft) !important;
+}
+
 /* ------------------------------------------------------ Off-course warning */
 
 #oob {

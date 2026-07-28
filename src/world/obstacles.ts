@@ -29,7 +29,6 @@ import { hashInts, makeRng } from "../core/rng";
 import { clamp01, lerp } from "../core/math";
 import {
   gateClearance,
-  RUN_IN_LENGTH,
   gateX,
   centreX,
   halfWidth,
@@ -90,10 +89,19 @@ export interface Obstacle {
 const TREE_RADIUS = 0.7;
 const ROCK_RADIUS = 0.95;
 
+/**
+ * Distance at the top of the mountain with no obstacles at all.
+ *
+ * Only long enough to get moving and get a hand on the screen. The opening is still gentle
+ * after this, because course.ts holds the gulley straight and wide for its own longer ramp —
+ * so the first stretch is easy without being empty.
+ */
+const OBSTACLE_FREE_LENGTH = 20;
+
 /** Obstacles per slice at a given distance down the mountain. */
 function densityAt(z: number): number {
-  if (z < RUN_IN_LENGTH) return 0; // clean run-in so the player can settle
-  const ramp = clamp01((z - RUN_IN_LENGTH) / DENSITY_RAMP_END);
+  if (z < OBSTACLE_FREE_LENGTH) return 0;
+  const ramp = clamp01((z - OBSTACLE_FREE_LENGTH) / DENSITY_RAMP_END);
   return lerp(DENSITY_START, DENSITY_MAX, ramp);
 }
 

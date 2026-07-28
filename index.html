@@ -25,6 +25,9 @@
           <div class="stat stat-speed">
             <span class="value" id="hud-speed">0</span><span class="unit">km/h</span>
           </div>
+          <!-- Top centre on purpose: the whole canvas steers, and a steering finger sits low
+               on the screen, so this is the least likely place to be hit by accident. -->
+          <button id="btn-pause" aria-label="Pause">❙❙</button>
           <div class="stat stat-score">
             <span class="value" id="hud-score">0</span>
             <span class="mult" id="hud-mult" hidden>×1.00</span>
@@ -92,6 +95,21 @@
           <button id="btn-menu" class="btn btn-ghost">Change seed</button>
 
           <!-- Build stamp, filled in from __APP_VERSION__ so it tracks the commit -->
+          <p class="version" data-version></p>
+        </div>
+      </div>
+
+      <!-- Paused -->
+      <div id="paused" class="panel-wrap" hidden>
+        <div class="panel">
+          <h2 class="paused-title">PAUSED</h2>
+          <div class="breakdown">
+            <div><span id="pause-dist">0</span><small>distance</small></div>
+            <div><span id="pause-score">0</span><small>score</small></div>
+          </div>
+          <button id="btn-resume" class="btn btn-primary">Resume</button>
+          <button id="btn-restart" class="btn btn-secondary">Restart run</button>
+          <button id="btn-quit" class="btn btn-ghost">Change seed</button>
           <p class="version" data-version></p>
         </div>
       </div>

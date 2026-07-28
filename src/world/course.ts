@@ -37,7 +37,13 @@ const FLOOR_FRACTION = 0.6;
 /** Beyond this multiple of half-width the rider counts as off course. */
 export const OUT_OF_BOUNDS_FRACTION = 1.6;
 
-/** Straight, obstacle-free run-in so the player can settle before the course begins. */
+/**
+ * Straight, wide lead-in, so the course does not start mid-corner.
+ *
+ * Note this is the *shape* ramp, not the obstacle-free zone — obstacles start much sooner
+ * (see OBSTACLE_FREE_LENGTH in obstacles.ts). The first stretch is therefore easy because
+ * the course is straight and wide, not because it is empty.
+ */
 export const RUN_IN_LENGTH = 80;
 
 export interface CourseParams {

@@ -38,7 +38,7 @@ const OUT_OF_BOUNDS_GRACE = 3;
 /** How long the crash tumble plays before the score screen appears. */
 const CRASH_DURATION = 2.4;
 
-type GameState = "menu" | "playing" | "crashing" | "ended";
+type GameState = "menu" | "playing" | "paused" | "crashing" | "ended";
 
 class Game {
   private readonly engine: Engine;
@@ -104,6 +104,9 @@ class Game {
         );
       },
       onBackToMenu: () => this.showMenu(),
+      onPause: () => this.pause(),
+      onResume: () => this.resume(),
+      onRestart: () => this.startRun(this.seed),
     });
 
     this.buildWorld(this.seed);
@@ -114,6 +117,17 @@ class Game {
     if (import.meta.env.DEV || new URLSearchParams(location.search).has("debug")) {
       (window as unknown as { __game?: unknown }).__game = this;
     }
+
+    // A phone call or app switch must not quietly burn through a run in the background.
+    // This is also the only pause a player gets if they simply put the phone down.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.pause();
+    });
+    window.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" && e.key !== "p" && e.key !== "P") return;
+      if (this.state === "playing") this.pause();
+      else if (this.state === "paused") this.resume();
+    });
 
     window.addEventListener("resize", () => this.engine.resize());
     // iOS fires orientationchange before the new viewport size is readable
@@ -215,6 +229,11 @@ class Game {
       case "crashing":
         this.updateCrashing(dt);
         break;
+      case "paused":
+        // Deliberately nothing: the scene still renders below, so the panel sits over a
+        // frozen frame of the run rather than a blank screen or a world that drifts on.
+        break;
+
       case "menu":
       case "ended":
         // Keep the world alive behind the panels so the menu isn't a frozen screenshot
@@ -270,6 +289,24 @@ class Game {
       this.oobTimer = 0;
       this.hud.setOutOfBounds(false, 1);
     }
+  }
+
+  private pause(): void {
+    if (this.state !== "playing") return;
+    this.state = "paused";
+    // Drop the steer, or a finger held down when the panel opened would still be carving
+    // when play resumes.
+    this.input.reset();
+    this.spray.stop();
+    this.hud.showPaused(this.controller.distance, this.score.value);
+  }
+
+  private resume(): void {
+    if (this.state !== "paused") return;
+    this.hud.hidePaused();
+    this.hud.showPlaying();
+    this.input.reset();
+    this.state = "playing";
   }
 
   private beginCrash(hitX: number, hitZ: number): void {

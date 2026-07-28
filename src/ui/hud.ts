@@ -21,6 +21,9 @@ export interface HudCallbacks {
   onRetry(): void;
   onShare(): void;
   onBackToMenu(): void;
+  onPause(): void;
+  onResume(): void;
+  onRestart(): void;
 }
 
 export class Hud {
@@ -46,6 +49,10 @@ export class Hud {
   private readonly endTop = must("end-top");
   private readonly endSeed = must("end-seed");
 
+  private readonly paused = must("paused");
+  private readonly pauseDist = must("pause-dist");
+  private readonly pauseScore = must("pause-score");
+
   private readonly loading = must("loading");
   private readonly shareBtn = must<HTMLButtonElement>("btn-share");
 
@@ -58,6 +65,11 @@ export class Hud {
     must<HTMLButtonElement>("btn-retry").addEventListener("click", () => callbacks.onRetry());
     this.shareBtn.addEventListener("click", () => callbacks.onShare());
     must<HTMLButtonElement>("btn-menu").addEventListener("click", () => callbacks.onBackToMenu());
+
+    must<HTMLButtonElement>("btn-pause").addEventListener("click", () => callbacks.onPause());
+    must<HTMLButtonElement>("btn-resume").addEventListener("click", () => callbacks.onResume());
+    must<HTMLButtonElement>("btn-restart").addEventListener("click", () => callbacks.onRestart());
+    must<HTMLButtonElement>("btn-quit").addEventListener("click", () => callbacks.onBackToMenu());
 
     // Enter in the seed box starts the run, and blurs so the mobile keyboard gets out of the way
     this.seedInput.addEventListener("keydown", (e) => {
@@ -86,6 +98,7 @@ export class Hud {
     this.startBest.textContent = best > 0 ? `Your best on this seed: ${best.toLocaleString()}` : "";
     this.start.hidden = false;
     this.end.hidden = true;
+    this.paused.hidden = true;
     this.hud.hidden = true;
     this.oob.hidden = true;
   }
@@ -93,7 +106,19 @@ export class Hud {
   showPlaying(): void {
     this.start.hidden = true;
     this.end.hidden = true;
+    this.paused.hidden = true;
     this.hud.hidden = false;
+  }
+
+  showPaused(distance: number, score: number): void {
+    this.pauseDist.textContent = `${Math.floor(distance)}m`;
+    this.pauseScore.textContent = score.toLocaleString();
+    this.paused.hidden = false;
+    this.oob.hidden = true; // the off-course timer is frozen too; its warning would be a lie
+  }
+
+  hidePaused(): void {
+    this.paused.hidden = true;
   }
 
   /** Called every frame while riding. Kept to plain text writes — no layout thrash. */
@@ -128,6 +153,7 @@ export class Hud {
   }): void {
     this.hud.hidden = true;
     this.oob.hidden = true;
+    this.paused.hidden = true;
     this.end.hidden = false;
 
     this.endTitle.textContent = opts.reason === "crash" ? "WIPEOUT" : "OFF COURSE";

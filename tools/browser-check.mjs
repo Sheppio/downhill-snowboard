@@ -73,26 +73,62 @@ if (riding.speed <= 0 || riding.dist <= 0) fail(`HUD not advancing: ${JSON.strin
 else console.log(`✓ riding: ${JSON.stringify(riding)}`);
 
 // --- Steering: holding far right must turn harder than slightly right ----------------------
+// Each measurement restarts the run first. Obstacles begin 20m in, and an unsteered rider
+// now crashes within a few seconds, so measuring back-to-back would silently take the second
+// reading after the run had already ended.
 const box = await page.locator("#game").boundingBox();
+const restart = async () => {
+  await page.evaluate(() => window.__game.startRun(window.__game.seed));
+  await page.waitForTimeout(250);
+};
 const headingAfterHold = async (fraction, ms) => {
+  await restart();
   const before = await page.evaluate(() => window.__game.controller.heading);
   await page.mouse.move(box.x + box.width * fraction, box.y + box.height * 0.7);
   await page.mouse.down();
   await page.waitForTimeout(ms);
   const after = await page.evaluate(() => window.__game.controller.heading);
+  const state = await page.evaluate(() => window.__game.state);
   await page.mouse.up();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(250);
+  if (state !== "playing") fail(`run ended mid-measurement (state ${state})`);
   return after - before;
 };
 
-const gentle = await headingAfterHold(0.58, 900);
-const hard = await headingAfterHold(0.97, 900);
+const gentle = await headingAfterHold(0.58, 700);
+const hard = await headingAfterHold(0.97, 700);
 await shot("03-carving");
 console.log(`  turn from slight-right: ${gentle.toFixed(3)} rad, far-right: ${hard.toFixed(3)} rad`);
 if (!(hard > gentle && gentle > 0)) fail("steering is not proportional to finger position");
 else console.log("✓ steering scales with how far right the finger is");
 
+// --- Pause -----------------------------------------------------------------------------------
+await restart();
+await page.click("#btn-pause");
+await page.waitForSelector("#paused:not([hidden])", { timeout: 5000 });
+const frozen = await page.evaluate(() => ({ z: window.__game.controller.z, state: window.__game.state }));
+await page.waitForTimeout(1200);
+const stillFrozen = await page.evaluate(() => window.__game.controller.z);
+await shot("04-paused");
+if (frozen.state !== "paused") fail(`pause did not change state (got ${frozen.state})`);
+else if (Math.abs(stillFrozen - frozen.z) > 0.01) fail(`world advanced ${(stillFrozen - frozen.z).toFixed(2)}m while paused`);
+else console.log("✓ pause freezes the run");
+
+await page.click("#btn-resume");
+await page.waitForSelector("#paused", { state: "hidden", timeout: 5000 });
+await page.waitForTimeout(600);
+const moved = (await page.evaluate(() => window.__game.controller.z)) - stillFrozen;
+if (moved < 1) fail(`resume did not restart the run (moved ${moved.toFixed(2)}m)`);
+else console.log(`✓ resume continues the run (+${moved.toFixed(1)}m)`);
+
+// The pause button sits on top of the canvas, which is the steering surface. Pressing it
+// must not also register as a steer, or the rider would lurch every time you paused.
+const steerAfterPause = await page.evaluate(() => window.__game.controller.steer);
+if (Math.abs(steerAfterPause) > 0.35) fail(`pause button leaked a steer of ${steerAfterPause.toFixed(2)}`);
+else console.log("✓ pausing does not steal a steer input");
+
 // --- Wipeout: put the rider into the next obstacle and watch Havok take over ----------------
+await restart();
 const crashInfo = await page.evaluate(() => {
   const g = window.__game;
   const c = g.controller;
@@ -123,13 +159,13 @@ const tumble = await page.evaluate(async () => {
     physicsBodies: g.scene.getPhysicsEngine()?.getBodies?.().length ?? -1,
   };
 });
-await shot("04-wipeout");
+await shot("05-wipeout");
 if (tumble.moved < 1) fail(`crash body barely moved (${tumble.moved.toFixed(2)}m) — is Havok stepping?`);
 else console.log(`✓ Havok tumble: body travelled ${tumble.moved.toFixed(1)}m`);
 
 // --- End screen ----------------------------------------------------------------------------
 await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
-await shot("05-end");
+await shot("06-end");
 const end = {
   title: await page.textContent("#end-title"),
   score: await page.textContent("#end-score"),
