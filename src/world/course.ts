@@ -44,12 +44,19 @@ export interface CourseParams {
   /** Amplitude/wavelength pairs for the three centreline waves. */
   waves: { amp: number; wavelength: number; phase: number }[];
   widthSeed: number;
+  gateSeed: number;
 }
 
 /**
  * Derive the course shape from the world seed. Three sine waves of decreasing amplitude give
  * a centreline that has both long sweeping traverses and tighter kinks, without ever
  * repeating over the length of a run.
+ *
+ * The amplitude/wavelength pairs are not free parameters. A sine contributes up to
+ * `2*PI*amp/wavelength` to the centreline's dx/dz, and those contributions add, so an
+ * innocent-looking short-wavelength wave can demand a crossing angle no rider could hold at
+ * speed. The pairs below keep the summed worst case near 0.9 (about 42° off the fall line);
+ * an earlier, tighter set reached 1.41 and made some seeds genuinely unfollowable.
  */
 export function makeCourseParams(seed: number): CourseParams {
   // Seeded but bounded: every seed is a *different* course, but all are rideable.
@@ -57,11 +64,12 @@ export function makeCourseParams(seed: number): CourseParams {
 
   return {
     waves: [
-      { amp: 30 + jitter(1, 8), wavelength: 400 + jitter(2, 90), phase: noise1(seed, 1.5) * Math.PI },
-      { amp: 12 + jitter(3, 4), wavelength: 150 + jitter(4, 35), phase: noise1(seed, 2.5) * Math.PI },
-      { amp: 5 + jitter(5, 2), wavelength: 60 + jitter(6, 12), phase: noise1(seed, 3.5) * Math.PI },
+      { amp: 30 + jitter(1, 7), wavelength: 520 + jitter(2, 90), phase: noise1(seed, 1.5) * Math.PI },
+      { amp: 11 + jitter(3, 3), wavelength: 250 + jitter(4, 45), phase: noise1(seed, 2.5) * Math.PI },
+      { amp: 4.5 + jitter(5, 1.2), wavelength: 120 + jitter(6, 20), phase: noise1(seed, 3.5) * Math.PI },
     ],
     widthSeed: seed ^ 0x5bf03635,
+    gateSeed: seed ^ 0x2c1b3c6d,
   };
 }
 
@@ -122,6 +130,32 @@ export function bankProfile(dist: number, hw: number): number {
   const beyond = dist - lip;
   return BANK_HEIGHT * 0.75 + beyond * 0.35;
 }
+
+/**
+ * The guaranteed-clear racing line, as a lateral fraction of half-width.
+ *
+ * Obstacles are never placed within `GATE_CLEARANCE` of this line, so a rideable path down
+ * the mountain always exists. That matters far more than it sounds: everyone racing a daily
+ * seed rides the same course, so a seed that generated a fully blocked corridor would be
+ * unwinnable for every player that day. `obstacles.test.ts` asserts the clearance holds.
+ *
+ * It meanders *smoothly* rather than being re-rolled per slice — a line that jumped sideways
+ * every few metres would be clear but physically impossible to follow.
+ */
+export function gateOffset(params: CourseParams, z: number): number {
+  // Long wavelength for the same reason the centreline waves are bounded: this offset's
+  // gradient stacks on top of the centreline's, and together they set how sharply a rider
+  // must cross the fall line to stay on the clear line.
+  return fbm1(params.gateSeed, z, { octaves: 2, scale: 190 }) * 0.45;
+}
+
+/** World-space x of the clear racing line at a given distance down the mountain. */
+export function gateX(params: CourseParams, z: number): number {
+  return centreX(params, z) + gateOffset(params, z) * halfWidth(params, z);
+}
+
+/** Half-width of the clear channel around the racing line, in metres. */
+export const GATE_CLEARANCE = 5.4;
 
 /** How far off the centreline the rider is, as a fraction of half-width (0 = centred). */
 export function lateralFraction(params: CourseParams, x: number, z: number): number {

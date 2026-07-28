@@ -270,10 +270,23 @@ export class TerrainRenderer {
     vd.positions = new Float32Array(VERTS_PER_CHUNK * 3);
     vd.normals = new Float32Array(VERTS_PER_CHUNK * 3);
     vd.colors = new Float32Array(VERTS_PER_CHUNK * 4);
+
+    // The geometry is non-indexed (every triangle owns its vertices, which is what gives the
+    // faceted shading), but Babylon still needs an index buffer to issue the draw — without
+    // one the submesh has an index count of zero and the chunk silently renders nothing.
+    // The order never changes, so this is built once per pooled mesh and then left alone.
+    const indices = new Uint32Array(VERTS_PER_CHUNK);
+    for (let i = 0; i < VERTS_PER_CHUNK; i++) indices[i] = i;
+    vd.indices = indices;
+
     vd.applyToMesh(mesh, true); // updatable
     mesh.material = this.material;
     mesh.isPickable = false;
-    mesh.freezeWorldMatrix(); // geometry is baked in world space; the mesh itself never moves
+    // Deliberately NOT freezing the world matrix. The transform is identity — geometry is
+    // baked in world space — so freezing looks free, but it also stops Babylon refreshing the
+    // mesh's *world* bounding box when the vertex buffers are rewritten. Chunks then keep the
+    // empty origin-point bounds they were created with and get frustum-culled: the mountain
+    // renders as a couple of stray slivers and nothing else.
     return { mesh, cx: 0, cz: 0, key: "" };
   }
 
@@ -313,12 +326,15 @@ export class TerrainRenderer {
         const h01 = heights[(j + 1) * stride + i]!;
         const h11 = heights[(j + 1) * stride + i + 1]!;
 
-        // Two triangles, wound counter-clockwise when viewed from above
-        p = this.emitTriangle(positions, p, x0, h00, z0, x0, h01, z1, x1, h10, z0);
-        c = this.emitFace(normals, colors, p, c, x0, h00, z0, x0, h01, z1, x1, h10, z0);
+        // Two triangles per quad, wound so they face *upward* in Babylon's default
+        // left-handed system. Get this backwards and the entire mountain is back-facing:
+        // it still streams, still culls, still reports correct bounds, and renders as
+        // nothing but sky.
+        p = this.emitTriangle(positions, p, x0, h00, z0, x1, h10, z0, x0, h01, z1);
+        c = this.emitFace(normals, colors, p, c, x0, h00, z0, x1, h10, z0, x0, h01, z1);
 
-        p = this.emitTriangle(positions, p, x1, h10, z0, x0, h01, z1, x1, h11, z1);
-        c = this.emitFace(normals, colors, p, c, x1, h10, z0, x0, h01, z1, x1, h11, z1);
+        p = this.emitTriangle(positions, p, x1, h10, z0, x1, h11, z1, x0, h01, z1);
+        c = this.emitFace(normals, colors, p, c, x1, h10, z0, x1, h11, z1, x0, h01, z1);
       }
     }
   }

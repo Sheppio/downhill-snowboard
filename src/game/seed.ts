@@ -1,0 +1,101 @@
+/**
+ * Seed plumbing — how a course gets chosen, and how one gets shared.
+ *
+ * The whole competitive layer lives here and needs no backend at all. Everyone racing the
+ * same seed rides the same mountain, and the daily seed is derived from the UTC date, so a
+ * player in Auckland and a player in Los Angeles get the same course at the same moment with
+ * nothing coordinating them.
+ */
+
+import { dailySeed, randomSeedPhrase } from "../core/rng";
+
+const SEED_PARAM = "seed";
+
+/** Seeds are normalised so "Alpine " and "alpine" are the same course, not two. */
+export function normaliseSeed(raw: string): string {
+  return raw.trim().toLowerCase().slice(0, 24);
+}
+
+/** Today's shared seed. */
+export function todaysSeed(): string {
+  return dailySeed();
+}
+
+/** A human-friendly label for the daily seed, e.g. "28 Jul 2026". */
+export function dailyLabel(now: Date = new Date()): string {
+  return now.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function isDaily(seed: string): boolean {
+  return seed.startsWith("daily-");
+}
+
+/**
+ * The seed to open with: whatever is in the URL, otherwise today's run.
+ *
+ * Defaulting to the daily seed rather than a random one matters — it means a first-time
+ * player lands directly on the course everyone else is racing.
+ */
+export function initialSeed(): string {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get(SEED_PARAM);
+    if (fromUrl) {
+      const seed = normaliseSeed(fromUrl);
+      if (seed) return seed;
+    }
+  } catch {
+    // Malformed URL — fall through to the daily seed
+  }
+  return todaysSeed();
+}
+
+export function randomSeed(): string {
+  return randomSeedPhrase();
+}
+
+/** A shareable link that drops someone straight onto this course. */
+export function shareUrl(seed: string): string {
+  const url = new URL(window.location.href);
+  url.search = ""; // drop anything else that was hanging off the URL
+  url.searchParams.set(SEED_PARAM, seed);
+  url.hash = "";
+  return url.toString();
+}
+
+/**
+ * Reflect the current seed in the address bar without adding history entries.
+ *
+ * `replaceState` rather than `pushState` so the back button leaves the game rather than
+ * walking back through every seed the player tried.
+ */
+export function syncUrl(seed: string): void {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set(SEED_PARAM, seed);
+    window.history.replaceState(null, "", url.toString());
+  } catch {
+    // History API unavailable; the game is unaffected
+  }
+}
+
+/** Copy a challenge link, falling back to a prompt where the clipboard API is blocked. */
+export async function copyShareLink(seed: string): Promise<boolean> {
+  const url = shareUrl(seed);
+  try {
+    await navigator.clipboard.writeText(url);
+    return true;
+  } catch {
+    // Clipboard needs a secure context and a user gesture; neither is guaranteed
+    try {
+      window.prompt("Copy this challenge link:", url);
+    } catch {
+      /* nothing else to try */
+    }
+    return false;
+  }
+}
