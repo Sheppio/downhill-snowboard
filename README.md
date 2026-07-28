@@ -57,6 +57,24 @@ Pushing to `main` builds and publishes to GitHub Pages via `.github/workflows/de
 to **GitHub Actions**. The workflow cannot do this itself and the first deploy will fail
 without it.
 
+## Versioning
+
+The version in `package.json` is the human-readable half of the build stamp shown on the start
+and end screens (`v0.2.0 · a1b2c3d`). The commit hash identifies a build exactly; the version
+says what kind of change it was. Bump it in the same commit as the change it describes:
+
+| Change | Bump | Example |
+| --- | --- | --- |
+| A bug fix — something was meant to work this way and didn't | **patch** | the run-in ramp putting the tightest corner at 119m |
+| A change to how something works, or new behaviour | **minor** | steering from the average of every finger; the course continuing to get harder past 1300m |
+
+Patch means "the same game, working properly". Minor means "if you had a feel for this, it has
+changed" — which is the distinction worth having when someone comes back to a build after a
+week and wants to know whether their muscle memory still applies.
+
+Nothing enforces this, so it is on whoever makes the change. The stamp gains a `-dirty` suffix
+on an uncommitted tree, which is how you tell a phone is showing a local build.
+
 ## How it fits together
 
 ```
