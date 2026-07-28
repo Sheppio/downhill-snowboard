@@ -1,0 +1,138 @@
+/**
+ * Steering input — the game's only control.
+ *
+ * Finger position across the screen maps directly to turn amount: far right is a hard right
+ * turn, slightly right of centre is a gentle one. This is absolute positional steering, not a
+ * virtual stick, so the player can pick a turn radius instantly without dragging to find it.
+ */
+
+import { clamp } from "../core/math";
+
+/**
+ * Fraction of half-width around the centre that reads as "straight".
+ *
+ * Without this, holding a straight line on a phone means hitting a single pixel column, which
+ * is impossible in motion. 7% is wide enough to hold and narrow enough that gentle turns are
+ * still reachable.
+ */
+const DEAD_ZONE = 0.07;
+
+export class SteerInput {
+  /** Raw target in [-1, 1]. Negative is left. Smoothing happens in the rider controller. */
+  private target = 0;
+  /** The pointer we're tracking. Extra touches are ignored so a stray palm can't steer. */
+  private pointerId: number | null = null;
+  private keyLeft = false;
+  private keyRight = false;
+  private detachers: (() => void)[] = [];
+
+  constructor(private readonly element: HTMLElement) {
+    this.attach();
+  }
+
+  /** Current steer demand in [-1, 1]. */
+  get value(): number {
+    if (this.keyLeft !== this.keyRight) return this.keyLeft ? -1 : 1;
+    return this.target;
+  }
+
+  /** True while the player is actively touching the screen (used for the tutorial hint). */
+  get isEngaged(): boolean {
+    return this.pointerId !== null || this.keyLeft || this.keyRight;
+  }
+
+  reset(): void {
+    this.target = 0;
+    this.pointerId = null;
+    this.keyLeft = false;
+    this.keyRight = false;
+  }
+
+  private setFromClientX(clientX: number): void {
+    const rect = this.element.getBoundingClientRect();
+    if (rect.width <= 0) return;
+
+    // -1 at the left edge, +1 at the right edge, 0 at centre
+    const raw = ((clientX - rect.left) / rect.width) * 2 - 1;
+
+    // Rescale outside the dead zone so full lock is still reachable at the screen edge
+    const sign = Math.sign(raw);
+    const mag = Math.abs(raw);
+    this.target = mag <= DEAD_ZONE ? 0 : sign * clamp((mag - DEAD_ZONE) / (1 - DEAD_ZONE), 0, 1);
+  }
+
+  private attach(): void {
+    const el = this.element;
+
+    const onDown = (e: PointerEvent) => {
+      if (this.pointerId !== null) return; // already tracking a finger
+      this.pointerId = e.pointerId;
+      el.setPointerCapture?.(e.pointerId);
+      this.setFromClientX(e.clientX);
+      e.preventDefault();
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerId !== this.pointerId) return;
+      this.setFromClientX(e.clientX);
+      e.preventDefault();
+    };
+
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerId !== this.pointerId) return;
+      this.pointerId = null;
+      // Straighten up on release. The controller damps this, so it isn't a snap.
+      this.target = 0;
+      el.releasePointerCapture?.(e.pointerId);
+      e.preventDefault();
+    };
+
+    const onKey = (down: boolean) => (e: KeyboardEvent) => {
+      switch (e.key) {
+        case "ArrowLeft":
+        case "a":
+        case "A":
+          this.keyLeft = down;
+          break;
+        case "ArrowRight":
+        case "d":
+        case "D":
+          this.keyRight = down;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+    };
+
+    const keyDown = onKey(true);
+    const keyUp = onKey(false);
+
+    // Non-passive so preventDefault actually suppresses scroll / pull-to-refresh
+    const opts: AddEventListenerOptions = { passive: false };
+    el.addEventListener("pointerdown", onDown, opts);
+    el.addEventListener("pointermove", onMove, opts);
+    el.addEventListener("pointerup", onUp, opts);
+    el.addEventListener("pointercancel", onUp, opts);
+    window.addEventListener("keydown", keyDown);
+    window.addEventListener("keyup", keyUp);
+    // Losing focus mid-turn would otherwise leave the rider locked into a carve
+    const onBlur = () => this.reset();
+    window.addEventListener("blur", onBlur);
+
+    this.detachers.push(
+      () => el.removeEventListener("pointerdown", onDown, opts),
+      () => el.removeEventListener("pointermove", onMove, opts),
+      () => el.removeEventListener("pointerup", onUp, opts),
+      () => el.removeEventListener("pointercancel", onUp, opts),
+      () => window.removeEventListener("keydown", keyDown),
+      () => window.removeEventListener("keyup", keyUp),
+      () => window.removeEventListener("blur", onBlur),
+    );
+  }
+
+  dispose(): void {
+    for (const detach of this.detachers) detach();
+    this.detachers = [];
+  }
+}
