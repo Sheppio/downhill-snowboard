@@ -146,7 +146,7 @@ export function gateOffset(params: CourseParams, z: number): number {
   // Long wavelength for the same reason the centreline waves are bounded: this offset's
   // gradient stacks on top of the centreline's, and together they set how sharply a rider
   // must cross the fall line to stay on the clear line.
-  return fbm1(params.gateSeed, z, { octaves: 2, scale: 190 }) * 0.45;
+  return fbm1(params.gateSeed, z, { octaves: 2, scale: 155 }) * 0.45;
 }
 
 /** World-space x of the clear racing line at a given distance down the mountain. */
@@ -155,7 +155,7 @@ export function gateX(params: CourseParams, z: number): number {
 }
 
 /** Half-width of the clear channel around the racing line, in metres. */
-export const GATE_CLEARANCE = 5.4;
+export const GATE_CLEARANCE = 4.5;
 
 /** How far off the centreline the rider is, as a fraction of half-width (0 = centred). */
 export function lateralFraction(params: CourseParams, x: number, z: number): number {

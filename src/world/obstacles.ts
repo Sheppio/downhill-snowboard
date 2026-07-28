@@ -40,13 +40,36 @@ import type { TerrainField } from "./terrain";
 /** Length of one generation slice, in metres. */
 export const SLICE_LENGTH = 12;
 
+// --- Difficulty ---------------------------------------------------------------------------
+// These four numbers are the difficulty dial. Density is the honest lever; the clear channel
+// in course.ts (GATE_CLEARANCE) is the safety net that keeps every seed completable, so raise
+// density first and only narrow the channel once the tests still pass with margin.
+
 /** Obstacles per slice, ramping with distance so the run starts gently and gets hard. */
-const DENSITY_START = 1.1;
-const DENSITY_MAX = 4.2;
-const DENSITY_RAMP_END = 1800;
+const DENSITY_START = 3.2;
+const DENSITY_MAX = 10;
+const DENSITY_RAMP_END = 1300;
 
 /** How far out from the centreline obstacles can appear, as a fraction of half-width. */
-const MAX_LATERAL = 1.45;
+const MAX_LATERAL = 1.5;
+
+/** Proportion of obstacles that are trees rather than rocks. */
+const TREE_SHARE = 0.76;
+
+/**
+ * Clear snow required between two obstacles' edges, in metres.
+ *
+ * Without this there is nothing stopping two trees being generated on top of each other. At
+ * the old density that was rare enough never to show; at ten per slice it would be constant,
+ * and interpenetrating trees look broken rather than dense.
+ *
+ * Checked within a slice only. Two obstacles either side of a slice boundary can still land
+ * close together, which is fine and actually welcome — clumps read as natural forest.
+ */
+const MIN_GAP = 0.9;
+
+/** How many positions to try before giving up on placing an obstacle. */
+const PLACEMENT_ATTEMPTS = 5;
 
 export const enum ObstacleKind {
   Tree = 0,
@@ -104,46 +127,56 @@ export class ObstacleField {
       if (rng.chance(density - count)) count++;
 
       for (let i = 0; i < count; i++) {
-        const z = z0 + rng.range(0, SLICE_LENGTH);
-        const hw = halfWidth(this.params, z);
-        const kind = rng.chance(0.62) ? ObstacleKind.Tree : ObstacleKind.Rock;
+        const kind = rng.chance(TREE_SHARE) ? ObstacleKind.Tree : ObstacleKind.Rock;
         const scale = kind === ObstacleKind.Tree ? rng.range(0.8, 1.5) : rng.range(0.7, 1.4);
         const radius = (kind === ObstacleKind.Tree ? TREE_RADIUS : ROCK_RADIUS) * scale;
 
-        // Obstacles are placed into the space either side of the racing line, rather than
-        // placed anywhere and then rejected if they land on it. Two reasons: the clearance
-        // guarantee then holds by construction instead of by a check that could be missed,
-        // and widening the channel no longer silently thins the course out — rejection would
-        // have deleted exactly the obstacles nearest the line.
-        const cx = centreX(this.params, z);
-        const gx = gateX(this.params, z);
-        const clear = GATE_CLEARANCE + radius;
+        // Try a few positions before giving up, so a crowded slice still fills in rather than
+        // silently losing obstacles to the first unlucky roll.
+        for (let attempt = 0; attempt < PLACEMENT_ATTEMPTS; attempt++) {
+          const z = z0 + rng.range(0, SLICE_LENGTH);
+          const hw = halfWidth(this.params, z);
 
-        const leftEdge = cx - MAX_LATERAL * hw;
-        const rightEdge = cx + MAX_LATERAL * hw;
-        const leftWidth = Math.max(0, gx - clear - leftEdge);
-        const rightWidth = Math.max(0, rightEdge - (gx + clear));
-        if (leftWidth + rightWidth <= 0) continue; // pinch point with no room either side
+          // Obstacles are placed into the space either side of the racing line, rather than
+          // placed anywhere and then rejected if they land on it. Two reasons: the clearance
+          // guarantee then holds by construction instead of by a check that could be missed,
+          // and widening the channel no longer silently thins the course out — rejection
+          // would have deleted exactly the obstacles nearest the line.
+          const cx = centreX(this.params, z);
+          const gx = gateX(this.params, z);
+          const clear = GATE_CLEARANCE + radius;
 
-        // Trees push outward to frame the course and show where the banks are; rocks crowd
-        // in toward the line, so they are the hazard the player is actually threading.
-        const t =
-          kind === ObstacleKind.Tree ? Math.pow(rng.next(), 0.55) : Math.pow(rng.next(), 1.7);
+          const leftEdge = cx - MAX_LATERAL * hw;
+          const rightEdge = cx + MAX_LATERAL * hw;
+          const leftWidth = Math.max(0, gx - clear - leftEdge);
+          const rightWidth = Math.max(0, rightEdge - (gx + clear));
+          if (leftWidth + rightWidth <= 0) break; // pinch point with no room either side
 
-        const x =
-          rng.next() * (leftWidth + rightWidth) >= leftWidth
-            ? gx + clear + t * rightWidth
-            : gx - clear - t * leftWidth;
+          // Both types spread across the whole band, with rocks crowding in toward the clear
+          // line. Trees used to be pushed hard outward to frame the banks, which looked good
+          // but made most of them scenery the player never had to react to — the ones that
+          // matter are the ones near the line you are threading.
+          const t =
+            kind === ObstacleKind.Tree ? Math.pow(rng.next(), 1.0) : Math.pow(rng.next(), 1.7);
 
-        out.push({
-          x,
-          z,
-          y: this.field.heightAt(x, z),
-          radius,
-          kind,
-          scale,
-          spin: rng.range(0, Math.PI * 2),
-        });
+          const x =
+            rng.next() * (leftWidth + rightWidth) >= leftWidth
+              ? gx + clear + t * rightWidth
+              : gx - clear - t * leftWidth;
+
+          if (this.overlaps(out, x, z, radius)) continue;
+
+          out.push({
+            x,
+            z,
+            y: this.field.heightAt(x, z),
+            radius,
+            kind,
+            scale,
+            spin: rng.range(0, Math.PI * 2),
+          });
+          break;
+        }
       }
     }
 
@@ -154,6 +187,17 @@ export class ObstacleField {
       if (oldest !== undefined) this.cache.delete(oldest);
     }
     return out;
+  }
+
+  /** True if a candidate position would intersect anything already placed in this slice. */
+  private overlaps(placed: Obstacle[], x: number, z: number, radius: number): boolean {
+    for (const other of placed) {
+      const dx = x - other.x;
+      const dz = z - other.z;
+      const need = radius + other.radius + MIN_GAP;
+      if (dx * dx + dz * dz < need * need) return true;
+    }
+    return false;
   }
 
   /** Every obstacle between two distances down the mountain. */
@@ -279,10 +323,12 @@ function createRockMesh(scene: Scene): Mesh {
   body.bakeCurrentTransformIntoVertices();
   paint(body, ROCK_COLOUR);
 
-  const cap = CreateSphere("rockCap", { diameter: 1.9, segments: 3, slice: 0.4 }, scene);
-  cap.scaling = new Vector3(1.02, 0.78, 0.94);
+  // Cap deliberately much smaller than the body. At near-body size the snow swallowed the
+  // whole boulder and they read as harmless snow mounds rather than something to dodge.
+  const cap = CreateSphere("rockCap", { diameter: 1.35, segments: 3, slice: 0.42 }, scene);
+  cap.scaling = new Vector3(1.0, 0.62, 0.9);
   cap.bakeCurrentTransformIntoVertices();
-  cap.position.y = 0.2;
+  cap.position.y = 0.34;
   paint(cap, SNOW_COLOUR);
 
   const merged = Mesh.MergeMeshes([body, cap], true, true, undefined, false, false);
