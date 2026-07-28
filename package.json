@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:browser": "node tools/browser-check.mjs ./.screenshots"
   },
   "dependencies": {
     "@babylonjs/core": "^9.18.0",

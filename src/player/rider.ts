@@ -17,7 +17,6 @@ import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Space } from "@babylonjs/core/Maths/math.axis";
 
 import { clamp, clamp01, expDamp, lerp } from "../core/math";
 import type { RiderController } from "./controller";
@@ -187,6 +186,11 @@ export class Rider {
    * lag in the visuals can never affect the physics.
    */
   sync(rider: RiderController, groundY: number, dt: number): void {
+    // The wipeout hands this node a rotationQuaternion, and Babylon ignores `rotation`
+    // entirely while one is set — without clearing it, the rider stays frozen in whatever
+    // pose it crashed in for every subsequent run.
+    if (this.root.rotationQuaternion) this.root.rotationQuaternion = null;
+
     this.root.position.set(rider.x, rider.y, rider.z);
     this.root.rotation.y = rider.heading; // mesh forward is +z, matching heading 0 = downhill
 
@@ -230,11 +234,6 @@ export class Rider {
     this.shadow.scaling.set(shrink, 1, shrink);
     const mat = this.shadow.material as StandardMaterial;
     mat.alpha = lerp(0.32, 0.05, clamp01(height / 7));
-  }
-
-  /** Tumble the visual rider while the wipeout physics body drives the root. */
-  spin(dt: number): void {
-    this.body.rotate(Vector3.Right(), dt * 6.5, Space.LOCAL);
   }
 
   dispose(): void {
