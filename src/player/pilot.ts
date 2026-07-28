@@ -37,13 +37,18 @@ export function pilotSteer(
   opts: PilotOptions = {},
 ): number {
   const {
-    // A long lookahead cuts corners badly — at 1.3s it drifts over 5m off the line, which
-    // is wider than the clear channel and makes the pilot crash on courses a player could
-    // ride. These values keep it inside ~1.5m, which is a realistic competent rider.
-    gain = 2.4,
-    lookaheadTime = 0.8,
-    minLookahead = 8,
-    maxLookahead = 26,
+    // Lookahead is the whole story here. Too long and the pilot cuts corners badly — at 1.3s
+    // it drifted over 5m off the line and crashed on courses a person could ride. These
+    // values hold it inside about 1m.
+    //
+    // That figure matters beyond the test passing: the clear channel is sized against this
+    // pilot, so the pilot defines what "a rider good enough to complete any seed" means. It
+    // is tuned to a skilled player rather than an average one, deliberately — the guarantee
+    // is that a good run is always *possible*, not that every run is comfortable.
+    gain = 3.0,
+    lookaheadTime = 0.55,
+    minLookahead = 7,
+    maxLookahead = 18,
   } = opts;
 
   const lookahead = clamp(rider.speed * lookaheadTime, minLookahead, maxLookahead);

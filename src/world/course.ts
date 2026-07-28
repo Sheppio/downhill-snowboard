@@ -143,10 +143,11 @@ export function bankProfile(dist: number, hw: number): number {
  * every few metres would be clear but physically impossible to follow.
  */
 export function gateOffset(params: CourseParams, z: number): number {
-  // Long wavelength for the same reason the centreline waves are bounded: this offset's
-  // gradient stacks on top of the centreline's, and together they set how sharply a rider
-  // must cross the fall line to stay on the clear line.
-  return fbm1(params.gateSeed, z, { octaves: 2, scale: 155 }) * 0.45;
+  // Wavelength is bounded for the same reason the centreline waves are: this offset's
+  // gradient stacks on top of the centreline's, and together they decide how sharply a rider
+  // must cross the fall line to hold the clear line. Shorter than the centreline waves, so
+  // the line genuinely weaves *within* the corridor instead of just drifting along with it.
+  return fbm1(params.gateSeed, z, { octaves: 2, scale: 115 }) * 0.6;
 }
 
 /** World-space x of the clear racing line at a given distance down the mountain. */
@@ -154,8 +155,35 @@ export function gateX(params: CourseParams, z: number): number {
   return centreX(params, z) + gateOffset(params, z) * halfWidth(params, z);
 }
 
-/** Half-width of the clear channel around the racing line, in metres. */
-export const GATE_CLEARANCE = 4.5;
+// --- How much clear snow surrounds the racing line ------------------------------------------
+//
+// This was a single constant, and that is what made the course too easy: a fixed-width lane
+// is legible from a long way off and holding it asks almost nothing of the player. It now
+// tightens with distance *and* breathes, so a run has rhythm — stretches where the gap is
+// genuinely narrow and you have to commit to a line, and stretches that open out again.
+//
+// GATE_CLEARANCE_MIN is the hard floor and the whole safety guarantee: the breathing term
+// only ever widens the channel, never narrows it below the floor. That keeps "is every seed
+// completable" a question about one number rather than about the behaviour of noise.
+
+/** Clearance through the opening stretch. Forgiving while the player settles in. */
+const GATE_CLEARANCE_START = 4.6;
+/** Floor once the course is at full difficulty. Tight enough to demand a real line. */
+export const GATE_CLEARANCE_MIN = 2.5;
+/** Distance over which the channel tightens to its floor. */
+const GATE_CLEARANCE_RAMP = 1200;
+/** How far the widest relief stretches open beyond the floor. */
+const GATE_BREATH = 2.4;
+
+/** Half-width of the clear channel around the racing line at a given distance, in metres. */
+export function gateClearance(params: CourseParams, z: number): number {
+  const ramp = clamp01((z - RUN_IN_LENGTH) / GATE_CLEARANCE_RAMP);
+  const base = GATE_CLEARANCE_START + (GATE_CLEARANCE_MIN - GATE_CLEARANCE_START) * ramp;
+
+  // Only ever widens, so the floor above stays a guarantee rather than an average
+  const breath = fbm1(params.gateSeed ^ 0x9e3779b1, z, { octaves: 2, scale: 210 });
+  return base + Math.max(0, breath) * GATE_BREATH;
+}
 
 /** How far off the centreline the rider is, as a fraction of half-width (0 = centred). */
 export function lateralFraction(params: CourseParams, x: number, z: number): number {

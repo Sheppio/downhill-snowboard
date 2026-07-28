@@ -28,7 +28,7 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { hashInts, makeRng } from "../core/rng";
 import { clamp01, lerp } from "../core/math";
 import {
-  GATE_CLEARANCE,
+  gateClearance,
   RUN_IN_LENGTH,
   gateX,
   centreX,
@@ -144,7 +144,7 @@ export class ObstacleField {
           // would have deleted exactly the obstacles nearest the line.
           const cx = centreX(this.params, z);
           const gx = gateX(this.params, z);
-          const clear = GATE_CLEARANCE + radius;
+          const clear = gateClearance(this.params, z) + radius;
 
           const leftEdge = cx - MAX_LATERAL * hw;
           const rightEdge = cx + MAX_LATERAL * hw;

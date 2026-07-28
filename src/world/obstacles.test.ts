@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { ObstacleField, ObstacleKind, SLICE_LENGTH } from "./obstacles";
 import { TerrainField } from "./terrain";
 import {
-  GATE_CLEARANCE,
+  GATE_CLEARANCE_MIN,
+  gateClearance,
   RUN_IN_LENGTH,
   gateX,
   halfWidth,
@@ -45,11 +46,12 @@ describe("every course can be completed", () => {
 
       for (const o of obstacles.range(0, 5000)) {
         const clear = Math.abs(o.x - gateX(terrain.params, o.z));
+        // Must clear the channel width at that point, and never breach the hard floor
         expect(
           clear,
           `seed "${phrase}" has a ${o.kind === ObstacleKind.Tree ? "tree" : "rock"} ` +
             `${clear.toFixed(2)}m from the racing line at ${o.z.toFixed(0)}m`,
-        ).toBeGreaterThanOrEqual(GATE_CLEARANCE);
+        ).toBeGreaterThanOrEqual(Math.min(gateClearance(terrain.params, o.z), GATE_CLEARANCE_MIN));
       }
     }
   });

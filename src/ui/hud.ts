@@ -70,8 +70,11 @@ export class Hud {
     this.dailyLabelEl.textContent = dailyLabel();
 
     // Build stamp comes from git at build time, so it is always accurate for whatever is
-    // actually deployed — nothing to remember to bump.
-    must("version").textContent = __APP_VERSION__;
+    // actually deployed — nothing to remember to bump. Stamped into every [data-version]
+    // slot, so the start and end screens stay in step without duplicating the wiring.
+    for (const el of document.querySelectorAll("[data-version]")) {
+      el.textContent = __APP_VERSION__;
+    }
   }
 
   hideLoading(): void {
