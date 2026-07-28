@@ -25,20 +25,21 @@
           <div class="stat stat-speed">
             <span class="value" id="hud-speed">0</span><span class="unit">km/h</span>
           </div>
-          <!-- Top centre on purpose: the whole canvas steers, and a steering finger sits low
-               on the screen, so this is the least likely place to be hit by accident. -->
-          <button id="btn-pause" aria-label="Pause">❙❙</button>
+          <!-- Score takes the centre: it is the number the game is actually about. -->
           <div class="stat stat-score">
             <span class="value" id="hud-score">0</span>
             <span class="mult" id="hud-mult" hidden>×1.00</span>
           </div>
+          <!-- Pause sits top right. The whole canvas steers, and a steering finger sits low
+               on the screen, so the top corners are the least likely to be hit by accident. -->
+          <button id="btn-pause" aria-label="Pause">❙❙</button>
         </div>
         <div class="hud-row hud-row-bottom">
           <div class="stat stat-fps"><span id="hud-fps">–</span><span class="unit">fps</span></div>
           <div class="stat stat-dist">
             <span class="value" id="hud-dist">0</span><span class="unit">m</span>
           </div>
-          <div class="stat stat-fps stat-fps-spacer" aria-hidden="true"></div>
+          <div aria-hidden="true"></div>
         </div>
       </div>
 

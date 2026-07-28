@@ -75,14 +75,27 @@ body {
   justify-content: space-between;
 }
 
+/* Three columns with equal outer tracks, so the middle item is genuinely centred on the
+   screen rather than wherever the items either side happen to leave it. */
 .hud-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+}
+
+.hud-row > :first-child {
+  justify-self: start;
+}
+
+.hud-row > :nth-child(2) {
+  justify-self: center;
+}
+
+.hud-row > :last-child {
+  justify-self: end;
 }
 
 .hud-row-bottom {
-  justify-content: space-between;
   align-items: baseline;
 }
 
@@ -98,10 +111,6 @@ body {
 
 .stat-fps .unit {
   font-size: 9px;
-}
-
-.stat-fps-spacer {
-  visibility: hidden;
 }
 
 .stat {
@@ -132,7 +141,7 @@ body {
 
 .stat-score {
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 0;
 }
 
