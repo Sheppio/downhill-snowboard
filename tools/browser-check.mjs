@@ -102,6 +102,49 @@ console.log(`  turn from slight-right: ${gentle.toFixed(3)} rad, far-right: ${ha
 if (!(hard > gentle && gentle > 0)) fail("steering is not proportional to finger position");
 else console.log("✓ steering scales with how far right the finger is");
 
+// --- Two fingers: the second must register before the first is lifted ----------------------
+// Players use one thumb per direction and put the next down before releasing the last. This
+// dispatches real PointerEvents rather than using page.mouse, which is single-pointer only,
+// and is the part the unit tests cannot cover — they drive a stand-in for the canvas, so they
+// would still pass if the listeners were wired to the wrong element or the wrong event.
+await restart();
+const handover = await page.evaluate(() => {
+  const canvas = document.querySelector("#game");
+  const r = canvas.getBoundingClientRect();
+  const send = (type, pointerId, fraction) =>
+    canvas.dispatchEvent(
+      new PointerEvent(type, {
+        pointerId,
+        clientX: r.left + r.width * fraction,
+        clientY: r.top + r.height * 0.7,
+        bubbles: true,
+        cancelable: true,
+        pointerType: "touch",
+      }),
+    );
+  const steer = () => window.__game.input.value;
+
+  send("pointerdown", 101, 0.97); // right thumb, hard right
+  const right = steer();
+  send("pointerdown", 102, 0.03); // left thumb down, right still held
+  const both = steer();
+  send("pointerup", 101, 0.97); // right thumb lifts, left still down
+  const left = steer();
+  send("pointerup", 102, 0.03);
+  return { right, both, left, after: steer() };
+});
+if (!(handover.right > 0.8)) fail(`one finger far right gave ${handover.right.toFixed(2)}`);
+else if (Math.abs(handover.both) > 0.2)
+  fail(`second finger ignored: steer stayed at ${handover.both.toFixed(2)} with both down`);
+else if (!(handover.left < -0.8))
+  fail(`handover failed: steer was ${handover.left.toFixed(2)} after the first finger lifted`);
+else if (handover.after !== 0) fail(`steer did not straighten up: ${handover.after}`);
+else
+  console.log(
+    `✓ two-finger handover: ${handover.right.toFixed(2)} → ${handover.both.toFixed(2)} → ` +
+      `${handover.left.toFixed(2)} → ${handover.after}`,
+  );
+
 // --- Pause -----------------------------------------------------------------------------------
 await restart();
 await page.click("#btn-pause");
