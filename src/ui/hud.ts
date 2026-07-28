@@ -68,6 +68,10 @@ export class Hud {
     });
 
     this.dailyLabelEl.textContent = dailyLabel();
+
+    // Build stamp comes from git at build time, so it is always accurate for whatever is
+    // actually deployed — nothing to remember to bump.
+    must("version").textContent = __APP_VERSION__;
   }
 
   hideLoading(): void {
