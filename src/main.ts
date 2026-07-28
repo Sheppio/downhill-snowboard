@@ -35,6 +35,9 @@ const RIDER_RADIUS = 0.6;
 /** Seconds off course before the run is ended. */
 const OUT_OF_BOUNDS_GRACE = 3;
 
+/** Lowest resolution we will fall back to: half CSS pixels. Blurry, but playable. */
+const WORST_SCALE = 2.0;
+
 /** How long the crash tumble plays before the score screen appears. */
 const CRASH_DURATION = 2.4;
 
@@ -68,6 +71,8 @@ class Game {
   // Adaptive resolution
   private fpsSamples: number[] = [];
   private hardwareScale = 1;
+  /** Sharpest level we will render at — native device pixels, capped at 2x. */
+  private sharpestScale = 1;
 
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, true, {
@@ -78,9 +83,17 @@ class Game {
       preserveDrawingBuffer: false,
       stencil: false,
     });
-    // Start at device resolution but cap the pixel ratio — a 3x phone display costs 9x the
-    // fill rate for a difference nobody can see at arm's length.
-    this.hardwareScale = Math.max(1, window.devicePixelRatio / 2);
+    // Babylon's hardware scaling level is a *divisor*: 1 renders at CSS resolution, 0.5 at
+    // twice it, 2 at half. So rendering at native device pixels means 1/devicePixelRatio,
+    // capped at 2x because a 3x display costs 9x the fill rate for a difference nobody can
+    // see at arm's length.
+    //
+    // This was inverted, as `max(1, dpr / 2)`. On a 2.6x phone that rendered at 0.76x CSS
+    // pixels and let the browser upscale — about 29% of native resolution, which is why it
+    // looked soft and why the frame rate had so much headroom.
+    const dpr = window.devicePixelRatio || 1;
+    this.sharpestScale = 1 / Math.min(dpr, 2);
+    this.hardwareScale = this.sharpestScale;
     this.engine.setHardwareScalingLevel(this.hardwareScale);
 
     this.scene = new Scene(this.engine);
@@ -375,9 +388,14 @@ class Game {
     const mean = this.fpsSamples.reduce((a, b) => a + b, 0) / this.fpsSamples.length;
     this.fpsSamples.length = 0;
 
+    // Start sharp and only give up resolution when the device cannot keep up, recovering
+    // when it can. The dead band between the two thresholds stops it oscillating.
     let next = this.hardwareScale;
-    if (mean < 48) next = Math.min(2.0, this.hardwareScale + 0.15);
-    else if (mean > 58 && this.hardwareScale > 1) next = Math.max(1, this.hardwareScale - 0.1);
+    if (mean < 50) {
+      next = Math.min(WORST_SCALE, this.hardwareScale + 0.15);
+    } else if (mean > 57 && this.hardwareScale > this.sharpestScale) {
+      next = Math.max(this.sharpestScale, this.hardwareScale - 0.08);
+    }
 
     if (next !== this.hardwareScale) {
       this.hardwareScale = next;
