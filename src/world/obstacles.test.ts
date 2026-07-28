@@ -53,7 +53,7 @@ describe("every course can be completed", () => {
         ).toBeGreaterThanOrEqual(Math.min(gateClearance(terrain.params, o.z), GATE_CLEARANCE_MIN));
       }
     }
-  });
+  }, 120_000); // sweeps 57 seeds to 8000m — well past vitest's 5s default
 
   it("keeps the racing line inside the rideable course", () => {
     // A clear line that runs outside the gulley would be no use — the rider would be timed
@@ -66,7 +66,7 @@ describe("every course can be completed", () => {
         expect(fraction, `seed "${phrase}" at ${z}m`).toBeLessThan(OUT_OF_BOUNDS_FRACTION - 0.4);
       }
     }
-  });
+  }, 60_000);
 
   it("can be ridden end to end without crashing, on every daily seed of the year", () => {
     // The strongest form of this guarantee, and the reason it is worth the runtime: rather

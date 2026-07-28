@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { defineConfig } from "vite";
+// `vitest/config` rather than `vite`: same defineConfig, but it types the `test` block below.
+import { defineConfig } from "vitest/config";
 
 /**
  * Build stamp shown in the UI, e.g. `v0.1.0 · c6ee40e`.
@@ -45,5 +46,13 @@ export default defineConfig({
   build: {
     target: "es2022",
     chunkSizeWarningLimit: 2048, // Babylon is large by nature; the warning is noise here
+  },
+  test: {
+    // Vitest defaults to 5s, which is the wrong default for this suite: the guarantees worth
+    // having here are swept over a year of daily seeds, and several take seconds by design.
+    // A sweep that grew from 5000m to 8000m went from ~4.3s locally to 5.4s on CI and failed
+    // on the timeout rather than on anything it measured. The genuinely long tests still name
+    // their own budget; this is the floor that stops the next one failing for the wrong reason.
+    testTimeout: 30_000,
   },
 });
