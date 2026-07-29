@@ -137,10 +137,14 @@ export class Hud {
       ...records.map((r) => {
         const row = document.createElement("li");
         row.className = "score-row";
+        // A custom seed is shown exactly as it was typed, so it can be read back, retyped or
+        // shared. Only the daily seeds are relabelled — they are machine-shaped dates — and
+        // they say so, otherwise a date in the seed column reads like a seed somebody chose.
+        const when = formatWhen(r.at, now);
         row.append(
           cell("score-seed", seedLabel(r.seed)),
           cell("score-value", r.score.toLocaleString()),
-          cell("score-when", formatWhen(r.at, now)),
+          cell("score-when", isDaily(r.seed) ? `Daily · ${when}` : when),
         );
         return row;
       }),

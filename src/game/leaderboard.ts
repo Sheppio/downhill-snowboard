@@ -19,14 +19,11 @@ export interface ScoreRecord {
   seed: string;
   /** The best score recorded on that seed. */
   score: number;
-  /** When that best was set, epoch ms. 0 means unknown — see the migration below. */
+  /** When that best was set, epoch ms. Always a real time — see `parse`. */
   at: number;
 }
 
 const STORE_KEY = "downhill.scores.v1";
-
-/** Where bests lived before they carried a timestamp: one key per seed, holding a number. */
-const LEGACY_PREFIX = "downhill.best.";
 
 /**
  * Nothing needs a thousand rows, and localStorage is a shared, small budget. Sorted newest
@@ -68,32 +65,14 @@ function parse(raw: string): ScoreRecord[] {
     if (seen.has(item.seed)) continue; // one row per seed, first (newest) wins
     const score = Math.floor(Number(item.score));
     if (!Number.isFinite(score) || score <= 0) continue;
+    // A record with no usable time is dropped rather than shown undated. That covers the
+    // bests the game kept before this format, which were a bare number per seed with nowhere
+    // to put a time: there is no honest answer for when they were set, and a row that cannot
+    // say when is not worth a line in a list whose whole ordering is when.
     const at = Number(item.at);
+    if (!Number.isFinite(at) || at <= 0) continue;
     seen.add(item.seed);
-    out.push({ seed: item.seed, score, at: Number.isFinite(at) && at > 0 ? at : 0 });
-  }
-  return out;
-}
-
-/**
- * Carry bests forward from the per-seed keys the game used before timestamps existed.
- *
- * There is no honest answer for when those were set, so they get `at: 0`, sort to the bottom
- * and are dated only as "earlier". Inventing "now" for them would put every old score above
- * every real one and make the ordering a lie on the first run after an upgrade.
- */
-function migrateLegacy(s: Storage): ScoreRecord[] {
-  const out: ScoreRecord[] = [];
-  try {
-    for (let i = 0; i < s.length; i++) {
-      const key = s.key(i);
-      if (key === null || !key.startsWith(LEGACY_PREFIX)) continue;
-      const score = Math.floor(Number(s.getItem(key)));
-      if (!Number.isFinite(score) || score <= 0) continue;
-      out.push({ seed: key.slice(LEGACY_PREFIX.length), score, at: 0 });
-    }
-  } catch {
-    // Partial migration is still better than none
+    out.push({ seed: item.seed, score, at });
   }
   return out;
 }
@@ -102,19 +81,12 @@ function load(): ScoreRecord[] {
   const s = store();
   if (!s) return [];
 
-  let raw: string | null = null;
   try {
-    raw = s.getItem(STORE_KEY);
+    const raw = s.getItem(STORE_KEY);
+    return raw === null ? [] : sortRecords(parse(raw));
   } catch {
     return [];
   }
-
-  if (raw !== null) return sortRecords(parse(raw));
-
-  // No store yet: either a new player, or one whose bests predate this format.
-  const migrated = sortRecords(migrateLegacy(s));
-  if (migrated.length > 0) save(migrated);
-  return migrated;
 }
 
 function save(records: ScoreRecord[]): void {
@@ -172,8 +144,6 @@ const DAY = 24 * HOUR;
  * actually want to know, then an absolute date once counting days stops meaning anything.
  */
 export function formatWhen(at: number, now: number = Date.now()): string {
-  if (!(at > 0)) return "earlier";
-
   const ms = now - at;
   if (ms < MINUTE) return "just now"; // also covers a clock that has gone backwards
   if (ms < HOUR) return `${Math.floor(ms / MINUTE)}m ago`;

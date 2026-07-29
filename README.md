@@ -38,9 +38,14 @@ The list is ordered by *when the best was made*, newest at the top — not by sc
 best on a seed lifts it back to the top, so the list reads as what you have been riding lately
 rather than as a hall of fame frozen around one lucky run.
 
+A custom seed appears exactly as you typed it, since that is the only way back to that course.
+Daily runs are shown as their date and tagged as dailies, so a date is never mistaken for a
+seed somebody chose.
+
 It lives in the browser's local storage, so it is per-device and per-browser: there is no
-account and nothing is sent anywhere. Bests recorded before this existed are carried across on
-first run, dated only as "earlier" — there is no record of when they were set.
+account and nothing is sent anywhere. Every row states when it was set, so a score with no
+recorded time is not listed at all — that includes bests from before the list existed, which
+were stored as a bare number with nowhere to keep a date.
 
 ## Running it
 

@@ -124,43 +124,29 @@ describe("ordering", () => {
   });
 });
 
-describe("bests carried over from before timestamps existed", () => {
-  const legacy = (seed: string, score: number) =>
-    storage.setItem(`downhill.best.${seed}`, String(score));
+describe("scores with no time on them", () => {
+  // Every row states when it was set, and that is what the list is ordered by. A score that
+  // cannot say when has nothing to show in either column, so it is dropped rather than listed
+  // under a placeholder. That covers the bests kept before this format — one key per seed
+  // holding a bare number — and any row left undated by an older build.
+  it("does not list a stored record without a real time", () => {
+    storage.setItem(
+      "downhill.scores.v1",
+      JSON.stringify([
+        { seed: "timed", score: 100, at: t(0) },
+        { seed: "undated", score: 9999, at: 0 },
+      ]),
+    );
 
-  it("brings them across, with an unknown time", () => {
-    legacy("alpine", 1234);
-    legacy("glacier-run-77", 890);
-
-    const scores = readScores();
-    expect(scores).toHaveLength(2);
-    expect(readBest("alpine")).toBe(1234);
-    expect(scores.every((r) => r.at === 0), "there is no honest time for these").toBe(true);
+    expect(readScores().map((r) => r.seed)).toEqual(["timed"]);
+    expect(readBest("undated")).toBe(0);
   });
 
-  it("sorts them below anything with a real time", () => {
-    // Inventing "now" for them would put every old score above every new one and make the
-    // ordering a lie on the first run after upgrading.
-    legacy("ancient", 9999);
-    recordBest("fresh", 10, t(0));
-
-    expect(readScores().map((r) => r.seed)).toEqual(["fresh", "ancient"]);
-  });
-
-  it("only migrates once, so a beaten legacy best does not come back", () => {
-    legacy("alpine", 1000);
-    expect(readBest("alpine")).toBe(1000);
-
-    recordBest("alpine", 2000, t(0));
-    expect(readBest("alpine")).toBe(2000);
-    expect(readScores()).toHaveLength(1);
-  });
-
-  it("ignores keys that are not a score", () => {
-    storage.setItem("downhill.best.broken", "not a number");
-    storage.setItem("unrelated.key", "42");
+  it("leaves bests in the old per-seed format where they are", () => {
+    storage.setItem("downhill.best.old-favourite", "4321");
 
     expect(readScores()).toEqual([]);
+    expect(readBest("old-favourite")).toBe(0);
   });
 });
 
@@ -183,8 +169,7 @@ describe("storage that cannot be trusted", () => {
         { seed: "bad-time", score: 10, at: "yesterday" },
       ]),
     );
-    expect(readScores().map((r) => r.seed).sort()).toEqual(["bad-time", "good"]);
-    expect(readRecord("bad-time")?.at).toBe(0);
+    expect(readScores().map((r) => r.seed)).toEqual(["good"]);
   });
 
   it("does not throw when storage itself does", () => {
@@ -219,10 +204,6 @@ describe("how long ago", () => {
     const label = formatWhen(now - 40 * 86_400_000, now);
     expect(label).not.toMatch(/ago/);
     expect(label).toMatch(/\d/);
-  });
-
-  it("says nothing precise when the time is unknown", () => {
-    expect(formatWhen(0, now)).toBe("earlier");
   });
 
   it("does not report the future as a negative age", () => {

@@ -680,10 +680,11 @@ if (JSON.stringify(other) === JSON.stringify(after)) fail("different seeds produ
 else console.log("✓ a different seed builds a different mountain");
 
 // --- The local leaderboard -------------------------------------------------------------------
-// The unit tests cover the store; this covers the part they cannot — that a run which actually
-// ends puts a row on the screen, in the right order, with a time that came from the clock. It
-// also plants a best in the pre-timestamp format to check upgrading a phone keeps the scores
-// that are already on it.
+// The unit tests cover the store; this covers what they cannot — that runs which actually end
+// put rows on the screen, in the right order, dated from the clock, and identified by the seed
+// that was ridden. A custom seed has to appear exactly as it was typed: it is the only way back
+// to that course. A best in the pre-timestamp format is planted to check it stays out, since
+// there is no honest date to give it.
 {
   await page.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
   await page.evaluate(() => {
@@ -693,14 +694,21 @@ else console.log("✓ a different seed builds a different mountain");
   await page.reload({ waitUntil: "load" });
   await page.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
 
-  await page.evaluate(() => window.__game.startRun("alpine"));
-  await page.waitForTimeout(1500);
-  // Ends the run wherever the rider has got to, rather than waiting on a tree
-  await page.evaluate(() => window.__game.endRun("crash"));
-  await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
-  const earned = (await page.textContent("#end-score")).replace(/,/g, "");
+  // A fixed date rather than today's, so the row is the same whenever this runs. The label
+  // itself is formatted in the browser's locale ("15 Jan 2026" here, "Jan 15, 2026" in a
+  // US one), so it is checked by its parts rather than as one string.
+  const ride = async (seed) => {
+    await page.evaluate((s) => window.__game.startRun(s), seed);
+    await page.waitForTimeout(1500);
+    // Ends the run wherever the rider has got to, rather than waiting on a tree
+    await page.evaluate(() => window.__game.endRun("crash"));
+    await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+    await page.click("#btn-menu");
+    return (await page.textContent("#end-score")).replace(/,/g, "");
+  };
+  const custom = await ride("powder-chute-42");
+  await ride("daily-2026-01-15");
 
-  await page.click("#btn-menu");
   await page.click("#btn-scores");
   await page.waitForSelector("#scores:not([hidden])", { timeout: 5000 });
   await shot("07-scores");
@@ -712,22 +720,22 @@ else console.log("✓ a different seed builds a different mountain");
       when: el.querySelector(".score-when").textContent.trim(),
     })),
   );
+  const shown = rows.map((r) => `${r.seed} ${r.score} (${r.when})`).join(" · ");
 
-  if (rows.length !== 2) fail(`leaderboard shows ${rows.length} rows, expected 2`);
-  else if (rows[0].seed !== "alpine" || rows[0].score !== earned)
-    fail(`newest row is ${JSON.stringify(rows[0])}, expected alpine at ${earned}`);
-  else if (rows[0].when !== "just now")
-    fail(`a run that just ended is dated "${rows[0].when}"`);
-  else if (rows[1].seed !== "old-favourite" || rows[1].score !== "4321")
-    fail(`best from before timestamps not carried across: ${JSON.stringify(rows[1])}`);
-  else if (rows[1].when !== "earlier")
-    fail(`a carried-over best claims a time it cannot know: "${rows[1].when}"`);
-  else
-    console.log(
-      `✓ leaderboard, newest first: ${rows
-        .map((r) => `${r.seed} ${r.score} (${r.when})`)
-        .join(" · ")}`,
-    );
+  if (rows.length !== 2) fail(`leaderboard shows ${rows.length} rows, expected 2 — ${shown}`);
+  else if (!/\b15\b/.test(rows[0].seed) || !/jan/i.test(rows[0].seed) || !/2026/.test(rows[0].seed))
+    fail(`daily row is labelled "${rows[0].seed}", expected the date it encodes (2026-01-15)`);
+  else if (!rows[0].when.startsWith("Daily"))
+    fail(`daily row is not tagged as one: "${rows[0].when}"`);
+  else if (rows[1].seed !== "powder-chute-42")
+    fail(`custom seed row does not name the seed: ${JSON.stringify(rows[1])}`);
+  else if (rows[1].score !== custom)
+    fail(`custom seed row scored ${rows[1].score}, the run ended on ${custom}`);
+  else if (rows[1].when !== "just now")
+    fail(`a run that just ended is dated "${rows[1].when}"`);
+  else if (rows.some((r) => r.seed === "old-favourite"))
+    fail(`a best with no recorded time was listed anyway: ${shown}`);
+  else console.log(`✓ leaderboard, newest first: ${shown}`);
 }
 
 console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ no console errors");
