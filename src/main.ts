@@ -69,6 +69,8 @@ class Game {
 
   private state: GameState = "menu";
   private seed = initialSeed();
+  /** The best on this seed when the current run started — what a new record has to beat. */
+  private bestAtStart = 0;
   private oobTimer = 0;
   private crashTimer = 0;
   private endReason: "crash" | "outOfBounds" = "crash";
@@ -143,6 +145,10 @@ class Game {
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) this.pause();
     });
+    // The last chance to keep a run that is about to disappear. `pagehide` rather than
+    // `beforeunload`: mobile browsers routinely discard a backgrounded tab without ever
+    // firing the latter, and this is exactly the case where a score would be lost.
+    window.addEventListener("pagehide", () => this.bankScore());
     window.addEventListener("keydown", (e) => {
       if (e.key !== "Escape" && e.key !== "p" && e.key !== "P") return;
       if (this.state === "playing") this.pause();
@@ -194,7 +200,24 @@ class Game {
     this.rider.sync(this.controller, this.field.heightAt(0, 0), 1 / 60);
   }
 
+  /**
+   * Record whatever the run has earned so far.
+   *
+   * A run used to reach the leaderboard from exactly two places: the crash and the
+   * out-of-bounds timer. Every other way of leaving one — pausing and changing seed, pausing
+   * and restarting, switching apps and never coming back, closing the tab — threw the score
+   * away silently, which is the worst possible outcome for the best run of someone's day.
+   *
+   * Safe to call as often as you like: `recordBest` only ever replaces a lower score, so
+   * banking early can never cost anything, and quitting can never beat riding on.
+   */
+  private bankScore(): void {
+    if (this.state !== "playing" && this.state !== "paused" && this.state !== "crashing") return;
+    recordBest(this.seed, this.score.value, this.controller.distance);
+  }
+
   private showMenu(): void {
+    this.bankScore();
     this.state = "menu";
     this.wipeout.stop();
     this.spray.stop();
@@ -203,6 +226,10 @@ class Game {
   }
 
   private startRun(seed: string): void {
+    // Restarting from the pause panel abandons a live run, so it banks first
+    this.bankScore();
+    this.bestAtStart = readBest(seed);
+
     if (seed !== this.seed) {
       this.seed = seed;
       this.buildWorld(seed);
@@ -332,6 +359,9 @@ class Game {
     // used to strand it entirely — a motionless thumb sends no events to restore itself with.
     this.input.reset();
     this.spray.stop();
+    // Banked here rather than only where the pause leads, because this is also what a phone
+    // call or an app switch does — and that run may never be resumed at all.
+    this.bankScore();
     this.hud.showPaused(this.controller.distance, this.score.value);
   }
 
@@ -394,7 +424,11 @@ class Game {
     this.hud.setOutOfBounds(false, 1);
 
     const score = this.score.value;
-    const isRecord = recordBest(this.seed, score, this.controller.distance);
+    // Compared against the best as it stood when this run *began*, not against what is in
+    // storage now: banking mid-run means the run's own score may already be in there, and
+    // asking storage would then deny the run the record it just set.
+    const isRecord = score > this.bestAtStart;
+    recordBest(this.seed, score, this.controller.distance);
 
     this.hud.showEnd({
       reason: this.endReason,

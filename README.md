@@ -74,6 +74,11 @@ seed somebody chose.
 **Tap any row to ride that seed again.** For past dailies this is the only route back — once
 the date moves on, nothing else in the game can reach them.
 
+A run counts however it ends. Crashing, going off course, pausing and changing seed, restarting
+from the pause panel, switching apps and never coming back, closing the tab — all of them bank
+whatever the run had earned. Banking early can never cost anything, because a score is only
+ever replaced by a higher one.
+
 It lives in the browser's local storage, so it is per-device and per-browser: there is no
 account and nothing is sent anywhere. Every row states when it was set, so a score with no
 recorded time is not listed at all — that includes bests from before the list existed, which

@@ -775,6 +775,63 @@ else console.log("✓ a different seed builds a different mountain");
 }
 
 console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ no console errors");
+// --- A run you walk away from still counts ------------------------------------------------
+// The score used to reach the leaderboard from exactly two places: the crash, and the
+// out-of-bounds timer. Pausing and changing seed, restarting from the pause panel, switching
+// apps and never coming back, or closing the tab all threw the run away without a word.
+{
+  const stored = (seed) =>
+    page.evaluate((s) => {
+      const raw = localStorage.getItem("downhill.scores.v1");
+      const rows = raw ? JSON.parse(raw) : [];
+      return rows.find((r) => r.seed === s) ?? null;
+    }, seed);
+
+  const rideFor = async (seed, ms) => {
+    await page.evaluate((s) => window.__game.startRun(s), seed);
+    await page.waitForTimeout(ms);
+    return page.evaluate(() => ({
+      score: window.__game.score.value,
+      state: window.__game.state,
+    }));
+  };
+
+  await page.evaluate(() => localStorage.clear());
+
+  // 1. Paused, then "Change seed". The score is read while the run is frozen, so the
+  // comparison is exact — read before pausing it climbs a little further before the click
+  // lands, which is what an earlier version of this check tripped over.
+  const quit = await rideFor("quit-from-pause", 1300);
+  await page.click("#btn-pause");
+  await page.waitForSelector("#paused:not([hidden])", { timeout: 5000 });
+  const paused = await page.evaluate(() => window.__game.score.value);
+  await page.click("#btn-quit");
+  await page.waitForSelector("#start:not([hidden])", { timeout: 5000 });
+  const afterQuit = await stored("quit-from-pause");
+
+  // 2. The tab going away mid-run, with no pause at all. Nothing freezes here, so the run has
+  // earned a little more by the time the value is read back — hence a floor, not an equality.
+  const gone = await rideFor("tab-closed", 1300);
+  const beforeHide = await page.evaluate(() => window.__game.score.value);
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  const afterHide = await stored("tab-closed");
+
+  if (quit.state !== "playing" || !(quit.score > 0) || !(gone.score > 0))
+    fail(`could not get a run going to test quitting: ${JSON.stringify(quit)}`);
+  else if (afterQuit === null)
+    fail(`pausing and changing seed threw the run away (scored ${quit.score})`);
+  else if (afterQuit.score !== paused)
+    fail(`quit banked ${afterQuit.score}, the paused run had earned ${paused}`);
+  else if (afterHide === null)
+    fail(`the tab going away threw the run away (scored ${gone.score})`);
+  else if (afterHide.score < beforeHide)
+    fail(`pagehide banked ${afterHide.score}, below the ${beforeHide} already earned`);
+  else
+    console.log(
+      `✓ a walked-away run still counts (quit ${afterQuit.score}, tab closed ${afterHide.score})`,
+    );
+}
+
 // --- The mouse, in a context where it actually exists --------------------------------------
 // Everything above runs in an emulated phone, where Chromium suppresses compatibility mouse
 // events entirely — so none of it can see the desktop path. This opens a plain desktop context
