@@ -456,6 +456,75 @@ body {
   flex: 0 0 auto;
 }
 
+/* --------------------------------------------------- Local leaderboard */
+
+.scores-title {
+  color: var(--ink-soft) !important;
+}
+
+.scores-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  /* Long lists scroll inside the panel so the Back button never leaves the screen. The
+     overlay makes its children non-interactive by default and the page kills every default
+     gesture, so scrolling has to be handed back explicitly on both counts. */
+  max-height: 46vh;
+  overflow-y: auto;
+  pointer-events: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  border-top: 3px dashed rgba(42, 111, 151, 0.3);
+}
+
+.score-row {
+  display: grid;
+  /* The score is the fixed column: seeds are any length, and the ages are short. Giving the
+     seed the flexible track keeps the numbers in a straight line down the panel. */
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "seed  value"
+    "when  value";
+  align-items: center;
+  gap: 0 10px;
+  padding: 9px 2px;
+  border-bottom: 2px solid rgba(42, 111, 151, 0.15);
+  text-align: left;
+}
+
+.score-seed {
+  grid-area: seed;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  /* A 24-character seed on a narrow phone would otherwise push the score off the row */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.score-when {
+  grid-area: when;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  opacity: 0.85;
+}
+
+.score-value {
+  grid-area: value;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--sun);
+  font-variant-numeric: tabular-nums;
+  -webkit-text-stroke: 0.05em var(--ink);
+  paint-order: stroke fill;
+}
+
 /* -------------------------------------------------------------- Loading */
 
 .panel-loading {

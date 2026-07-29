@@ -29,6 +29,19 @@ mountain** — same terrain, same corners, same trees, on any device.
 - Type any seed you like, or hit the dice for a random one.
 - The end screen gives you a link that drops someone straight onto the course you just rode.
 
+## Your scores
+
+**Your scores** on the start screen lists your best on every seed you have ridden, one row per
+seed, with when you set it.
+
+The list is ordered by *when the best was made*, newest at the top — not by score. Beating your
+best on a seed lifts it back to the top, so the list reads as what you have been riding lately
+rather than as a hall of fame frozen around one lucky run.
+
+It lives in the browser's local storage, so it is per-device and per-browser: there is no
+account and nothing is sent anywhere. Bests recorded before this existed are carried across on
+first run, dated only as "earlier" — there is no record of when they were set.
+
 ## Running it
 
 ```bash

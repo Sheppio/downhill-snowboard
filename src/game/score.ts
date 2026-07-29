@@ -54,34 +54,4 @@ export class Score {
   }
 }
 
-// --- Personal bests -----------------------------------------------------------------------
-
-const STORAGE_PREFIX = "downhill.best.";
-
-/**
- * Bests are stored per seed, because that is the unit of competition — your best on today's
- * run says nothing about your best on some other mountain.
- *
- * Storage is wrapped because localStorage throws rather than no-ops in Safari private mode,
- * and losing a high score is never worth crashing a game over.
- */
-export function readBest(seed: string): number {
-  try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + seed);
-    const value = raw === null ? 0 : Number.parseInt(raw, 10);
-    return Number.isFinite(value) ? value : 0;
-  } catch {
-    return 0;
-  }
-}
-
-/** Record a score if it beats the stored best. Returns true if it was a new record. */
-export function writeBest(seed: string, score: number): boolean {
-  if (score <= readBest(seed)) return false;
-  try {
-    localStorage.setItem(STORAGE_PREFIX + seed, String(score));
-  } catch {
-    // Private browsing, storage full, or storage disabled — the run still counted
-  }
-  return true;
-}
+// Where a score goes once the run ends — the per-seed bests — lives in ./leaderboard.

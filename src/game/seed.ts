@@ -36,6 +36,19 @@ export function isDaily(seed: string): boolean {
 }
 
 /**
+ * How a seed should be shown to a player.
+ *
+ * Daily seeds are machine-shaped (`daily-2026-07-29`) because they have to be derived from
+ * the date without coordination. Nobody wants to read a list of those, so they are turned
+ * back into the date they encode.
+ */
+export function seedLabel(seed: string): string {
+  if (!isDaily(seed)) return seed;
+  const date = new Date(`${seed.slice("daily-".length)}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? seed : dailyLabel(date);
+}
+
+/**
  * The seed to open with: whatever is in the URL, otherwise today's run.
  *
  * Defaulting to the daily seed rather than a random one matters — it means a first-time

@@ -679,6 +679,57 @@ const other = await page.evaluate(() => {
 if (JSON.stringify(other) === JSON.stringify(after)) fail("different seeds produced the same course");
 else console.log("✓ a different seed builds a different mountain");
 
+// --- The local leaderboard -------------------------------------------------------------------
+// The unit tests cover the store; this covers the part they cannot — that a run which actually
+// ends puts a row on the screen, in the right order, with a time that came from the clock. It
+// also plants a best in the pre-timestamp format to check upgrading a phone keeps the scores
+// that are already on it.
+{
+  await page.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem("downhill.best.old-favourite", "4321");
+  });
+  await page.reload({ waitUntil: "load" });
+  await page.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+
+  await page.evaluate(() => window.__game.startRun("alpine"));
+  await page.waitForTimeout(1500);
+  // Ends the run wherever the rider has got to, rather than waiting on a tree
+  await page.evaluate(() => window.__game.endRun("crash"));
+  await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+  const earned = (await page.textContent("#end-score")).replace(/,/g, "");
+
+  await page.click("#btn-menu");
+  await page.click("#btn-scores");
+  await page.waitForSelector("#scores:not([hidden])", { timeout: 5000 });
+  await shot("07-scores");
+
+  const rows = await page.$$eval("#scores-list .score-row", (els) =>
+    els.map((el) => ({
+      seed: el.querySelector(".score-seed").textContent.trim(),
+      score: el.querySelector(".score-value").textContent.replace(/,/g, ""),
+      when: el.querySelector(".score-when").textContent.trim(),
+    })),
+  );
+
+  if (rows.length !== 2) fail(`leaderboard shows ${rows.length} rows, expected 2`);
+  else if (rows[0].seed !== "alpine" || rows[0].score !== earned)
+    fail(`newest row is ${JSON.stringify(rows[0])}, expected alpine at ${earned}`);
+  else if (rows[0].when !== "just now")
+    fail(`a run that just ended is dated "${rows[0].when}"`);
+  else if (rows[1].seed !== "old-favourite" || rows[1].score !== "4321")
+    fail(`best from before timestamps not carried across: ${JSON.stringify(rows[1])}`);
+  else if (rows[1].when !== "earlier")
+    fail(`a carried-over best claims a time it cannot know: "${rows[1].when}"`);
+  else
+    console.log(
+      `✓ leaderboard, newest first: ${rows
+        .map((r) => `${r.seed} ${r.score} (${r.when})`)
+        .join(" · ")}`,
+    );
+}
+
 console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ no console errors");
 // --- The mouse, in a context where it actually exists --------------------------------------
 // Everything above runs in an emulated phone, where Chromium suppresses compatibility mouse

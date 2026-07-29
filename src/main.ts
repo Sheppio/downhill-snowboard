@@ -20,7 +20,8 @@ import { ChaseCamera } from "./player/camera";
 import { Wipeout, initPhysics } from "./player/wipeout";
 import { SteerInput } from "./input/steer";
 import { TouchMarkers } from "./ui/touchmarkers";
-import { Score, readBest, writeBest } from "./game/score";
+import { Score } from "./game/score";
+import { readBest, recordBest } from "./game/leaderboard";
 import {
   copyShareLink,
   initialSeed,
@@ -393,7 +394,7 @@ class Game {
     this.hud.setOutOfBounds(false, 1);
 
     const score = this.score.value;
-    const isRecord = writeBest(this.seed, score);
+    const isRecord = recordBest(this.seed, score);
 
     this.hud.showEnd({
       reason: this.endReason,

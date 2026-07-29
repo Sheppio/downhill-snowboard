@@ -5,8 +5,9 @@
  * and safe-area insets come for free, and none of it costs a draw call.
  */
 
+import { formatWhen, readScores } from "../game/leaderboard";
 import { speedMultiplier } from "../game/score";
-import { dailyLabel, isDaily } from "../game/seed";
+import { dailyLabel, isDaily, seedLabel } from "../game/seed";
 
 function must<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -50,6 +51,10 @@ export class Hud {
   private readonly endTop = must("end-top");
   private readonly endSeed = must("end-seed");
 
+  private readonly scores = must("scores");
+  private readonly scoresList = must("scores-list");
+  private readonly scoresEmpty = must("scores-empty");
+
   private readonly paused = must("paused");
   private readonly pauseDist = must("pause-dist");
   private readonly pauseScore = must("pause-score");
@@ -63,6 +68,12 @@ export class Hud {
       callbacks.onRideSeed(this.seedInput.value),
     );
     must<HTMLButtonElement>("btn-shuffle").addEventListener("click", () => callbacks.onShuffle());
+
+    // The leaderboard is read straight from storage and changes nothing, so it needs no
+    // callback into the game — it opens over the menu and closes back onto it.
+    must<HTMLButtonElement>("btn-scores").addEventListener("click", () => this.showScores());
+    must<HTMLButtonElement>("btn-scores-back").addEventListener("click", () => this.hideScores());
+
     must<HTMLButtonElement>("btn-retry").addEventListener("click", () => callbacks.onRetry());
     this.shareBtn.addEventListener("click", () => callbacks.onShare());
     must<HTMLButtonElement>("btn-menu").addEventListener("click", () => callbacks.onBackToMenu());
@@ -100,14 +111,58 @@ export class Hud {
     this.start.hidden = false;
     this.end.hidden = true;
     this.paused.hidden = true;
+    this.scores.hidden = true;
     this.hud.hidden = true;
     this.oob.hidden = true;
+  }
+
+  /**
+   * The local leaderboard, built fresh each time it is opened.
+   *
+   * Rows are assembled as nodes rather than as markup: a seed is whatever the player typed,
+   * so it must never be able to become HTML on its way onto the screen.
+   */
+  private showScores(): void {
+    const records = readScores();
+    const now = Date.now();
+
+    const cell = (className: string, text: string): HTMLElement => {
+      const el = document.createElement("span");
+      el.className = className;
+      el.textContent = text;
+      return el;
+    };
+
+    this.scoresList.replaceChildren(
+      ...records.map((r) => {
+        const row = document.createElement("li");
+        row.className = "score-row";
+        row.append(
+          cell("score-seed", seedLabel(r.seed)),
+          cell("score-value", r.score.toLocaleString()),
+          cell("score-when", formatWhen(r.at, now)),
+        );
+        return row;
+      }),
+    );
+
+    this.scoresEmpty.hidden = records.length > 0;
+    // Shown instead of the menu rather than over it: two stacked dimmed backdrops read as a
+    // smear, and there is nothing on the menu worth seeing through this.
+    this.start.hidden = true;
+    this.scores.hidden = false;
+  }
+
+  private hideScores(): void {
+    this.scores.hidden = true;
+    this.start.hidden = false;
   }
 
   showPlaying(): void {
     this.start.hidden = true;
     this.end.hidden = true;
     this.paused.hidden = true;
+    this.scores.hidden = true;
     this.hud.hidden = false;
   }
 

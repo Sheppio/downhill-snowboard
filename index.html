@@ -76,7 +76,21 @@
           <button id="btn-ride" class="btn btn-secondary">Ride this seed</button>
 
           <p class="best" id="start-best"></p>
+          <button id="btn-scores" class="btn btn-ghost">Your scores</button>
           <p class="version" data-version></p>
+        </div>
+      </div>
+
+      <!-- Local leaderboard: your best on every seed, most recently set at the top -->
+      <div id="scores" class="panel-wrap" hidden>
+        <div class="panel">
+          <h2 class="scores-title">YOUR SCORES</h2>
+          <p class="tagline">Your best on each seed, newest first.</p>
+          <ol id="scores-list" class="scores-list"></ol>
+          <p class="best" id="scores-empty" hidden>
+            No scores yet. Ride something and they will show up here.
+          </p>
+          <button id="btn-scores-back" class="btn btn-primary">Back</button>
         </div>
       </div>
 
