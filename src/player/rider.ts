@@ -151,8 +151,19 @@ const UPPER_LEAN = 0.3;
 /** A little counter-yaw as well, so the shoulders open toward the inside of the turn. */
 const UPPER_TWIST = 0.16;
 
-/** How much of leg length the knees can give up when the rider crouches. */
+/**
+ * How much of leg length the knees can absorb, and what drives them.
+ *
+ * The trigger is vertical acceleration rather than any explicit landing event: the ground
+ * pushing up through the board is exactly what a rider's knees answer, so the same term covers
+ * rolling through a compression and taking a landing, which differ only in size. A landing
+ * from a real jump spikes an order of magnitude above an undulation, hence the generous
+ * scale and the clamp.
+ */
 const KNEE_TRAVEL = 0.42;
+const KNEE_ACCEL_SCALE = 220;
+/** Knees soak up fast and recover slowly, like legs rather than springs. */
+const KNEE_RELEASE = 0.06;
 
 function makeMaterial(scene: Scene, name: string, colour: Color3, emissive = 0.22): StandardMaterial {
   const mat = new StandardMaterial(name, scene);
@@ -182,6 +193,9 @@ export class Rider {
   private roll = 0;
   private crouch = 0;
   private upperLean = 0;
+  /** Knee bend from the ground, held separately so it can spike and decay on its own. */
+  private absorb = 0;
+  private prevVy = 0;
 
   constructor(scene: Scene) {
     this.root = new TransformNode("rider", scene);
@@ -378,6 +392,16 @@ export class Rider {
     const targetCrouch = clamp01(rider.speed / 34) * 0.16 + Math.abs(rider.steer) * 0.1;
     this.crouch = expDamp(this.crouch, rider.airborne ? 0.02 : targetCrouch, 0.002, dt);
 
+    // Knees answer vertical acceleration. Rolling into a compression and taking a landing are
+    // the same event at different sizes, so one term covers both rather than needing a
+    // landing to be announced. Only upward acceleration counts: being thrown *off* a crest
+    // unweights the legs, it does not fold them.
+    const vAccel = dt > 0 ? (rider.vy - this.prevVy) / dt : 0;
+    this.prevVy = rider.vy;
+    const demand = rider.airborne ? 0 : clamp01(vAccel / KNEE_ACCEL_SCALE);
+    // Attack immediately, release slowly: legs soak up a hit at once and unfold afterwards.
+    this.absorb = Math.max(demand, expDamp(this.absorb, 0, KNEE_RELEASE, dt));
+
     // Negative lean so the rider tilts *into* the turn. Rotation about +Z carries the head
     // toward -x, so a right-hand carve needs a negative angle; getting this backwards makes
     // the rider lean away from every corner like they are about to fall over outward.
@@ -389,7 +413,7 @@ export class Rider {
     // Knee bend. The legs shorten from the feet up, so the board stays welded to the snow and
     // the hips drop by exactly what the legs lose — which is what makes it read as absorbing
     // rather than as the whole rider being scaled down.
-    const bend = clamp01(this.crouch);
+    const bend = clamp01(this.crouch + this.absorb);
     const legScale = 1 - bend * KNEE_TRAVEL;
     this.legs.scaling.y = legScale;
     this.hips.position.y = FOOT_Y + LEG_LENGTH * legScale;

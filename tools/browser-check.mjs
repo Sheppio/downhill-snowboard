@@ -186,6 +186,76 @@ else if (!(stranded.afterResume > 0.8))
 else if (stranded.after !== 0) fail(`release after a reset was ignored: ${stranded.after}`);
 else console.log(`✓ a finger held across a pause steers again on resume`);
 
+// --- The rider is jointed: upper body angulates, knees absorb -------------------------------
+// Both are pure animation, so nothing else in the suite would notice them silently breaking.
+await restart();
+// Knees: ride a stretch and watch the legs work over the terrain. Collision is stubbed out
+// for it — an unsteered rider meets a tree within a couple of seconds, and the sample needs
+// longer than that to cross enough ground to be worth measuring.
+const knees = await page.evaluate(async () => {
+  const g = window.__game;
+  const legs = g.scene.transformNodes.find((n) => n.name === "riderLegs");
+  if (!legs) return { found: false };
+  const realHitTest = g.obstacles.hitTest.bind(g.obstacles);
+  g.obstacles.hitTest = () => null;
+
+  let minLeg = 9;
+  let maxLeg = -9;
+  for (let i = 0; i < 150; i++) {
+    await new Promise((r) => setTimeout(r, 16));
+    minLeg = Math.min(minLeg, legs.scaling.y);
+    maxLeg = Math.max(maxLeg, legs.scaling.y);
+  }
+  g.obstacles.hitTest = realHitTest;
+  return { found: true, minLeg, maxLeg };
+});
+
+await restart();
+const joints = await page.evaluate(async () => {
+  const g = window.__game;
+  const hips = g.scene.transformNodes.find((n) => n.name === "riderHips");
+  if (!hips) return { found: false };
+
+  // Upper body: hold a hard right and read the extra lean over the whole-body roll
+  const canvas = document.querySelector("#game");
+  const r = canvas.getBoundingClientRect();
+  const send = (type, fraction) =>
+    canvas.dispatchEvent(
+      new PointerEvent(type, {
+        pointerId: 301,
+        buttons: 1,
+        clientX: r.left + r.width * fraction,
+        clientY: r.top + r.height * 0.7,
+        bubbles: true,
+        cancelable: true,
+        pointerType: "touch",
+      }),
+    );
+  send("pointerdown", 0.97);
+  await new Promise((res) => setTimeout(res, 800));
+  const right = { steer: g.controller.steer, roll: hips.rotation.z, yaw: hips.rotation.y };
+  send("pointerup", 0.97);
+
+  return { found: true, right };
+});
+if (!knees.found || !joints.found) fail("rider has no leg or hip joint");
+else if (knees.maxLeg - knees.minLeg < 0.05)
+  fail(
+    `knees barely move over terrain: leg scale ${knees.minLeg.toFixed(2)}–${knees.maxLeg.toFixed(2)}`,
+  );
+else if (knees.minLeg < 0.5)
+  fail(`knees fold too far: leg scale down to ${knees.minLeg.toFixed(2)}`);
+else if (!(joints.right.steer > 0.5))
+  fail(`carve did not register: steer ${joints.right.steer.toFixed(2)}`);
+else if (!(joints.right.roll < -0.1))
+  // Negative roll carries the head toward +x, which is *into* a right-hand turn
+  fail(`upper body does not lean into the turn: roll ${joints.right.roll.toFixed(3)}`);
+else
+  console.log(
+    `✓ rider is jointed (knees ${knees.minLeg.toFixed(2)}–${knees.maxLeg.toFixed(2)} of leg, ` +
+      `upper body ${((joints.right.roll * 180) / Math.PI).toFixed(0)}° into a hard carve)`,
+  );
+
 // --- Pause -----------------------------------------------------------------------------------
 await restart();
 await page.click("#btn-pause");
