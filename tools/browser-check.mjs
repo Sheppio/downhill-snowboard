@@ -690,11 +690,17 @@ else console.log("✓ a different seed builds a different mountain");
   await page.evaluate(() => {
     localStorage.clear();
     localStorage.setItem("downhill.best.old-favourite", "4321");
-    // A record in the shape written before distances were kept: it must still be listed, with
-    // a dash where the metres go rather than a zero or a blank.
     localStorage.setItem(
       "downhill.scores.v1",
-      JSON.stringify([{ seed: "before-distances", score: 4321, at: Date.now() - 9e7 }]),
+      JSON.stringify([
+        // Written before distances were kept, but on the course as it stands: still listed,
+        // with a dash where the metres go rather than a zero or a blank.
+        { seed: "before-distances", score: 4321, at: Date.now() - 9e7, gen: 2 },
+        // Set on the mountain as it was before it kept getting harder past 1300m. Not
+        // comparable with anything set now, so it should be gone from the list *and* from
+        // storage — an unstamped record is generation 1 by definition.
+        { seed: "old-mountain", score: 99999, at: Date.now() - 9e7 },
+      ]),
     );
   });
   await page.reload({ waitUntil: "load" });
@@ -751,6 +757,16 @@ else console.log("✓ a different seed builds a different mountain");
     fail(`a record with no distance shows "${rows[2].dist}" instead of a dash`);
   else if (rows.some((r) => r.seed === "old-favourite"))
     fail(`a best with no recorded time was listed anyway: ${shown}`);
+  else if (rows.some((r) => r.seed === "old-mountain"))
+    fail(`a score from the earlier, easier course was listed anyway: ${shown}`);
+  else if (
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]").some(
+        (r) => r.seed === "old-mountain",
+      ),
+    )
+  )
+    fail("a score from the earlier course was hidden from the list but left on the device");
   else console.log(`✓ leaderboard, newest first: ${shown}`);
 
   // Every row rides its seed. Checked on the *daily* row, which is the only one that can tell

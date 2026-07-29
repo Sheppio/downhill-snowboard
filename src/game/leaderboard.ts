@@ -26,7 +26,27 @@ export interface ScoreRecord {
    * long gone, so there is nothing to fill it in from and the row simply says so.
    */
   distance?: number;
+  /** Which mountain it was set on. See COURSE_GENERATION. */
+  gen: number;
 }
+
+/**
+ * Which version of the course a score belongs to.
+ *
+ * Bumped whenever a change makes scores incomparable with the ones before it. Scores from an
+ * older generation are deleted rather than left sitting at the top of a list nobody can reach
+ * any more: a 9,000 set on the mountain as it was before it kept getting harder past 1300m is
+ * not the same achievement as a 9,000 set now, and leaving the two side by side makes the
+ * list meaningless.
+ *
+ * A generation rather than a cutoff date, which is what this started as. A date is only as
+ * good as the clock on the phone — a device running a few days slow would stamp every *new*
+ * score before the cutoff and silently throw all of them away. It also cannot tell a score
+ * set on an old build that had not been reloaded yet from one set on the new course, and
+ * those are exactly the scores this is meant to clear. Generation 1 is everything written
+ * before this existed, which is precisely the set to drop.
+ */
+export const COURSE_GENERATION = 2;
 
 const STORE_KEY = "downhill.scores.v1";
 
@@ -54,14 +74,14 @@ function sortRecords(records: ScoreRecord[]): ScoreRecord[] {
  * record. The contents are user-writable and survive across versions of the game, so this
  * treats them as untrusted input rather than as something it wrote itself.
  */
-function parse(raw: string): ScoreRecord[] {
+function parse(raw: string): { records: ScoreRecord[]; dropped: boolean } {
   let data: unknown;
   try {
     data = JSON.parse(raw);
   } catch {
-    return [];
+    return { records: [], dropped: false };
   }
-  if (!Array.isArray(data)) return [];
+  if (!Array.isArray(data)) return { records: [], dropped: false };
 
   const out: ScoreRecord[] = [];
   const seen = new Set<string>();
@@ -76,16 +96,19 @@ function parse(raw: string): ScoreRecord[] {
     // say when is not worth a line in a list whose whole ordering is when.
     const at = Number(item.at);
     if (!Number.isFinite(at) || at <= 0) continue;
+    // Set on a different mountain, so not comparable with anything here. Anything written
+    // before generations existed has no stamp at all, and is generation 1 by definition.
+    if (Number(item.gen ?? 1) !== COURSE_GENERATION) continue;
     seen.add(item.seed);
 
-    const record: ScoreRecord = { seed: item.seed, score, at };
+    const record: ScoreRecord = { seed: item.seed, score, at, gen: COURSE_GENERATION };
     // Unlike the time, a missing distance does not disqualify a record: the score and when it
     // was set are what the row is *for*, and both are still there.
     const distance = Math.floor(Number(item.distance));
     if (Number.isFinite(distance) && distance > 0) record.distance = distance;
     out.push(record);
   }
-  return out;
+  return { records: out, dropped: out.length !== data.length };
 }
 
 function load(): ScoreRecord[] {
@@ -94,7 +117,14 @@ function load(): ScoreRecord[] {
 
   try {
     const raw = s.getItem(STORE_KEY);
-    return raw === null ? [] : sortRecords(parse(raw));
+    if (raw === null) return [];
+
+    const { records, dropped } = parse(raw);
+    const sorted = sortRecords(records);
+    // Written back rather than merely hidden, so a deleted score is actually gone from the
+    // device instead of lingering until the next time something happens to be saved.
+    if (dropped) save(sorted);
+    return sorted;
   } catch {
     return [];
   }
@@ -149,7 +179,7 @@ export function recordBest(
   const existing = records.find((r) => r.seed === seed);
   if (existing && value <= existing.score) return false;
 
-  const record: ScoreRecord = { seed, score: value, at: now };
+  const record: ScoreRecord = { seed, score: value, at: now, gen: COURSE_GENERATION };
   const metres = Math.floor(distance);
   if (Number.isFinite(metres) && metres > 0) record.distance = metres;
 

@@ -79,6 +79,16 @@ from the pause panel, switching apps and never coming back, closing the tab — 
 whatever the run had earned. Banking early can never cost anything, because a score is only
 ever replaced by a higher one.
 
+Every score is stamped with which version of the course it was set on, and scores from an
+older one are deleted the next time the game loads. A 9,000 set before the mountain kept
+getting harder past 1300m is not the same achievement as a 9,000 set after it, and leaving the
+two side by side makes the list meaningless. `COURSE_GENERATION` in `src/game/leaderboard.ts`
+is the stamp — bump it in the same commit as any change that makes scores incomparable.
+
+A generation rather than a cutoff date, deliberately: a date is only as good as the clock on
+the phone, and a device running a few days slow would stamp every *new* score before the
+cutoff and throw all of them away.
+
 It lives in the browser's local storage, so it is per-device and per-browser: there is no
 account and nothing is sent anywhere. Every row states when it was set, so a score with no
 recorded time is not listed at all — that includes bests from before the list existed, which

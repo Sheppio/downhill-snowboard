@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  COURSE_GENERATION,
   formatDistance,
   formatWhen,
   readBest,
@@ -76,6 +77,7 @@ describe("recording a best", () => {
       score: 1200,
       at: t(0),
       distance: 940,
+      gen: COURSE_GENERATION,
     });
     expect(readBest("alpine")).toBe(1200);
   });
@@ -90,6 +92,7 @@ describe("recording a best", () => {
       score: 1800,
       at: t(5),
       distance: 500,
+      gen: COURSE_GENERATION,
     });
   });
 
@@ -106,6 +109,7 @@ describe("recording a best", () => {
       score: 1800,
       at: t(0),
       distance: 500,
+      gen: COURSE_GENERATION,
     });
   });
 
@@ -172,8 +176,8 @@ describe("scores with no time on them", () => {
     storage.setItem(
       "downhill.scores.v1",
       JSON.stringify([
-        { seed: "timed", score: 100, at: t(0) },
-        { seed: "undated", score: 9999, at: 0 },
+        { seed: "timed", score: 100, at: t(0), gen: COURSE_GENERATION },
+        { seed: "undated", score: 9999, at: 0, gen: COURSE_GENERATION },
       ]),
     );
 
@@ -186,7 +190,7 @@ describe("scores with no time on them", () => {
     // the row shows a dash for how far. Only a missing *time* disqualifies a row.
     storage.setItem(
       "downhill.scores.v1",
-      JSON.stringify([{ seed: "before-distances", score: 4321, at: t(0) }]),
+      JSON.stringify([{ seed: "before-distances", score: 4321, at: t(0), gen: COURSE_GENERATION }]),
     );
 
     expect(readBest("before-distances")).toBe(4321);
@@ -212,12 +216,12 @@ describe("storage that cannot be trusted", () => {
     storage.setItem(
       "downhill.scores.v1",
       JSON.stringify([
-        { seed: "good", score: 10, at: t(0) },
-        { seed: "", score: 10, at: t(0) },
-        { seed: "no-score", at: t(0) },
-        { score: 10, at: t(0) },
+        { seed: "good", score: 10, at: t(0), gen: COURSE_GENERATION },
+        { seed: "", score: 10, at: t(0), gen: COURSE_GENERATION },
+        { seed: "no-score", at: t(0), gen: COURSE_GENERATION },
+        { score: 10, at: t(0), gen: COURSE_GENERATION },
         null,
-        { seed: "bad-time", score: 10, at: "yesterday" },
+        { seed: "bad-time", score: 10, at: "yesterday", gen: COURSE_GENERATION },
       ]),
     );
     expect(readScores().map((r) => r.seed)).toEqual(["good"]);
@@ -272,5 +276,53 @@ describe("how far", () => {
   it("shows a dash when the run's distance was never recorded", () => {
     // Not "0m": that reads as a run that went nowhere, which is a different claim entirely.
     expect(formatDistance(undefined)).toBe("—");
+  });
+});
+
+describe("scores set on an earlier version of the course", () => {
+  const raw = () => JSON.parse(storage.getItem("downhill.scores.v1") ?? "[]") as unknown[];
+
+  it("drops them, because they are not comparable with anything set now", () => {
+    // The mountain now keeps getting harder out to 5km. A score set before that is a score
+    // from a different game, and leaving the two side by side makes the list meaningless.
+    storage.setItem(
+      "downhill.scores.v1",
+      JSON.stringify([
+        { seed: "old-mountain", score: 9000, at: t(0) }, // no stamp: generation 1
+        { seed: "old-explicit", score: 8000, at: t(1), gen: 1 },
+        { seed: "current", score: 100, at: t(2), gen: COURSE_GENERATION },
+      ]),
+    );
+
+    expect(readScores().map((r) => r.seed)).toEqual(["current"]);
+    expect(readBest("old-mountain")).toBe(0);
+  });
+
+  it("deletes them from storage rather than just hiding them", () => {
+    storage.setItem(
+      "downhill.scores.v1",
+      JSON.stringify([{ seed: "old-mountain", score: 9000, at: t(0) }]),
+    );
+
+    readScores();
+    expect(raw(), "the row is gone from the device, not merely filtered on the way out").toEqual(
+      [],
+    );
+  });
+
+  it("lets the seed be scored on again from scratch", () => {
+    storage.setItem(
+      "downhill.scores.v1",
+      JSON.stringify([{ seed: "alpine", score: 9000, at: t(0) }]),
+    );
+
+    // The old 9000 must not stand in the way of a new best on the harder course
+    expect(recordBest("alpine", 500, 400, t(5))).toBe(true);
+    expect(readBest("alpine")).toBe(500);
+  });
+
+  it("stamps everything it writes, so this can be done again", () => {
+    recordBest("alpine", 1200, 900, t(0));
+    expect((raw()[0] as { gen: number }).gen).toBe(COURSE_GENERATION);
   });
 });
