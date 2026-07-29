@@ -66,11 +66,10 @@ const SHADOW_SEGMENTS = 32;
  * any real jump. Full spread and near-full fade now land at 4m, so an ordinary jump uses most
  * of the range, and the cap keeps a wipeout that flings the rider high from painting a
  * dinner plate on the snow.
- */
-/**
- * Strength on the ground. Light on purpose: the sun in this scene is high and the snow bounces
- * a great deal of light back, so a strong shadow reads as a decal stuck under the rider rather
- * than as shading. It only has to say "the board is on the snow, and here".
+ *
+ * Strength on the ground is light on purpose for a separate reason: the sun here is high and
+ * snow bounces a great deal of light back, so a strong shadow reads as a decal stuck under the
+ * rider. It only has to say "the board is on the snow, and here".
  */
 const SHADOW_ALPHA = 0.2;
 const SHADOW_MIN_ALPHA = 0.04;
@@ -135,6 +134,26 @@ function makeShadowMesh(scene: Scene): Mesh {
   return mesh;
 }
 
+/** Where the rider is jointed, in metres above the board's own origin. */
+const FOOT_Y = 0.09;
+const HIP_Y = 0.59;
+const LEG_LENGTH = HIP_Y - FOOT_Y;
+
+/**
+ * How far the upper body leans into a turn, in radians at full lock.
+ *
+ * On top of the whole-body lean, not instead of it. A snowboarder angulates: the board is on
+ * edge, and the shoulders and head stay closer to upright over it rather than tipping with it.
+ * Separating the two is what makes a hard carve read as effort rather than as the whole figure
+ * being rotated, which is what it looked like when one node carried everything.
+ */
+const UPPER_LEAN = 0.3;
+/** A little counter-yaw as well, so the shoulders open toward the inside of the turn. */
+const UPPER_TWIST = 0.16;
+
+/** How much of leg length the knees can give up when the rider crouches. */
+const KNEE_TRAVEL = 0.42;
+
 function makeMaterial(scene: Scene, name: string, colour: Color3, emissive = 0.22): StandardMaterial {
   const mat = new StandardMaterial(name, scene);
   mat.diffuseColor = colour;
@@ -150,6 +169,10 @@ export class Rider {
   readonly root: TransformNode;
   /** Child that carries lean and terrain pitch, so the root stays a clean transform. */
   private readonly body: TransformNode;
+  /** Pivots at the feet: shortening this bends the knees. */
+  private readonly legs: TransformNode;
+  /** Everything above the waist, riding on top of the legs. */
+  private readonly hips: TransformNode;
   private readonly shadow: Mesh;
   private readonly materials: StandardMaterial[] = [];
   private readonly parts: Mesh[] = [];
@@ -158,6 +181,7 @@ export class Rider {
   private pitch = 0;
   private roll = 0;
   private crouch = 0;
+  private upperLean = 0;
 
   constructor(scene: Scene) {
     this.root = new TransformNode("rider", scene);
@@ -251,12 +275,40 @@ export class Rider {
       gloveL, gloveR, head, beanie, bobble, goggles,
     );
 
+    // The rider is jointed in two places, which is all a boxy cartoon needs.
+    //
+    //  - `legs` pivots at the feet, so shortening it bends the knees without lifting the
+    //    board off the snow. The board is not a child of it, for the same reason.
+    //  - `hips` carries everything above the waist and rides on top of the legs, so it drops
+    //    as they compress and can lean independently of the board.
+    const legs = new TransformNode("riderLegs", scene);
+    legs.parent = this.body;
+    legs.position.y = FOOT_Y;
+
+    const hips = new TransformNode("riderHips", scene);
+    hips.parent = this.body;
+    hips.position.y = HIP_Y;
+
+    const lower = new Set<Mesh>([legBack, legFront]);
+    const upper = new Set<Mesh>([torso, armL, armR, gloveL, gloveR, head, beanie, bobble, goggles]);
+
     for (const part of this.parts) {
       // Faceted shading is the whole cartoon look; smooth normals would read as plastic
       part.convertToFlatShadedMesh();
-      part.parent = this.body;
+      if (lower.has(part)) {
+        part.parent = legs;
+        part.position.y -= FOOT_Y;
+      } else if (upper.has(part)) {
+        part.parent = hips;
+        part.position.y -= HIP_Y;
+      } else {
+        part.parent = this.body; // board and stripe stay flat on the snow
+      }
       part.isPickable = false;
     }
+
+    this.legs = legs;
+    this.hips = hips;
 
     // --- Blob shadow.
     // A real-time shadow map for one small character costs an extra render pass every frame
@@ -333,8 +385,20 @@ export class Rider {
     // rider flat against the snow on a banked turn.
     const totalRoll = clamp(this.roll - this.lean, -0.7, 0.7);
     this.body.rotation.set(this.pitch, 0, totalRoll);
-    this.body.position.y = -this.crouch;
-    this.body.scaling.y = 1 - this.crouch * 0.5;
+
+    // Knee bend. The legs shorten from the feet up, so the board stays welded to the snow and
+    // the hips drop by exactly what the legs lose — which is what makes it read as absorbing
+    // rather than as the whole rider being scaled down.
+    const bend = clamp01(this.crouch);
+    const legScale = 1 - bend * KNEE_TRAVEL;
+    this.legs.scaling.y = legScale;
+    this.hips.position.y = FOOT_Y + LEG_LENGTH * legScale;
+
+    // Upper body angulates into the turn on top of the whole-body lean, and opens its
+    // shoulders the same way. Negative for the same reason as `lean` above: rotation about +Z
+    // carries the head toward -x, so a right-hand carve needs a negative angle.
+    this.upperLean = expDamp(this.upperLean, rider.airborne ? 0 : rider.steer, 0.0007, dt);
+    this.hips.rotation.set(0, this.upperLean * UPPER_TWIST, -this.upperLean * UPPER_LEAN);
 
     this.placeShadow(rider.renderX, rider.renderY, rider.renderZ, groundY, rider.gradX, rider.gradZ, fx, fz);
   }
