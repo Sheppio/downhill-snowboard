@@ -27,9 +27,28 @@ class FakeElement {
     /* the tests build a fresh element each time */
   }
 
+  /** Every touch is treated as having started on the canvas unless a test says otherwise. */
+  contains(node: unknown): boolean {
+    return node === this || node === undefined || node === null;
+  }
+
+  /** A pointer event, for the mouse path. */
   emit(type: string, pointerId: number, clientX: number, buttons = 1): void {
     for (const fn of this.listeners.get(type) ?? []) {
-      fn({ pointerId, clientX, buttons, preventDefault() {} });
+      fn({ pointerId, clientX, buttons, pointerType: "mouse", preventDefault() {} });
+    }
+  }
+
+  /**
+   * A touch event.
+   *
+   * `xs` is every finger on the glass *after* whatever just happened, which is exactly what
+   * TouchEvent.touches means — an ended touch is simply absent from the list.
+   */
+  touch(type: string, xs: number[]): void {
+    const touches = xs.map((clientX) => ({ clientX, target: this }));
+    for (const fn of this.listeners.get(type) ?? []) {
+      fn({ touches, preventDefault() {} });
     }
   }
 }
@@ -51,13 +70,6 @@ beforeEach(() => {
   };
 });
 
-/** Fire an event on `window` rather than the canvas — a release that lands somewhere else. */
-const emitWindow = (type: string, pointerId: number, clientX: number, buttons = 0) => {
-  for (const fn of keyListeners.get(type) ?? []) {
-    fn({ pointerId, clientX, buttons, preventDefault() {} });
-  }
-};
-
 let el: FakeElement;
 let steer: SteerInput;
 
@@ -71,142 +83,148 @@ beforeEach(() => {
 
 describe("steering follows how far right the finger is", () => {
   it("reads centre as straight and the edges as full lock", () => {
-    el.emit("pointerdown", 1, at(0.5));
+    el.touch("touchstart", [at(0.5)]);
     expect(steer.value).toBe(0);
 
-    el.emit("pointermove", 1, at(1));
+    el.touch("touchmove", [at(1)]);
     expect(steer.value).toBeCloseTo(1, 5);
 
-    el.emit("pointermove", 1, at(0));
+    el.touch("touchmove", [at(0)]);
     expect(steer.value).toBeCloseTo(-1, 5);
   });
 
   it("turns more gently the closer to centre the finger is", () => {
-    el.emit("pointerdown", 1, at(0.65));
+    el.touch("touchstart", [at(0.65)]);
     const gentle = steer.value;
-    el.emit("pointermove", 1, at(0.9));
+    el.touch("touchmove", [at(0.9)]);
     const hard = steer.value;
 
     expect(gentle).toBeGreaterThan(0);
     expect(hard).toBeGreaterThan(gentle);
   });
+
+  it("still works from a mouse, which sends no touch events at all", () => {
+    el.emit("pointerdown", 1, at(0.9));
+    expect(steer.value).toBeGreaterThan(0.5);
+    el.emit("pointerup", 1, at(0.9));
+    expect(steer.value).toBe(0);
+  });
+
+  it("ignores a mouse moving with no button held", () => {
+    el.emit("pointermove", 7, at(1), 0); // buttons: 0 — nothing pressed
+    expect(steer.value).toBe(0);
+    expect(steer.isEngaged).toBe(false);
+  });
 });
 
 describe("two-finger steering", () => {
-  // The reported problem: players use one thumb per direction and put the next one down
-  // before lifting the last. Tracking a single pointer meant that second thumb did nothing
-  // until the first was released, so a deliberate input was silently dropped.
+  // Players use one thumb per direction and put the next down before lifting the last.
   it("recognises a second finger placed before the first is lifted", () => {
-    el.emit("pointerdown", 1, at(0.75)); // right thumb, gentle right
+    el.touch("touchstart", [at(0.75)]);
     const oneFinger = steer.value;
     expect(oneFinger).toBeGreaterThan(0);
 
-    el.emit("pointerdown", 2, at(0.1)); // left thumb goes down, first still held
+    el.touch("touchstart", [at(0.75), at(0.1)]);
     expect(steer.touchCount).toBe(2);
     expect(steer.value, "the second finger must move the steer").not.toBeCloseTo(oneFinger, 5);
   });
 
   it("averages the offsets rather than obeying whichever came first", () => {
-    el.emit("pointerdown", 1, at(1)); // hard right
-    el.emit("pointerdown", 2, at(0)); // hard left
+    el.touch("touchstart", [at(1), at(0)]);
     // Offsets of +1 and -1 average to 0 — dead centre
     expect(steer.value).toBe(0);
   });
 
   it("hands control to the remaining finger when one lifts", () => {
-    el.emit("pointerdown", 1, at(1));
-    el.emit("pointerdown", 2, at(0));
+    el.touch("touchstart", [at(1), at(0)]);
     expect(steer.value).toBe(0);
 
-    el.emit("pointerup", 1, at(1)); // right thumb released, left still down
+    // touchend carries what is *still* down, so the lifted finger is simply absent
+    el.touch("touchend", [at(0)]);
     expect(steer.touchCount).toBe(1);
     expect(steer.value).toBeCloseTo(-1, 5);
   });
 
   it("passes through neutral during a handover instead of snapping across", () => {
-    // Hard right, then the left thumb lands before the right lifts. The demand should cross
-    // zero on the way rather than jumping from +1 to -1 in one step.
-    el.emit("pointerdown", 1, at(1));
+    el.touch("touchstart", [at(1)]);
     expect(steer.value).toBeCloseTo(1, 5);
 
-    el.emit("pointerdown", 2, at(0));
-    const during = steer.value;
-    expect(Math.abs(during)).toBeLessThan(0.5);
+    el.touch("touchstart", [at(1), at(0)]);
+    expect(Math.abs(steer.value)).toBeLessThan(0.5);
 
-    el.emit("pointerup", 1, at(1));
+    el.touch("touchend", [at(0)]);
     expect(steer.value).toBeCloseTo(-1, 5);
   });
 
   it("straightens up only when the last finger goes", () => {
-    el.emit("pointerdown", 1, at(0.9));
-    el.emit("pointerdown", 2, at(0.8));
+    el.touch("touchstart", [at(0.9), at(0.8)]);
     expect(steer.isEngaged).toBe(true);
 
-    el.emit("pointerup", 1, at(0.9));
+    el.touch("touchend", [at(0.8)]);
     expect(steer.value).toBeGreaterThan(0);
 
-    el.emit("pointerup", 2, at(0.8));
+    el.touch("touchend", []);
     expect(steer.value).toBe(0);
     expect(steer.isEngaged).toBe(false);
   });
 
-  it("ignores a lift for a pointer it never saw", () => {
-    el.emit("pointerdown", 1, at(0.9));
-    const before = steer.value;
-    el.emit("pointerup", 99, at(0));
-    expect(steer.value).toBe(before);
-    expect(steer.touchCount).toBe(1);
+  it("keeps steering a held thumb through a cancel while the other taps", () => {
+    // The reported gesture: a thumb held on one side while the other taps quickly. The browser
+    // cancels contacts for reasons the page never learns about, and a held thumb produces no
+    // events of its own to be recovered from — so when this was a remembered map of pointers,
+    // a cancel killed that thumb until it was lifted and put back down.
+    //
+    // Reading `touches` on every event makes the tapping thumb's own events carry the held one
+    // back, which is why the recovery happens without the held thumb doing anything.
+    el.touch("touchstart", [at(0.1)]); // left thumb, held still from here on
+    expect(steer.value).toBeLessThan(-0.5);
+
+    for (let tap = 0; tap < 3; tap++) {
+      el.touch("touchstart", [at(0.1), at(0.9)]);
+      el.touch("touchend", [at(0.1)]);
+    }
+    // The browser gives up on the held thumb. It is still on the glass, so it is still listed.
+    el.touch("touchcancel", [at(0.1)]);
+
+    el.touch("touchstart", [at(0.1), at(0.9)]);
+    el.touch("touchend", [at(0.1)]);
+
+    expect(steer.value, "the held thumb must still be steering").toBeLessThan(-0.5);
   });
 
-  it("does not strand a finger that was down when the run restarted", () => {
-    // reset() runs on every startRun, pause and resume, and it clears the map while the
-    // fingers it describes are still physically on the glass. A finger that survives a reset
-    // used to be ignored for good — its moves skipped and its release skipped — so the next
-    // touch appeared to misbehave until that hand was lifted and put back down.
-    el.emit("pointerdown", 1, at(0.9));
+  it("recovers a finger that was down when the run restarted", () => {
+    // reset() runs on every startRun, pause and resume. It no longer tries to know what is on
+    // the glass — the next touch event says so.
+    el.touch("touchstart", [at(0.9)]);
     steer.reset();
     expect(steer.value).toBe(0);
 
-    el.emit("pointermove", 1, at(0.9)); // same finger, still down, now moving
+    el.touch("touchmove", [at(0.9)]);
     expect(steer.value, "a finger still on the glass must steer again").toBeGreaterThan(0);
   });
 
-  it("does not leave a phantom finger when a release lands off the canvas", () => {
-    // Pointer capture normally guarantees the release comes back to the canvas, but it can
-    // fail — setPointerCapture throws if the browser has already dropped the pointer, and the
-    // HUD sits over the canvas. A missed release leaves a touch in the average for ever, so
-    // lifting the *other* finger hands control to a ghost rather than to the finger still down.
-    el.emit("pointerdown", 1, at(1)); // hard right
-    el.emit("pointerdown", 2, at(0)); // hard left
-    expect(steer.value).toBe(0);
-
-    emitWindow("pointerup", 1, at(1)); // right thumb lifts, but not over the canvas
-    expect(steer.touchCount, "the lifted finger must be forgotten").toBe(1);
-    expect(steer.value).toBeCloseTo(-1, 5);
-  });
-
-  it("forgets a cancelled touch wherever the cancel arrives", () => {
-    // The browser cancels touches for reasons the game never sees — a system gesture, a call
-    // arriving. A cancel that is not heard is indistinguishable from a finger held down.
-    el.emit("pointerdown", 1, at(1));
-    el.emit("pointerdown", 2, at(0.9));
-    emitWindow("pointercancel", 1, at(1));
+  it("does not steer from a finger that came down on a HUD button", () => {
+    // Touches carry every contact on the surface, including one pressing pause. `target` is
+    // where the touch started, so this stays out of the average without losing a finger that
+    // merely slid over the HUD.
+    const button = { name: "pause" };
+    for (const fn of (el as unknown as { listeners: Map<string, ((e: unknown) => void)[]> })
+      .listeners.get("touchstart") ?? []) {
+      fn({
+        touches: [
+          { clientX: at(0.9), target: el },
+          { clientX: at(0.02), target: button },
+        ],
+        preventDefault() {},
+      });
+    }
+    // Only the canvas touch counts, so this is a hard right rather than an average of the two
     expect(steer.touchCount).toBe(1);
-    expect(steer.value).toBeGreaterThan(0.7);
-  });
-
-  it("still ignores a mouse moving with no button held", () => {
-    // The recovery above adopts unknown pointers, so this is the guard that stops it adopting
-    // a hovering mouse: a pointer with no button pressed is not a steer.
-    el.emit("pointermove", 7, at(1), 0); // buttons: 0 — nothing pressed
-    expect(steer.value).toBe(0);
-    expect(steer.touchCount).toBe(0);
-    expect(steer.isEngaged).toBe(false);
+    expect(steer.value).toBeGreaterThan(0.5);
   });
 
   it("forgets every touch on reset", () => {
-    el.emit("pointerdown", 1, at(1));
-    el.emit("pointerdown", 2, at(0.9));
+    el.touch("touchstart", [at(1), at(0.9)]);
     steer.reset();
     expect(steer.value).toBe(0);
     expect(steer.touchCount).toBe(0);

@@ -102,37 +102,46 @@ console.log(`  turn from slight-right: ${gentle.toFixed(3)} rad, far-right: ${ha
 if (!(hard > gentle && gentle > 0)) fail("steering is not proportional to finger position");
 else console.log("✓ steering scales with how far right the finger is");
 
-// --- Two fingers: the second must register before the first is lifted ----------------------
-// Players use one thumb per direction and put the next down before releasing the last. This
-// dispatches real PointerEvents rather than using page.mouse, which is single-pointer only,
-// and is the part the unit tests cannot cover — they drive a stand-in for the canvas, so they
-// would still pass if the listeners were wired to the wrong element or the wrong event.
-await restart();
-const handover = await page.evaluate(() => {
+// --- Multi-touch, driven by real TouchEvents ----------------------------------------------
+// The unit tests drive a stand-in for the canvas, so they would still pass if the listeners
+// were bound to the wrong element or the wrong event name. These dispatch genuine TouchEvents
+// at a phone viewport, which is the only place that is actually checked.
+//
+// `touches` is the whole contact list on every event, so each helper states what is on the
+// glass *after* whatever just happened — an ended touch is simply absent, exactly as the
+// browser reports it.
+const touchScript = `
   const canvas = document.querySelector("#game");
   const r = canvas.getBoundingClientRect();
-  const send = (type, pointerId, fraction) =>
-    canvas.dispatchEvent(
-      new PointerEvent(type, {
-        pointerId,
-        clientX: r.left + r.width * fraction,
-        clientY: r.top + r.height * 0.7,
-        bubbles: true,
-        cancelable: true,
-        pointerType: "touch",
-      }),
-    );
+  const mk = (f, id) => new Touch({
+    identifier: id,
+    target: canvas,
+    clientX: r.left + r.width * f,
+    clientY: r.top + r.height * 0.7,
+  });
+  // \`changed\` is only the contact this event is about, as a real browser reports it. Passing
+  // the whole list there instead would let an implementation that reads changedTouches pass
+  // these checks, which is precisely the mistake they exist to catch.
+  const send = (type, fractions, changed) => {
+    const touches = fractions.map((f, i) => mk(f, 500 + i));
+    const changedTouches = (changed ?? fractions).map((f, i) => mk(f, 900 + i));
+    canvas.dispatchEvent(new TouchEvent(type, {
+      touches, targetTouches: touches, changedTouches,
+      bubbles: true, cancelable: true,
+    }));
+  };
   const steer = () => window.__game.input.value;
+`;
 
-  send("pointerdown", 101, 0.97); // right thumb, hard right
-  const right = steer();
-  send("pointerdown", 102, 0.03); // left thumb down, right still held
-  const both = steer();
-  send("pointerup", 101, 0.97); // right thumb lifts, left still down
-  const left = steer();
-  send("pointerup", 102, 0.03);
-  return { right, both, left, after: steer() };
-});
+await restart();
+const handover = await page.evaluate(`(() => {
+  ${touchScript}
+  const right = (send("touchstart", [0.97], [0.97]), steer());     // right thumb, hard right
+  const both = (send("touchstart", [0.97, 0.03], [0.03]), steer()); // left thumb down, right held
+  const left = (send("touchend", [0.03], [0.97]), steer());        // right lifts, left still down
+  const after = (send("touchend", [], [0.03]), steer());
+  return { right, both, left, after };
+})()`);
 if (!(handover.right > 0.8)) fail(`one finger far right gave ${handover.right.toFixed(2)}`);
 else if (Math.abs(handover.both) > 0.2)
   fail(`second finger ignored: steer stayed at ${handover.both.toFixed(2)} with both down`);
@@ -145,40 +154,58 @@ else
       `${handover.left.toFixed(2)} → ${handover.after}`,
   );
 
-// --- A finger still on the glass after a reset must not be stranded ------------------------
-// input.reset() runs on startRun, pause and resume, and clears the map of live touches while
-// those touches are still physically down. A finger that survived a reset used to be ignored
-// for good — its moves skipped and its release skipped — which is felt as the *other* finger
-// behaving strangely, intermittently, with no obvious trigger.
+// --- The reported gesture: a held thumb while the other taps quickly -----------------------
+// A thumb held still produces no events of its own, so anything that drops it from the game's
+// idea of what is down used to be permanent — and the browser cancels contacts for reasons the
+// page never learns about. Reading the whole contact list on every event is what lets the
+// tapping thumb's own events carry the held one back.
 await restart();
-const stranded = await page.evaluate(() => {
-  const canvas = document.querySelector("#game");
-  const r = canvas.getBoundingClientRect();
-  const send = (type, pointerId, fraction, buttons = 1) =>
-    canvas.dispatchEvent(
-      new PointerEvent(type, {
-        pointerId,
-        buttons,
-        clientX: r.left + r.width * fraction,
-        clientY: r.top + r.height * 0.7,
-        bubbles: true,
-        cancelable: true,
-        pointerType: "touch",
-      }),
-    );
-  const g = window.__game;
-  const steer = () => g.input.value;
+const tapping = await page.evaluate(`(() => {
+  ${touchScript}
+  send("touchstart", [0.03], [0.03]);      // left thumb, then held still throughout
+  const held = steer();
+  for (let i = 0; i < 4; i++) {
+    send("touchstart", [0.03, 0.97], [0.97]); // right thumb taps
+    send("touchend", [0.03], [0.97]);
+  }
+  send("touchcancel", [0.03], [0.97]);     // browser gives up on a contact mid-sequence
+  const afterCancel = steer();
+  send("touchstart", [0.03, 0.97], [0.97]); // next tap must re-state the held thumb
+  send("touchend", [0.03], [0.97]);
+  const recovered = steer();
+  send("touchend", [], [0.03]);
+  return { held, afterCancel, recovered, after: steer() };
+})()`);
+if (!(tapping.held < -0.8)) fail(`held thumb gave ${tapping.held.toFixed(2)}`);
+else if (!(tapping.recovered < -0.8))
+  fail(
+    `held thumb lost after tapping: steer was ${tapping.recovered.toFixed(2)} ` +
+      `(${tapping.afterCancel.toFixed(2)} right after the cancel)`,
+  );
+else if (tapping.after !== 0) fail(`steer did not straighten up: ${tapping.after}`);
+else
+  console.log(
+    `✓ held thumb survives quick taps and a cancel (${tapping.held.toFixed(2)} → ` +
+      `${tapping.recovered.toFixed(2)})`,
+  );
 
-  send("pointerdown", 201, 0.97);
+// --- A finger still on the glass after a reset must not be stranded ------------------------
+// input.reset() runs on startRun, pause and resume. It no longer tries to remember what is
+// down; the next touch event says so.
+await restart();
+const stranded = await page.evaluate(`(() => {
+  ${touchScript}
+  const g = window.__game;
+  send("touchstart", [0.97], [0.97]);
   const held = steer();
   g.pause();
   const paused = steer(); // reset() has dropped the steer, which is intended
   g.resume();
-  send("pointermove", 201, 0.97); // same finger, never lifted
+  send("touchmove", [0.97], [0.97]); // same finger, never lifted
   const afterResume = steer();
-  send("pointerup", 201, 0.97);
+  send("touchend", [], [0.97]);
   return { held, paused, afterResume, after: steer() };
-});
+})()`);
 if (!(stranded.held > 0.8)) fail(`finger down gave ${stranded.held.toFixed(2)}`);
 else if (stranded.paused !== 0) fail(`pause did not drop the steer: ${stranded.paused}`);
 else if (!(stranded.afterResume > 0.8))
@@ -211,33 +238,20 @@ const knees = await page.evaluate(async () => {
 });
 
 await restart();
-const joints = await page.evaluate(async () => {
+const joints = await page.evaluate(`(async () => {
+  ${touchScript}
   const g = window.__game;
   const hips = g.scene.transformNodes.find((n) => n.name === "riderHips");
   if (!hips) return { found: false };
 
   // Upper body: hold a hard right and read the extra lean over the whole-body roll
-  const canvas = document.querySelector("#game");
-  const r = canvas.getBoundingClientRect();
-  const send = (type, fraction) =>
-    canvas.dispatchEvent(
-      new PointerEvent(type, {
-        pointerId: 301,
-        buttons: 1,
-        clientX: r.left + r.width * fraction,
-        clientY: r.top + r.height * 0.7,
-        bubbles: true,
-        cancelable: true,
-        pointerType: "touch",
-      }),
-    );
-  send("pointerdown", 0.97);
+  send("touchstart", [0.97], [0.97]);
   await new Promise((res) => setTimeout(res, 800));
   const right = { steer: g.controller.steer, roll: hips.rotation.z, yaw: hips.rotation.y };
-  send("pointerup", 0.97);
+  send("touchend", [], [0.97]);
 
   return { found: true, right };
-});
+})()`);
 if (!knees.found || !joints.found) fail("rider has no leg or hip joint");
 else if (knees.maxLeg - knees.minLeg < 0.05)
   fail(

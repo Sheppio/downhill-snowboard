@@ -14,6 +14,21 @@
  *
  * Averaging also makes the handover continuous rather than a jump: as the new thumb comes
  * down on the far side, the demand passes through neutral instead of snapping across.
+ *
+ * **Fingers are read from `TouchEvent.touches`, never remembered.** That is the important
+ * design decision here, and it was arrived at the hard way. Keeping our own map of live
+ * pointers meant the map could drift from what was actually on the glass, and it could only
+ * ever be corrected by an event belonging to a *specific* pointer — so a thumb held still,
+ * which produces no events at all, could be dropped and never recovered. The browser cancels
+ * pointers for reasons the page never learns about, and a quick tap alongside a held thumb was
+ * enough to trigger it.
+ *
+ * `touches` carries every contact on the surface on every touch event, so each one re-states
+ * the whole truth. The tapping thumb's own events are what bring the held thumb back. Nothing
+ * is held between events, so there is nothing left to fall out of step.
+ *
+ * Pointer Events cannot do this — a PointerEvent describes one pointer and says nothing about
+ * the others — so they are kept only for the mouse, where the problem does not arise.
  */
 
 import { clamp } from "../core/math";
@@ -30,11 +45,19 @@ const DEAD_ZONE = 0.07;
 export class SteerInput {
   /** Raw target in [-1, 1]. Negative is left. Smoothing happens in the rider controller. */
   private target = 0;
-  /** Every touch currently down, by pointer id, holding its latest client x. */
+  /**
+   * Mouse and pen only. Touches are never stored — see the note at the top of the file.
+   * A mouse cannot be one of several contacts, so there is nothing here that can drift.
+   */
   private readonly pointers = new Map<number, number>();
+  /** Fingers counted at the last touch event, for `isEngaged` and the tests. */
+  private touches = 0;
   private keyLeft = false;
   private keyRight = false;
   private detachers: (() => void)[] = [];
+  /** True where the browser sends Touch Events, which is every phone this ships to. */
+  private readonly useTouch =
+    typeof window !== "undefined" && "ontouchstart" in (window as unknown as object);
 
   constructor(private readonly element: HTMLElement) {
     this.attach();
@@ -48,31 +71,39 @@ export class SteerInput {
 
   /** True while the player is actively touching the screen (used for the tutorial hint). */
   get isEngaged(): boolean {
-    return this.pointers.size > 0 || this.keyLeft || this.keyRight;
+    return this.touches > 0 || this.pointers.size > 0 || this.keyLeft || this.keyRight;
   }
 
-  /** Number of touches currently being averaged. Exposed for tests and the browser check. */
+  /** Number of contacts currently being averaged. Exposed for tests and the browser check. */
   get touchCount(): number {
-    return this.pointers.size;
+    return this.touches + this.pointers.size;
   }
 
+  /**
+   * Drop the steer. Called on every startRun, pause and resume.
+   *
+   * It does not need to know what is on the glass, and deliberately does not try: the next
+   * touch event carries the full contact list and puts the truth back. That is what stops a
+   * finger held across a pause from being stranded, which used to need its own special case.
+   */
   reset(): void {
     this.target = 0;
     this.pointers.clear();
+    this.touches = 0;
     this.keyLeft = false;
     this.keyRight = false;
   }
 
   /**
-   * Recompute the steer demand from every touch that is currently down.
+   * Set the steer demand from the x position of every contact on the glass.
    *
-   * The dead zone is applied once, to the average, rather than per touch. Applying it per
-   * touch and then averaging would let two fingers either side of centre average to zero
+   * The dead zone is applied once, to the average, rather than per contact. Applying it per
+   * contact and then averaging would let two fingers either side of centre average to zero
    * *after* both had already been rescaled to full lock, which reads as a much coarser
    * control than it looks.
    */
-  private recompute(): void {
-    if (this.pointers.size === 0) {
+  private setFromXs(xs: number[]): void {
+    if (xs.length === 0) {
       // Straighten up on release. The controller damps this, so it isn't a snap.
       this.target = 0;
       return;
@@ -82,11 +113,11 @@ export class SteerInput {
     if (rect.width <= 0) return;
 
     let sum = 0;
-    for (const clientX of this.pointers.values()) {
+    for (const clientX of xs) {
       // -1 at the left edge, +1 at the right edge, 0 at centre
       sum += ((clientX - rect.left) / rect.width) * 2 - 1;
     }
-    const raw = sum / this.pointers.size;
+    const raw = sum / xs.length;
 
     // Rescale outside the dead zone so full lock is still reachable at the screen edge
     const sign = Math.sign(raw);
@@ -112,35 +143,57 @@ export class SteerInput {
       }
     };
 
+    /**
+     * Every touch event, of every kind, does the same thing: read the whole contact list.
+     *
+     * touchend and touchcancel are no different from touchstart here — `touches` already
+     * excludes whatever just ended, so there is nothing to remove and no bookkeeping to get
+     * wrong. A cancel is not a special case either, which is the entire point: the browser
+     * cancelling a contact used to be indistinguishable from a finger lifting.
+     */
+    const onTouch = (e: TouchEvent) => {
+      const xs: number[] = [];
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i];
+        if (!t) continue;
+        // A finger that came down on a HUD button is pressing the button, not steering.
+        // `target` is where the touch *started*, so sliding off the canvas keeps steering.
+        const target = t.target as Node | null;
+        if (target && el.contains && !el.contains(target)) continue;
+        xs.push(t.clientX);
+      }
+      this.touches = xs.length;
+      this.setFromXs(xs);
+      e.preventDefault();
+    };
+
+    const pointerXs = () => [...this.pointers.values()];
+
+    /** Mouse and pen. Ignored entirely where Touch Events are handling the fingers. */
+    const mouseIgnored = (e: PointerEvent) => this.useTouch && e.pointerType === "touch";
+
     const onDown = (e: PointerEvent) => {
+      if (mouseIgnored(e)) return;
       this.pointers.set(e.pointerId, e.clientX);
-      this.recompute();
+      this.setFromXs(pointerXs());
       capture(e.pointerId, true);
       e.preventDefault();
     };
 
     const onMove = (e: PointerEvent) => {
-      // Adopt a pressed pointer we are not already tracking, rather than ignoring it.
-      //
-      // The map is meant to mirror what is physically on the glass, and it can fall out of
-      // step with that: reset() runs on every startRun, pause and resume and clears it while
-      // fingers are still down, and a pointerdown can be missed if it lands on the HUD. A
-      // finger in that state used to be dead until it was lifted and pressed again, which is
-      // felt as the *other* finger misbehaving.
-      //
-      // `buttons` is what keeps this honest — it is non-zero only while something is actually
-      // pressed, so a mouse moving across the canvas still does not steer.
+      if (mouseIgnored(e)) return;
+      // `buttons` is non-zero only while something is actually pressed, so a mouse moving
+      // across the canvas with no button held does not steer.
       if (!this.pointers.has(e.pointerId) && e.buttons === 0) return;
       this.pointers.set(e.pointerId, e.clientX);
-      this.recompute();
+      this.setFromXs(pointerXs());
       e.preventDefault();
     };
 
     const onUp = (e: PointerEvent) => {
+      if (mouseIgnored(e)) return;
       if (!this.pointers.delete(e.pointerId)) return;
-      // Falls back to whatever fingers remain, so lifting one of two hands the control to the
-      // other rather than straightening up
-      this.recompute();
+      this.setFromXs(pointerXs());
       capture(e.pointerId, false);
       e.preventDefault();
     };
@@ -168,16 +221,18 @@ export class SteerInput {
 
     // Non-passive so preventDefault actually suppresses scroll / pull-to-refresh
     const opts: AddEventListenerOptions = { passive: false };
+
+    const touchEvents = ["touchstart", "touchmove", "touchend", "touchcancel"] as const;
+    for (const type of touchEvents) {
+      el.addEventListener(type, onTouch as EventListener, opts);
+      this.detachers.push(() => el.removeEventListener(type, onTouch as EventListener, opts));
+    }
+
     el.addEventListener("pointerdown", onDown, opts);
     el.addEventListener("pointermove", onMove, opts);
     el.addEventListener("pointerup", onUp, opts);
     el.addEventListener("pointercancel", onUp, opts);
-    // Releases are also watched on the window, because a release the game never hears is the
-    // worst failure this input can have: the touch stays in the average for ever, and lifting
-    // the *other* finger then hands control to a finger that is no longer on the screen.
-    // Pointer capture is supposed to guarantee the release comes back here, but it can fail —
-    // setPointerCapture throws once the browser has dropped the pointer, and the HUD overlays
-    // the canvas. onUp ignores ids it does not know, so hearing an event twice is harmless.
+    // A mouse released outside the window would otherwise leave the button stuck down.
     window.addEventListener("pointerup", onUp, opts);
     window.addEventListener("pointercancel", onUp, opts);
     window.addEventListener("keydown", keyDown);
