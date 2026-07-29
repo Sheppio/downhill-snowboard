@@ -213,6 +213,49 @@ else if (!(stranded.afterResume > 0.8))
 else if (stranded.after !== 0) fail(`release after a reset was ignored: ${stranded.after}`);
 else console.log(`✓ a finger held across a pause steers again on resume`);
 
+// --- A ring under every contact the steering is using --------------------------------------
+// The markers are drawn from the same contact list the steer is calculated from, not from the
+// DOM, so a finger the game has lost has no ring. That is the whole point of them, and it only
+// holds if they track that list exactly — hence checking the count and the positions rather
+// than merely that something is on screen.
+await restart();
+const markers = await page.evaluate(`(async () => {
+  ${touchScript}
+  const dots = () => [...document.querySelectorAll(".touch-dot")]
+    .filter((d) => d.style.display !== "none")
+    .map((d) => {
+      const m = /translate\\(([-0-9.]+)px, ([-0-9.]+)px\\)/.exec(d.style.transform);
+      return m ? { x: +m[1], y: +m[2] } : null;
+    })
+    .filter(Boolean);
+
+  // The rings are refreshed in the render loop, so each state needs a frame to appear
+  const frame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+
+  send("touchstart", [0.2, 0.8], [0.8]);
+  await frame();
+  const two = dots();
+  send("touchend", [0.8], [0.2]);
+  await frame();
+  const one = dots();
+  send("touchend", [], [0.8]);
+  await frame();
+  const none = dots();
+  return { two, one, none, want: [0.2, 0.8].map((f) => r.left + r.width * f) };
+})()`);
+if (markers.two.length !== 2)
+  fail(`expected a ring per contact, got ${markers.two.length} for two fingers`);
+else if (markers.two.some((d, i) => Math.abs(d.x - markers.want[i]) > 1))
+  fail(
+    `rings are not on the contacts: ${JSON.stringify(markers.two.map((d) => Math.round(d.x)))} ` +
+      `vs ${JSON.stringify(markers.want.map(Math.round))}`,
+  );
+else if (markers.one.length !== 1)
+  fail(`ring did not clear when a finger lifted: ${markers.one.length} left`);
+else if (markers.none.length !== 0)
+  fail(`rings left on screen with nothing touching: ${markers.none.length}`);
+else console.log(`✓ a ring under every contact, and none left behind`);
+
 // --- The rider is jointed: upper body angulates, knees absorb -------------------------------
 // Both are pure animation, so nothing else in the suite would notice them silently breaking.
 await restart();

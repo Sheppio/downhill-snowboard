@@ -57,6 +57,12 @@ const DEAD_ZONE = 0.07;
  */
 const FULL_LOCK_AT = 0.85;
 
+/** A point of contact, in client coordinates. Only `x` steers; `y` is for drawing it. */
+export interface Contact {
+  x: number;
+  y: number;
+}
+
 export class SteerInput {
   /** Raw target in [-1, 1]. Negative is left. Smoothing happens in the rider controller. */
   private target = 0;
@@ -64,9 +70,17 @@ export class SteerInput {
    * Mouse and pen only. Touches are never stored — see the note at the top of the file.
    * A mouse cannot be one of several contacts, so there is nothing here that can drift.
    */
-  private readonly pointers = new Map<number, number>();
+  private readonly pointers = new Map<number, Contact>();
   /** Fingers as of the last touch event. Replaced wholesale each time, never edited. */
-  private readonly touchXs: number[] = [];
+  private readonly touchPts: Contact[] = [];
+  /**
+   * The contacts the last calculation actually used.
+   *
+   * Exposed so the on-screen markers can be drawn from it. That they come from here and not
+   * from the DOM is the point: a marker appears exactly where the steering believes a finger
+   * is, so a contact the game has lost track of visibly is not there.
+   */
+  private readonly live: Contact[] = [];
   private keyLeft = false;
   private keyRight = false;
   private detachers: (() => void)[] = [];
@@ -90,7 +104,12 @@ export class SteerInput {
 
   /** Number of contacts currently being averaged. Exposed for tests and the browser check. */
   get touchCount(): number {
-    return this.touchXs.length + this.pointers.size;
+    return this.live.length;
+  }
+
+  /** Where the game currently believes the player is touching. Drives the markers. */
+  get contacts(): readonly Contact[] {
+    return this.live;
   }
 
   /**
@@ -103,7 +122,8 @@ export class SteerInput {
   reset(): void {
     this.target = 0;
     this.pointers.clear();
-    this.touchXs.length = 0;
+    this.touchPts.length = 0;
+    this.live.length = 0;
     this.keyLeft = false;
     this.keyRight = false;
   }
@@ -121,9 +141,11 @@ export class SteerInput {
     // whichever fired last won and a stale pointer map could overwrite a correct touch
     // reading with zero. Averaging is also unbothered if a finger somehow reaches both lists,
     // since the duplicate sits at the same position and cannot move the mean.
-    const xs = this.pointers.size === 0 ? this.touchXs : [...this.touchXs, ...this.pointers.values()];
+    this.live.length = 0;
+    for (const p of this.touchPts) this.live.push(p);
+    for (const p of this.pointers.values()) this.live.push(p);
 
-    if (xs.length === 0) {
+    if (this.live.length === 0) {
       // Straighten up on release. The controller damps this, so it isn't a snap.
       this.target = 0;
       return;
@@ -133,11 +155,11 @@ export class SteerInput {
     if (rect.width <= 0) return;
 
     let sum = 0;
-    for (const clientX of xs) {
+    for (const c of this.live) {
       // -1 at the left edge, +1 at the right edge, 0 at centre
-      sum += ((clientX - rect.left) / rect.width) * 2 - 1;
+      sum += ((c.x - rect.left) / rect.width) * 2 - 1;
     }
-    const raw = sum / xs.length;
+    const raw = sum / this.live.length;
 
     // Rescale between the dead zone and the full-lock point, so full lock arrives before the
     // edge rather than at it
@@ -174,7 +196,7 @@ export class SteerInput {
      * cancelling a contact used to be indistinguishable from a finger lifting.
      */
     const onTouch = (e: TouchEvent) => {
-      this.touchXs.length = 0;
+      this.touchPts.length = 0;
       for (let i = 0; i < e.touches.length; i++) {
         const t = e.touches[i];
         if (!t) continue;
@@ -182,7 +204,7 @@ export class SteerInput {
         // `target` is where the touch *started*, so sliding off the canvas keeps steering.
         const target = t.target as Node | null;
         if (target && el.contains && !el.contains(target)) continue;
-        this.touchXs.push(t.clientX);
+        this.touchPts.push({ x: t.clientX, y: t.clientY });
       }
       // Seeing one touch event is proof this browser reports fingers that way, which is a far
       // better test than asking whether `ontouchstart` exists — that is a famously unreliable
@@ -203,7 +225,7 @@ export class SteerInput {
 
     const onDown = (e: PointerEvent) => {
       if (duplicatesATouch(e)) return;
-      this.pointers.set(e.pointerId, e.clientX);
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.recompute();
       capture(e.pointerId, true);
       e.preventDefault();
@@ -214,7 +236,7 @@ export class SteerInput {
       // `buttons` is non-zero only while something is actually pressed, so a mouse moving
       // across the canvas with no button held does not steer.
       if (!this.pointers.has(e.pointerId) && e.buttons === 0) return;
-      this.pointers.set(e.pointerId, e.clientX);
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.recompute();
       e.preventDefault();
     };

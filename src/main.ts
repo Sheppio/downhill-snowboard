@@ -19,6 +19,7 @@ import { Rider } from "./player/rider";
 import { ChaseCamera } from "./player/camera";
 import { Wipeout, initPhysics } from "./player/wipeout";
 import { SteerInput } from "./input/steer";
+import { TouchMarkers } from "./ui/touchmarkers";
 import { Score, readBest, writeBest } from "./game/score";
 import {
   copyShareLink,
@@ -49,6 +50,7 @@ class Game {
   private readonly scene: Scene;
   private readonly hud: Hud;
   private readonly input: SteerInput;
+  private readonly markers: TouchMarkers;
   private readonly camera: ChaseCamera;
   private readonly rider: Rider;
   private readonly spray: SnowSpray;
@@ -107,6 +109,8 @@ class Game {
     this.rider = new Rider(this.scene);
     this.spray = new SnowSpray(this.scene);
     this.input = new SteerInput(canvas);
+    // Parented to the UI overlay so it sits above the canvas and inherits its safe areas.
+    this.markers = new TouchMarkers(document.getElementById("ui") ?? document.body);
 
     this.hud = new Hud({
       onRideDaily: () => this.startRun(todaysSeed()),
@@ -240,6 +244,10 @@ class Game {
   private frame(): void {
     const dt = Math.min(this.engine.getDeltaTime() / 1000, 0.25);
     this.adaptResolution();
+
+    // Drawn from the contacts the steering itself is using, so a finger that has stopped
+    // registering has no ring under it — which is the only way to see that from the outside.
+    this.markers.update(this.input.contacts);
 
     switch (this.state) {
       case "playing":
