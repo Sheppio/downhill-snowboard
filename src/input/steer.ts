@@ -42,6 +42,21 @@ import { clamp } from "../core/math";
  */
 const DEAD_ZONE = 0.07;
 
+/**
+ * How far out full lock is reached, as a fraction of half-width.
+ *
+ * Deliberately short of the screen edge. Steering that only reaches its limit at the very edge
+ * teaches players to hold their thumbs there, and the outermost strip of a phone screen is
+ * where the operating system watches for its own gestures — Android's back swipe lives exactly
+ * there. A system gesture cancels the page's contacts, and a cancelled contact is one the
+ * browser stops reporting at all, which no amount of page-side code can see through.
+ *
+ * Saturating at 85% means a hard turn never needs the edge, so the input stops competing with
+ * the OS for the same pixels. It also makes full lock easier to hold, which is worth having on
+ * its own.
+ */
+const FULL_LOCK_AT = 0.85;
+
 export class SteerInput {
   /** Raw target in [-1, 1]. Negative is left. Smoothing happens in the rider controller. */
   private target = 0;
@@ -50,14 +65,13 @@ export class SteerInput {
    * A mouse cannot be one of several contacts, so there is nothing here that can drift.
    */
   private readonly pointers = new Map<number, number>();
-  /** Fingers counted at the last touch event, for `isEngaged` and the tests. */
-  private touches = 0;
+  /** Fingers as of the last touch event. Replaced wholesale each time, never edited. */
+  private readonly touchXs: number[] = [];
   private keyLeft = false;
   private keyRight = false;
   private detachers: (() => void)[] = [];
-  /** True where the browser sends Touch Events, which is every phone this ships to. */
-  private readonly useTouch =
-    typeof window !== "undefined" && "ontouchstart" in (window as unknown as object);
+  /** Set the first time a real touch event arrives — see `duplicatesATouch`. */
+  private sawTouch = false;
 
   constructor(private readonly element: HTMLElement) {
     this.attach();
@@ -71,12 +85,12 @@ export class SteerInput {
 
   /** True while the player is actively touching the screen (used for the tutorial hint). */
   get isEngaged(): boolean {
-    return this.touches > 0 || this.pointers.size > 0 || this.keyLeft || this.keyRight;
+    return this.touchCount > 0 || this.keyLeft || this.keyRight;
   }
 
   /** Number of contacts currently being averaged. Exposed for tests and the browser check. */
   get touchCount(): number {
-    return this.touches + this.pointers.size;
+    return this.touchXs.length + this.pointers.size;
   }
 
   /**
@@ -89,7 +103,7 @@ export class SteerInput {
   reset(): void {
     this.target = 0;
     this.pointers.clear();
-    this.touches = 0;
+    this.touchXs.length = 0;
     this.keyLeft = false;
     this.keyRight = false;
   }
@@ -102,7 +116,13 @@ export class SteerInput {
    * *after* both had already been rescaled to full lock, which reads as a much coarser
    * control than it looks.
    */
-  private setFromXs(xs: number[]): void {
+  private recompute(): void {
+    // Both sources feed one calculation. They used to write the steer independently, so
+    // whichever fired last won and a stale pointer map could overwrite a correct touch
+    // reading with zero. Averaging is also unbothered if a finger somehow reaches both lists,
+    // since the duplicate sits at the same position and cannot move the mean.
+    const xs = this.pointers.size === 0 ? this.touchXs : [...this.touchXs, ...this.pointers.values()];
+
     if (xs.length === 0) {
       // Straighten up on release. The controller damps this, so it isn't a snap.
       this.target = 0;
@@ -119,10 +139,12 @@ export class SteerInput {
     }
     const raw = sum / xs.length;
 
-    // Rescale outside the dead zone so full lock is still reachable at the screen edge
+    // Rescale between the dead zone and the full-lock point, so full lock arrives before the
+    // edge rather than at it
     const sign = Math.sign(raw);
     const mag = Math.abs(raw);
-    this.target = mag <= DEAD_ZONE ? 0 : sign * clamp((mag - DEAD_ZONE) / (1 - DEAD_ZONE), 0, 1);
+    this.target =
+      mag <= DEAD_ZONE ? 0 : sign * clamp((mag - DEAD_ZONE) / (FULL_LOCK_AT - DEAD_ZONE), 0, 1);
   }
 
   private attach(): void {
@@ -152,7 +174,7 @@ export class SteerInput {
      * cancelling a contact used to be indistinguishable from a finger lifting.
      */
     const onTouch = (e: TouchEvent) => {
-      const xs: number[] = [];
+      this.touchXs.length = 0;
       for (let i = 0; i < e.touches.length; i++) {
         const t = e.touches[i];
         if (!t) continue;
@@ -160,40 +182,47 @@ export class SteerInput {
         // `target` is where the touch *started*, so sliding off the canvas keeps steering.
         const target = t.target as Node | null;
         if (target && el.contains && !el.contains(target)) continue;
-        xs.push(t.clientX);
+        this.touchXs.push(t.clientX);
       }
-      this.touches = xs.length;
-      this.setFromXs(xs);
+      // Seeing one touch event is proof this browser reports fingers that way, which is a far
+      // better test than asking whether `ontouchstart` exists — that is a famously unreliable
+      // signal, and getting it wrong here means both paths steering at once.
+      this.sawTouch = true;
+      this.recompute();
       e.preventDefault();
     };
 
-    const pointerXs = () => [...this.pointers.values()];
-
-    /** Mouse and pen. Ignored entirely where Touch Events are handling the fingers. */
-    const mouseIgnored = (e: PointerEvent) => this.useTouch && e.pointerType === "touch";
+    /**
+     * Touch-derived pointer events, once we know this browser sends real touch events too.
+     *
+     * Handling both would count every finger twice. It would also be worse than double
+     * counting, because the pointer path remembers contacts and the touch path does not, so a
+     * stale pointer could outlive the finger it describes.
+     */
+    const duplicatesATouch = (e: PointerEvent) => this.sawTouch && e.pointerType === "touch";
 
     const onDown = (e: PointerEvent) => {
-      if (mouseIgnored(e)) return;
+      if (duplicatesATouch(e)) return;
       this.pointers.set(e.pointerId, e.clientX);
-      this.setFromXs(pointerXs());
+      this.recompute();
       capture(e.pointerId, true);
       e.preventDefault();
     };
 
     const onMove = (e: PointerEvent) => {
-      if (mouseIgnored(e)) return;
+      if (duplicatesATouch(e)) return;
       // `buttons` is non-zero only while something is actually pressed, so a mouse moving
       // across the canvas with no button held does not steer.
       if (!this.pointers.has(e.pointerId) && e.buttons === 0) return;
       this.pointers.set(e.pointerId, e.clientX);
-      this.setFromXs(pointerXs());
+      this.recompute();
       e.preventDefault();
     };
 
     const onUp = (e: PointerEvent) => {
-      if (mouseIgnored(e)) return;
+      if (duplicatesATouch(e)) return;
       if (!this.pointers.delete(e.pointerId)) return;
-      this.setFromXs(pointerXs());
+      this.recompute();
       capture(e.pointerId, false);
       e.preventDefault();
     };

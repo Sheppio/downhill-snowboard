@@ -93,6 +93,23 @@ describe("steering follows how far right the finger is", () => {
     expect(steer.value).toBeCloseTo(-1, 5);
   });
 
+  it("reaches full lock before the screen edge", () => {
+    // The outermost strip of a phone screen belongs to the operating system's own gestures —
+    // Android's back swipe lives there — and a system gesture cancels the page's contacts.
+    // Full lock arriving early means a hard turn never asks the player to hold that strip.
+    el.touch("touchstart", [at(0.93)]);
+    expect(steer.value, "hard right without touching the edge").toBeCloseTo(1, 5);
+
+    el.touch("touchmove", [at(0.07)]);
+    expect(steer.value, "hard left without touching the edge").toBeCloseTo(-1, 5);
+
+    // Still proportional well inside that, so the fine control is not lost to the saturation
+    el.touch("touchmove", [at(0.7)]);
+    const mid = steer.value;
+    expect(mid).toBeGreaterThan(0.2);
+    expect(mid).toBeLessThan(0.95);
+  });
+
   it("turns more gently the closer to centre the finger is", () => {
     el.touch("touchstart", [at(0.65)]);
     const gentle = steer.value;
@@ -221,6 +238,35 @@ describe("two-finger steering", () => {
     // Only the canvas touch counts, so this is a hard right rather than an average of the two
     expect(steer.touchCount).toBe(1);
     expect(steer.value).toBeGreaterThan(0.5);
+  });
+
+  it("does not let a stale mouse pointer wipe out the fingers", () => {
+    // The two paths used to write the steer independently, so whichever fired last won. A
+    // pointer event arriving alongside real touches could overwrite a correct reading with
+    // whatever the pointer map happened to hold — including nothing.
+    el.touch("touchstart", [at(0.1)]);
+    expect(steer.value).toBeLessThan(-0.5);
+
+    // A mouse press and release alongside the finger. On release the pointer map is empty,
+    // and the pointer path used to recompute from that alone — zeroing the steer even though
+    // a finger was still on the glass.
+    el.emit("pointerdown", 99, at(0.9));
+    el.emit("pointerup", 99, at(0.9));
+    expect(steer.value, "the finger on the glass must still be steering").toBeLessThan(-0.5);
+  });
+
+  it("ignores touch-derived pointer events once touch events are seen", () => {
+    // Both would otherwise count the same finger twice, and the pointer copy would outlive
+    // the finger, because that path remembers contacts and the touch path does not.
+    el.touch("touchstart", [at(0.9)]);
+    const oneFinger = steer.value;
+
+    for (const fn of (el as unknown as { listeners: Map<string, ((e: unknown) => void)[]> })
+      .listeners.get("pointerdown") ?? []) {
+      fn({ pointerId: 7, clientX: at(0.9), buttons: 1, pointerType: "touch", preventDefault() {} });
+    }
+    expect(steer.touchCount, "the same finger must not be counted twice").toBe(1);
+    expect(steer.value).toBeCloseTo(oneFinger, 5);
   });
 
   it("forgets every touch on reset", () => {
