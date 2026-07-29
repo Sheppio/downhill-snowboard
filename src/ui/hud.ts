@@ -62,15 +62,19 @@ export class Hud {
   private readonly loading = must("loading");
   private readonly shareBtn = must<HTMLButtonElement>("btn-share");
 
+  /** Kept because the leaderboard rows are built later and each one starts a run. */
+  private readonly callbacks: HudCallbacks;
+
   constructor(callbacks: HudCallbacks) {
+    this.callbacks = callbacks;
     must<HTMLButtonElement>("btn-daily").addEventListener("click", () => callbacks.onRideDaily());
     must<HTMLButtonElement>("btn-ride").addEventListener("click", () =>
       callbacks.onRideSeed(this.seedInput.value),
     );
     must<HTMLButtonElement>("btn-shuffle").addEventListener("click", () => callbacks.onShuffle());
 
-    // The leaderboard is read straight from storage and changes nothing, so it needs no
-    // callback into the game — it opens over the menu and closes back onto it.
+    // Opening and closing the leaderboard is the panel's own business — it reads storage and
+    // changes nothing. Only its rows reach into the game, to ride the seed they name.
     must<HTMLButtonElement>("btn-scores").addEventListener("click", () => this.showScores());
     must<HTMLButtonElement>("btn-scores-back").addEventListener("click", () => this.hideScores());
 
@@ -121,6 +125,10 @@ export class Hud {
    *
    * Rows are assembled as nodes rather than as markup: a seed is whatever the player typed,
    * so it must never be able to become HTML on its way onto the screen.
+   *
+   * Each row is a button that rides that seed. The list is the only place a seed you rode
+   * weeks ago still exists — including past dailies, which are otherwise unreachable once the
+   * date has moved on — so being able to go straight back to one is the point of keeping it.
    */
   private showScores(): void {
     const records = readScores();
@@ -135,17 +143,26 @@ export class Hud {
 
     this.scoresList.replaceChildren(
       ...records.map((r) => {
-        const row = document.createElement("li");
-        row.className = "score-row";
         // A custom seed is shown exactly as it was typed, so it can be read back, retyped or
         // shared. Only the daily seeds are relabelled — they are machine-shaped dates — and
         // they say so, otherwise a date in the seed column reads like a seed somebody chose.
+        const label = seedLabel(r.seed);
         const when = formatWhen(r.at, now);
-        row.append(
-          cell("score-seed", seedLabel(r.seed)),
+
+        const ride = document.createElement("button");
+        ride.type = "button";
+        ride.className = "score-row";
+        ride.setAttribute("aria-label", `Ride ${label}, your best ${r.score}`);
+        ride.append(
+          cell("score-seed", label),
           cell("score-value", r.score.toLocaleString()),
           cell("score-when", isDaily(r.seed) ? `Daily · ${when}` : when),
+          cell("score-go", "›"),
         );
+        ride.addEventListener("click", () => this.callbacks.onRideSeed(r.seed));
+
+        const row = document.createElement("li");
+        row.append(ride);
         return row;
       }),
     );

@@ -736,6 +736,26 @@ else console.log("✓ a different seed builds a different mountain");
   else if (rows.some((r) => r.seed === "old-favourite"))
     fail(`a best with no recorded time was listed anyway: ${shown}`);
   else console.log(`✓ leaderboard, newest first: ${shown}`);
+
+  // Every row rides its seed. Checked on the *daily* row, which is the only one that can tell
+  // the difference: its label is a formatted date, so a row riding what it displays rather
+  // than what it stored would start a course seeded "Jan 15, 2026". On a custom row the label
+  // and the seed are the same string, and the check would pass either way.
+  await page.click("#scores-list li:nth-child(1) .score-row");
+  await page.waitForSelector("#hud:not([hidden])", { timeout: 10000 });
+  await page.waitForTimeout(600);
+  const started = await page.evaluate(() => ({
+    seed: window.__game.seed,
+    state: window.__game.state,
+    dist: window.__game.controller.distance,
+    scoresOpen: !document.querySelector("#scores").hidden,
+  }));
+  if (started.seed !== "daily-2026-01-15")
+    fail(`riding a row started "${started.seed}", not the seed it stored`);
+  else if (started.state !== "playing" || !(started.dist > 0))
+    fail(`riding a row did not start a run: ${JSON.stringify(started)}`);
+  else if (started.scoresOpen) fail("the leaderboard stayed up over the run");
+  else console.log(`✓ a row rides its own seed (${started.seed}, ${started.dist.toFixed(0)}m in)`);
 }
 
 console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ no console errors");

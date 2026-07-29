@@ -479,19 +479,49 @@ body {
   border-top: 3px dashed rgba(42, 111, 151, 0.3);
 }
 
+/* Every row rides its seed, so every row is a button — including the past dailies, which
+   nothing else in the game can reach once the date has moved on. Styled back down to a plain
+   row: the panel would be unreadable as a stack of chunky buttons, so the affordance is the
+   chevron and the press state rather than a border and a shadow. */
 .score-row {
   display: grid;
   /* The score is the fixed column: seeds are any length, and the ages are short. Giving the
      seed the flexible track keeps the numbers in a straight line down the panel. */
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   grid-template-areas:
-    "seed  value"
-    "when  value";
+    "seed  value go"
+    "when  value go";
   align-items: center;
   gap: 0 10px;
+  width: 100%;
   padding: 9px 2px;
+  border: 0;
   border-bottom: 2px solid rgba(42, 111, 151, 0.15);
+  border-radius: 12px;
+  background: none;
+  font-family: inherit;
   text-align: left;
+  cursor: pointer;
+  /* Comfortably above the 44px minimum touch target, and the rows are stacked, so an
+     imprecise tap lands on a neighbour rather than on nothing. */
+  min-height: 52px;
+  transition:
+    background-color 0.08s ease,
+    transform 0.06s ease;
+}
+
+.score-row:active {
+  background: rgba(79, 195, 247, 0.18);
+  transform: scale(0.985);
+}
+
+.score-go {
+  grid-area: go;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--sky);
+  padding-right: 2px;
 }
 
 .score-seed {

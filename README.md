@@ -42,6 +42,9 @@ A custom seed appears exactly as you typed it, since that is the only way back t
 Daily runs are shown as their date and tagged as dailies, so a date is never mistaken for a
 seed somebody chose.
 
+**Tap any row to ride that seed again.** For past dailies this is the only route back — once
+the date moves on, nothing else in the game can reach them.
+
 It lives in the browser's local storage, so it is per-device and per-browser: there is no
 account and nothing is sent anywhere. Every row states when it was set, so a score with no
 recorded time is not listed at all — that includes bests from before the list existed, which
