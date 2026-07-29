@@ -84,9 +84,14 @@ export interface Obstacle {
   /** Height of the top above `y`. Clear this and you have jumped it. */
   height: number;
   kind: ObstacleKind;
+  /** Which of the five shapes of this kind to draw. */
+  variant: number;
   scale: number;
   spin: number;
 }
+
+/** How many distinct shapes exist per kind. */
+export const VARIANTS = 5;
 
 /**
  * How much of an obstacle's footprint actually stops the rider.
@@ -109,15 +114,16 @@ const TREE_RADIUS = 0.7;
 const ROCK_RADIUS = 0.95;
 
 /**
- * Heights of the built meshes at scale 1, measured from their geometry: the tree's snow cap
- * apex sits at 4.78, and the rock's cap at 0.76.
+ * Height of each built mesh at scale 1, measured from its geometry, so the collider matches
+ * what the player can see. Indexed by variant.
  *
- * These make the collider match what the player can see. Trees end up 3.8-7.2m tall and are
- * effectively unjumpable; rocks are 0.5-1.1m and can be cleared with a decent launch. That
- * gradient is the point — it gives airtime something to be *for*.
+ * Trees stay effectively unjumpable and rocks stay clearable with a decent launch. That
+ * gradient is the point — it gives airtime something to be *for* — so the ranges here are
+ * bounded on purpose rather than spread for the sake of it: no tree drops near jumpable, and
+ * no rock climbs out of reach.
  */
-const TREE_HEIGHT = 4.78;
-const ROCK_HEIGHT = 0.76;
+const TREE_HEIGHTS = [4.78, 6.15, 3.88, 4.15, 5.05];
+const ROCK_HEIGHTS = [0.76, 0.5, 0.84, 0.66, 0.62];
 
 /**
  * Distance at the top of the mountain with no obstacles at all.
@@ -168,7 +174,13 @@ export class ObstacleField {
         const kind = rng.chance(TREE_SHARE) ? ObstacleKind.Tree : ObstacleKind.Rock;
         const scale = kind === ObstacleKind.Tree ? rng.range(0.8, 1.5) : rng.range(0.7, 1.4);
         const radius = (kind === ObstacleKind.Tree ? TREE_RADIUS : ROCK_RADIUS) * scale;
-        const height = (kind === ObstacleKind.Tree ? TREE_HEIGHT : ROCK_HEIGHT) * scale;
+
+        // Drawn from a hash of (seed, slice, index) rather than from `rng`, so that adding
+        // shapes did not consume a value from the placement stream and reshuffle every course
+        // that has ever been played. Same seed, same mountain — just no longer all one tree.
+        const variant = hashInts(this.seed, index, i * 0x2545f491) % VARIANTS;
+        const height =
+          (kind === ObstacleKind.Tree ? TREE_HEIGHTS[variant]! : ROCK_HEIGHTS[variant]!) * scale;
 
         // Try a few positions before giving up, so a crowded slice still fills in rather than
         // silently losing obstacles to the first unlucky roll.
@@ -212,6 +224,7 @@ export class ObstacleField {
             radius,
             height,
             kind,
+            variant,
             scale,
             spin: rng.range(0, Math.PI * 2),
           });
@@ -318,78 +331,248 @@ const FOLIAGE_COLOURS = [new Color3(0.11, 0.62, 0.33), new Color3(0.15, 0.72, 0.
 const SNOW_COLOUR = new Color3(1, 1, 1);
 const ROCK_COLOUR = new Color3(0.56, 0.6, 0.68);
 
-/** Build one cartoon fir: stacked cones on a trunk, with a snow-capped tip. */
-function createTreeMesh(scene: Scene): Mesh {
+/** A dead standing trunk, and the pale green of a tree carrying a lot of snow. */
+const DEAD_WOOD_COLOUR = new Color3(0.42, 0.35, 0.3);
+const LADEN_FOLIAGE_COLOUR = new Color3(0.42, 0.68, 0.5);
+
+interface TreeShape {
+  /** Trunk height and its top/bottom diameters. */
+  trunk: [height: number, top: number, bottom: number];
+  /** Foliage cones, bottom to top: [centreY, diameter, height]. */
+  tiers: [y: number, d: number, h: number][];
+  /** Snow cap: [baseY, diameter, height]. Omitted for a bare tree. */
+  cap?: [y: number, d: number, h: number];
+  foliage: Color3[];
+  trunkColour?: Color3;
+}
+
+/**
+ * The five firs, in the order the variant index picks them.
+ *
+ * Silhouette does the work here, not colour: at a distance and at speed, what separates one
+ * tree from another is its outline against the snow. So they differ in height, taper and tier
+ * count first, and only then in shade.
+ *
+ * None of this touches collision. TREE_RADIUS is 0.7 while the widest foliage reaches 1.3, so
+ * the collider has always described the trunk rather than the branches — you brush through the
+ * outer needles. That is what makes it safe to vary the canopy this freely.
+ */
+const TREE_SHAPES: TreeShape[] = [
+  {
+    // 0. The classic: three even tiers, snow-tipped
+    trunk: [1.6, 0.26, 0.42],
+    tiers: [
+      [1.9, 2.6, 1.8],
+      [3.0, 2.0, 1.6],
+      [4.0, 1.35, 1.4],
+    ],
+    cap: [4.5, 0.62, 0.55],
+    foliage: FOLIAGE_COLOURS,
+  },
+  {
+    // 1. A tall narrow spire — four close tiers on a long trunk
+    trunk: [2.1, 0.22, 0.38],
+    tiers: [
+      [2.3, 1.9, 1.9],
+      [3.4, 1.6, 1.7],
+      [4.4, 1.25, 1.5],
+      [5.3, 0.9, 1.3],
+    ],
+    cap: [5.85, 0.5, 0.5],
+    foliage: [FOLIAGE_COLOURS[0]!, FOLIAGE_COLOURS[1]!, FOLIAGE_COLOURS[0]!],
+    },
+  {
+    // 2. Squat and broad, the one that reads as an old tree low on the slope
+    trunk: [1.3, 0.34, 0.56],
+    tiers: [
+      [1.6, 3.1, 1.9],
+      [2.9, 2.3, 1.7],
+    ],
+    cap: [3.6, 0.8, 0.55],
+    foliage: [new Color3(0.09, 0.5, 0.28), new Color3(0.12, 0.6, 0.32)],
+  },
+  {
+    // 3. Bare and dead: a stripped trunk with two thin remnants, no snow on top
+    trunk: [3.0, 0.2, 0.44],
+    tiers: [
+      [2.7, 1.5, 1.3],
+      [3.6, 1.0, 1.1],
+    ],
+    foliage: [DEAD_WOOD_COLOUR, new Color3(0.36, 0.3, 0.26)],
+    trunkColour: DEAD_WOOD_COLOUR,
+  },
+  {
+    // 4. Snow-laden: pale, heavy tiers under a deep cap
+    trunk: [1.5, 0.28, 0.46],
+    tiers: [
+      [1.8, 2.75, 1.9],
+      [3.05, 2.15, 1.7],
+      [4.15, 1.5, 1.5],
+    ],
+    cap: [4.6, 1.05, 0.9],
+    foliage: [LADEN_FOLIAGE_COLOUR, new Color3(0.5, 0.74, 0.58)],
+  },
+];
+
+/** Build one cartoon fir: stacked cones on a trunk, usually with a snow-capped tip. */
+function createTreeMesh(scene: Scene, variant: number): Mesh {
+  const shape = TREE_SHAPES[variant]!;
   const parts: Mesh[] = [];
 
+  const [th, tTop, tBottom] = shape.trunk;
   const trunk = CreateCylinder(
     "trunk",
-    { height: 1.6, diameterTop: 0.26, diameterBottom: 0.42, tessellation: 6 },
+    { height: th, diameterTop: tTop, diameterBottom: tBottom, tessellation: 6 },
     scene,
   );
-  trunk.position.y = 0.8;
-  parts.push(paint(trunk, TRUNK_COLOUR));
+  trunk.position.y = th / 2;
+  parts.push(paint(trunk, shape.trunkColour ?? TRUNK_COLOUR));
 
-  const tiers = [
-    { y: 1.9, d: 2.6, h: 1.8 },
-    { y: 3.0, d: 2.0, h: 1.6 },
-    { y: 4.0, d: 1.35, h: 1.4 },
-  ];
-  for (let i = 0; i < tiers.length; i++) {
-    const t = tiers[i]!;
+  for (let i = 0; i < shape.tiers.length; i++) {
+    const [y, d, h] = shape.tiers[i]!;
     const cone = CreateCylinder(
       `tier${i}`,
-      { height: t.h, diameterTop: 0, diameterBottom: t.d, tessellation: 7 },
+      { height: h, diameterTop: 0, diameterBottom: d, tessellation: 7 },
       scene,
     );
-    cone.position.y = t.y;
-    parts.push(paint(cone, FOLIAGE_COLOURS[i % FOLIAGE_COLOURS.length]!));
+    cone.position.y = y;
+    parts.push(paint(cone, shape.foliage[i % shape.foliage.length]!));
   }
 
-  const cap = CreateCylinder(
-    "treeCap",
-    { height: 0.55, diameterTop: 0, diameterBottom: 0.62, tessellation: 7 },
-    scene,
-  );
-  cap.position.y = 4.5;
-  parts.push(paint(cap, SNOW_COLOUR));
+  if (shape.cap) {
+    const [y, d, h] = shape.cap;
+    const cap = CreateCylinder(
+      "treeCap",
+      { height: h, diameterTop: 0, diameterBottom: d, tessellation: 7 },
+      scene,
+    );
+    cap.position.y = y;
+    parts.push(paint(cap, SNOW_COLOUR));
+  }
 
   const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, false);
   if (!merged) throw new Error("failed to build tree mesh");
-  merged.name = "tree";
-  merged.material = createObstacleMaterial(scene, "treeMat");
+  merged.name = `tree${variant}`;
+  merged.material = createObstacleMaterial(scene, `treeMat${variant}`);
   merged.convertToFlatShadedMesh();
   merged.isPickable = false;
   return merged;
 }
 
-/** Build one cartoon boulder: a lumpy low-poly sphere wearing a hat of snow. */
-function createRockMesh(scene: Scene): Mesh {
-  const body = CreateSphere("rockBody", { diameter: 2, segments: 3 }, scene);
-  body.scaling = new Vector3(1.15, 0.74, 1);
-  body.bakeCurrentTransformIntoVertices();
-  paint(body, ROCK_COLOUR);
+const DARK_ROCK_COLOUR = new Color3(0.4, 0.42, 0.5);
+const PALE_ROCK_COLOUR = new Color3(0.66, 0.69, 0.74);
 
-  // Cap deliberately much smaller than the body. At near-body size the snow swallowed the
-  // whole boulder and they read as harmless snow mounds rather than something to dodge.
-  const cap = CreateSphere("rockCap", { diameter: 1.35, segments: 3, slice: 0.42 }, scene);
-  cap.scaling = new Vector3(1.0, 0.62, 0.9);
-  cap.bakeCurrentTransformIntoVertices();
-  cap.position.y = 0.34;
-  paint(cap, SNOW_COLOUR);
+interface RockLump {
+  /** Sphere diameter, and how many segments — 2 is angular, 4 is rounded. */
+  diameter: number;
+  segments: number;
+  scaling: [x: number, y: number, z: number];
+  offset?: [x: number, y: number, z: number];
+  /** Fraction of the sphere kept, for a dome sitting on the snow. */
+  slice?: number;
+  colour: Color3;
+}
 
-  const merged = Mesh.MergeMeshes([body, cap], true, true, undefined, false, false);
+/**
+ * The five boulders.
+ *
+ * Rocks are constrained where trees are not: ROCK_RADIUS is 0.95 against a body that reaches
+ * about 1.15, so the collider closely tracks the mesh, so their footprints have to stay
+ * close to one another or a hit stops matching what is drawn. So these vary mostly in *height* and
+ * profile — which is the axis that matters anyway, because it decides what a launch can clear.
+ */
+const ROCK_SHAPES: RockLump[][] = [
+  // 0. The classic boulder with its hat of snow
+  [
+    { diameter: 2, segments: 3, scaling: [1.15, 0.74, 1], colour: ROCK_COLOUR },
+    {
+      diameter: 1.35,
+      segments: 3,
+      scaling: [1.0, 0.62, 0.9],
+      offset: [0, 0.34, 0],
+      slice: 0.42,
+      colour: SNOW_COLOUR,
+    },
+  ],
+  // 1. A flat slab, barely proud of the snow — the one you can clear almost casually
+  [
+    { diameter: 2.1, segments: 3, scaling: [1.1, 0.4, 1.05], colour: PALE_ROCK_COLOUR },
+    {
+      diameter: 1.5,
+      segments: 3,
+      scaling: [1.0, 0.34, 0.95],
+      offset: [0.05, 0.16, 0],
+      slice: 0.4,
+      colour: SNOW_COLOUR,
+    },
+  ],
+  // 2. Tall and angular, the tallest thing still worth jumping
+  [
+    { diameter: 1.9, segments: 2, scaling: [1.05, 0.89, 1.0], colour: DARK_ROCK_COLOUR },
+    {
+      diameter: 1.0,
+      segments: 2,
+      scaling: [0.95, 0.62, 0.9],
+      offset: [0.1, 0.5, 0.05],
+      slice: 0.45,
+      colour: SNOW_COLOUR,
+    },
+  ],
+  // 3. Twin lumps, one shouldering the other
+  [
+    { diameter: 1.6, segments: 3, scaling: [1.05, 0.82, 1], offset: [-0.35, 0, 0.1], colour: ROCK_COLOUR },
+    { diameter: 1.25, segments: 3, scaling: [1, 0.66, 1], offset: [0.5, -0.05, -0.15], colour: DARK_ROCK_COLOUR },
+    {
+      diameter: 1.1,
+      segments: 3,
+      scaling: [1, 0.5, 0.9],
+      offset: [-0.3, 0.38, 0.1],
+      slice: 0.4,
+      colour: SNOW_COLOUR,
+    },
+  ],
+  // 4. A rounded, mostly buried stone with no cap at all
+  [
+    { diameter: 2.2, segments: 4, scaling: [1.05, 0.5, 1.0], colour: PALE_ROCK_COLOUR },
+    { diameter: 1.1, segments: 4, scaling: [0.9, 0.42, 0.9], offset: [0.45, 0.06, 0.3], colour: ROCK_COLOUR },
+  ],
+];
+
+/** Build one cartoon boulder out of lumpy low-poly spheres. */
+function createRockMesh(scene: Scene, variant: number): Mesh {
+  const parts: Mesh[] = [];
+  const lumps = ROCK_SHAPES[variant]!;
+
+  for (let i = 0; i < lumps.length; i++) {
+    const l = lumps[i]!;
+    const mesh = CreateSphere(
+      `rockLump${i}`,
+      l.slice === undefined
+        ? { diameter: l.diameter, segments: l.segments }
+        : { diameter: l.diameter, segments: l.segments, slice: l.slice },
+      scene,
+    );
+    mesh.scaling = new Vector3(l.scaling[0], l.scaling[1], l.scaling[2]);
+    mesh.bakeCurrentTransformIntoVertices();
+    if (l.offset) mesh.position.set(l.offset[0], l.offset[1], l.offset[2]);
+    // Snow caps stay deliberately smaller than the stone under them. At near-body size the
+    // snow swallowed the whole boulder and they read as harmless mounds rather than hazards.
+    parts.push(paint(mesh, l.colour));
+  }
+
+  const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, false);
   if (!merged) throw new Error("failed to build rock mesh");
-  merged.name = "rock";
-  merged.material = createObstacleMaterial(scene, "rockMat");
+  merged.name = `rock${variant}`;
+  merged.material = createObstacleMaterial(scene, `rockMat${variant}`);
   merged.convertToFlatShadedMesh();
   merged.isPickable = false;
   return merged;
 }
 
 export class ObstacleRenderer {
-  private readonly tree: Mesh;
-  private readonly rock: Mesh;
+  /** One template per shape, each with its own instance buffer. */
+  private readonly trees: Mesh[] = [];
+  private readonly rocks: Mesh[] = [];
   private lastFirstSlice = Number.NaN;
   private lastLastSlice = Number.NaN;
 
@@ -397,11 +580,18 @@ export class ObstacleRenderer {
     scene: Scene,
     private readonly obstacles: ObstacleField,
   ) {
-    this.tree = createTreeMesh(scene);
-    this.rock = createRockMesh(scene);
-    // Base meshes are only templates; nothing is drawn until instances exist
-    this.tree.thinInstanceCount = 0;
-    this.rock.thinInstanceCount = 0;
+    // Ten templates rather than two, so ten draw calls rather than two. That is still nothing
+    // next to the hundreds it would take to draw each tree as its own mesh, and it is what
+    // buys a forest that does not look stamped from a single mould.
+    for (let v = 0; v < VARIANTS; v++) {
+      const tree = createTreeMesh(scene, v);
+      const rock = createRockMesh(scene, v);
+      // Base meshes are only templates; nothing is drawn until instances exist
+      tree.thinInstanceCount = 0;
+      rock.thinInstanceCount = 0;
+      this.trees.push(tree);
+      this.rocks.push(rock);
+    }
   }
 
   /**
@@ -417,16 +607,19 @@ export class ObstacleRenderer {
     this.lastFirstSlice = first;
     this.lastLastSlice = last;
 
-    const trees: Obstacle[] = [];
-    const rocks: Obstacle[] = [];
+    const treeBuckets: Obstacle[][] = this.trees.map(() => []);
+    const rockBuckets: Obstacle[][] = this.rocks.map(() => []);
     for (let i = first; i <= last; i++) {
       for (const o of this.obstacles.slice(i)) {
-        (o.kind === ObstacleKind.Tree ? trees : rocks).push(o);
+        const buckets = o.kind === ObstacleKind.Tree ? treeBuckets : rockBuckets;
+        buckets[o.variant]!.push(o);
       }
     }
 
-    this.writeInstances(this.tree, trees);
-    this.writeInstances(this.rock, rocks);
+    for (let v = 0; v < VARIANTS; v++) {
+      this.writeInstances(this.trees[v]!, treeBuckets[v]!);
+      this.writeInstances(this.rocks[v]!, rockBuckets[v]!);
+    }
   }
 
   private writeInstances(mesh: Mesh, list: Obstacle[]): void {
@@ -457,7 +650,6 @@ export class ObstacleRenderer {
   }
 
   dispose(): void {
-    this.tree.dispose();
-    this.rock.dispose();
+    for (const mesh of [...this.trees, ...this.rocks]) mesh.dispose();
   }
 }

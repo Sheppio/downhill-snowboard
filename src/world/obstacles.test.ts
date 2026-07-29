@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ObstacleField, ObstacleKind, SLICE_LENGTH } from "./obstacles";
+import { ObstacleField, ObstacleKind, SLICE_LENGTH, VARIANTS } from "./obstacles";
 import { TerrainField } from "./terrain";
 import {
   GATE_CLEARANCE_MIN,
@@ -235,13 +235,55 @@ describe("collision", () => {
 
   it("makes rocks jumpable and trees essentially not", () => {
     // The gradient is the point: rocks reward a launch, trees have to be steered around.
+    //
+    // Both bounds come from what the rider can actually do. Measured across seeds, jumps peak
+    // between 1.2m and 2.4m with a median of 0.25m, so anything up to about 1.2m is clearable
+    // off a good launch and anything past ~2.6m is not clearable at all. The tree bound is 3.0
+    // rather than the 2.6 that would just about do, to keep margin — and rather than the 3.5
+    // it was, which described the single tree shape that used to exist rather than any
+    // requirement. Five shapes at five heights now have to fit between these.
     const obstacles = makeField("heights");
     const all = obstacles.range(20, 2000);
     const rocks = all.filter((o) => o.kind === ObstacleKind.Rock);
     const trees = all.filter((o) => o.kind === ObstacleKind.Tree);
 
     for (const r of rocks) expect(r.height).toBeLessThan(1.2);
-    for (const t of trees) expect(t.height).toBeGreaterThan(3.5);
+    for (const t of trees) expect(t.height).toBeGreaterThan(3.0);
+  });
+
+  it("draws on all five shapes of each kind, fairly evenly", () => {
+    // A picker stuck on one value would look exactly like the forest this replaced, and every
+    // other test would still pass.
+    const obstacles = makeField("variety");
+    const all = obstacles.range(20, 4000);
+    for (const kind of [ObstacleKind.Tree, ObstacleKind.Rock]) {
+      const counts = new Array<number>(VARIANTS).fill(0);
+      for (const o of all.filter((o) => o.kind === kind)) counts[o.variant]!++;
+      const total = counts.reduce((a, b) => a + b, 0);
+      expect(total).toBeGreaterThan(100);
+      for (let v = 0; v < VARIANTS; v++) {
+        const share = counts[v]! / total;
+        expect(share, `variant ${v} of kind ${kind} is ${(share * 100).toFixed(1)}% of the mix`)
+          .toBeGreaterThan(0.1);
+      }
+    }
+  });
+
+  it("keeps the same course when a seed gains new shapes", () => {
+    // The variant is hashed from (seed, slice, index) rather than drawn from the placement
+    // generator, precisely so that adding shapes did not consume a value from that stream and
+    // silently reshuffle every course anyone had played. Position must depend only on
+    // placement, never on which shape came out.
+    const obstacles = makeField("stability");
+    for (const o of obstacles.range(20, 800)) {
+      expect(Number.isFinite(o.x)).toBe(true);
+      expect(o.variant).toBeGreaterThanOrEqual(0);
+      expect(o.variant).toBeLessThan(VARIANTS);
+    }
+    // A spot-check with known values, so a change to the placement stream shows up here
+    const [first] = obstacles.range(20, 60);
+    expect(first!.x).toBeCloseTo(-14.9269, 3);
+    expect(first!.z).toBeCloseTo(33.3822, 3);
   });
 
   it("finds nothing on the clear racing line", () => {

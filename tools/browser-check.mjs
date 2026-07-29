@@ -409,6 +409,56 @@ else
       `${(faded * 100).toFixed(0)}% as strong)`,
   );
 
+// --- Five shapes of each, and every collider matching the shape it belongs to --------------
+// The heights that decide what you can jump are written down by hand, one per variant, so
+// they can silently drift from the geometry they are supposed to describe. This compares each
+// declared height against the mesh actually built for it, and checks all five shapes are in
+// use — a variant picker stuck on 0 would look like the old single-tree forest and pass
+// everything else.
+const variants = await page.evaluate(() => {
+  const g = window.__game;
+  const seen = { tree: new Set(), rock: new Set() };
+  for (let i = 2; i < 400; i++) {
+    for (const o of g.obstacles.slice(i)) {
+      (o.kind === 0 ? seen.tree : seen.rock).add(o.variant);
+    }
+  }
+
+  // Declared height at scale 1, recovered from any obstacle of that variant
+  const declared = { tree: {}, rock: {} };
+  for (let i = 2; i < 400; i++) {
+    for (const o of g.obstacles.slice(i)) {
+      const bag = o.kind === 0 ? declared.tree : declared.rock;
+      bag[o.variant] = o.height / o.scale;
+    }
+  }
+
+  const mismatches = [];
+  for (const kind of ["tree", "rock"]) {
+    for (const v of Object.keys(declared[kind])) {
+      const mesh = g.scene.meshes.find((m) => m.name === `${kind}${v}`);
+      if (!mesh) {
+        mismatches.push(`${kind}${v}: no mesh`);
+        continue;
+      }
+      mesh.refreshBoundingInfo();
+      const top = mesh.getBoundingInfo().boundingBox.maximum.y;
+      const want = declared[kind][v];
+      if (Math.abs(top - want) > 0.1) {
+        mismatches.push(`${kind}${v}: collider ${want.toFixed(2)}m vs mesh ${top.toFixed(2)}m`);
+      }
+    }
+  }
+  return { trees: [...seen.tree].sort(), rocks: [...seen.rock].sort(), mismatches };
+});
+if (variants.trees.length < 5 || variants.rocks.length < 5)
+  fail(
+    `not all shapes in use: ${variants.trees.length} tree, ${variants.rocks.length} rock variants`,
+  );
+else if (variants.mismatches.length)
+  fail(`collider does not match the mesh — ${variants.mismatches.join("; ")}`);
+else console.log(`✓ 5 tree and 5 rock shapes, every collider matching its mesh`);
+
 // --- Retry, and the same seed must rebuild the same course ---------------------------------
 const before = await page.evaluate(() => {
   const g = window.__game;
