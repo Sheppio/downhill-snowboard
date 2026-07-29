@@ -49,6 +49,13 @@ const DENSITY_START = 3.2;
 const DENSITY_MAX = 10;
 const DENSITY_RAMP_END = 1300;
 
+// Past the first ramp the trees keep thickening, out to the distance the course is meant to
+// be brutal at. The clear channel and the overlap rule both cap how many can actually land,
+// so this asks for more than it will always get — the measured placement is what matters.
+const DENSITY_DEEP = 15;
+const DENSITY_DEEP_START = 2200;
+const DENSITY_DEEP_END = 5000;
+
 /** How far out from the centreline obstacles can appear, as a fraction of half-width. */
 const MAX_LATERAL = 1.5;
 
@@ -135,10 +142,11 @@ const ROCK_HEIGHTS = [0.76, 0.5, 0.84, 0.66, 0.62];
 const OBSTACLE_FREE_LENGTH = 20;
 
 /** Obstacles per slice at a given distance down the mountain. */
-function densityAt(z: number): number {
+export function densityAt(z: number): number {
   if (z < OBSTACLE_FREE_LENGTH) return 0;
   const ramp = clamp01((z - OBSTACLE_FREE_LENGTH) / DENSITY_RAMP_END);
-  return lerp(DENSITY_START, DENSITY_MAX, ramp);
+  const deep = clamp01((z - DENSITY_DEEP_START) / (DENSITY_DEEP_END - DENSITY_DEEP_START));
+  return lerp(DENSITY_START, DENSITY_MAX, ramp) + (DENSITY_DEEP - DENSITY_MAX) * deep;
 }
 
 /**

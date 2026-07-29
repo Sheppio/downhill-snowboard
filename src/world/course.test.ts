@@ -2,20 +2,47 @@ import { describe, expect, it } from "vitest";
 
 import {
   centreX,
+  gateClearance,
   gateX,
   halfWidth,
   makeCourseParams,
+  narrowingAt,
   weaveGain,
   type CourseParams,
 } from "./course";
 import { dailySeed, hashString } from "../core/rng";
-import { MAX_TURN_RATE, turnAuthorityAt } from "../player/controller";
+import { MAX_TURN_RATE, RiderController, turnAuthorityAt } from "../player/controller";
+import { pilotSteer } from "../player/pilot";
+import { TerrainField } from "./terrain";
 
 /**
- * Top speed the game actually reaches. Measured by riding: the pilot is at ~30 m/s within the
- * first 250m and peaks a little over 34.
+ * Top speed the game reaches *while following the racing line*, which is the speed that
+ * decides whether a corner can be held.
+ *
+ * Measured rather than written down. Both checks below compare geometry against speed, so a
+ * hand-maintained figure lets the two drift apart silently: with 37 written here, the course
+ * as it stood before the escalation — 20% easier geometry — still cleared the "must stay
+ * hard" bound, because it was being credited with a speed it never reached.
+ *
+ * Not the absolute top speed, which is around 46 m/s straight-lining. You cannot be at that
+ * speed *and* in a corner: entering one costs steering, and the carve tax is superlinear in
+ * lock, so a rider arriving at 46 is down to line-following speed within a second. Bounding
+ * against the straight-line figure would be bounding a state the corner itself prevents.
  */
-const V_TOP = 34;
+function measureTopSpeed(): number {
+  let fastest = 0;
+  for (const phrase of ["alpine", "daily-2026-03-04", "daily-2026-09-17", "zzz"]) {
+    const field = new TerrainField(hashString(phrase));
+    const rider = new RiderController(field);
+    for (let i = 0; i < 60 * 400 && rider.distance < 6000; i++) {
+      rider.update(1 / 60, pilotSteer(field.params, rider));
+      if (rider.speed > fastest) fastest = rider.speed;
+    }
+  }
+  return fastest;
+}
+
+const V_TOP = measureTopSpeed();
 
 /** A year of daily seeds, so the competition mode is checked over its real input space. */
 function yearOfDailySeeds(): string[] {
@@ -72,6 +99,17 @@ describe("the racing line is physically rideable", () => {
       }
     }
   }, 120_000);
+
+  // There is deliberately no absolute floor here — no "the hardest corner must ask at least
+  // N% of full lock". It looks like the obvious guard against difficulty being flattened
+  // again, and it does not work: taken at top speed the tightest corner asked 82% before this
+  // escalation and asks 91% after, because it lives on one outlier seed whose geometry barely
+  // moved. Any bound between those two numbers would be three points from a false failure.
+  //
+  // What actually changed is spread across five levers, and each is asserted where it lives:
+  // the weave and the gulley narrowing below, the clear channel below that, obstacle density
+  // in obstacles.test.ts, and the speed the rider builds in controller.test.ts. A flattening
+  // of any one of them fails its own test with a clear message, which a composite never would.
 
   it("does not put the tightest corner in the run-in", () => {
     // The run-in exists to let the player settle in, so it must not contain the hardest
@@ -158,15 +196,63 @@ describe("the racing line is physically rideable", () => {
   }, 120_000);
 });
 
-describe("difficulty keeps escalating past the old plateau", () => {
+describe("difficulty keeps escalating out to 5km", () => {
   it("leaves the course below 1300m exactly as it was", () => {
-    // Everything else in the game stops ramping by ~1300m, which is where this one starts.
+    // The opening ramps all finish by ~1300m, and every escalation starts at or after it.
     // Holding the earlier stretch identical means saved per-seed bests still describe the
     // same course over the part of the run nearly every attempt actually covers.
     expect(weaveGain(0)).toBe(1);
     expect(weaveGain(600)).toBe(1);
     expect(weaveGain(1300)).toBe(1);
     expect(weaveGain(1301)).toBeGreaterThan(1);
+
+    const p = params("alpine");
+    expect(narrowingAt(1300)).toBe(1);
+    expect(gateClearance(p, 1300)).toBeCloseTo(gateClearance(p, 1290), 2);
+  });
+
+  it("keeps closing the gulley in, out to 5km and no further", () => {
+    // The one lever that costs nothing against the turn-rate budget: a narrower corridor does
+    // not bend the racing line any harder — the line's excursion is a fraction of this width,
+    // so it straightens slightly — it just leaves less room either side of it.
+    expect(narrowingAt(2200)).toBe(1);
+    expect(narrowingAt(3600)).toBeLessThan(1);
+    expect(narrowingAt(5000)).toBeLessThan(narrowingAt(3600));
+    expect(narrowingAt(9000)).toBe(narrowingAt(5000));
+
+    // And it reaches the floor of the gulley itself. Averaged over seeds and over a stretch,
+    // because the width breathes on noise and one metre proves nothing either way.
+    const meanWidth = (from: number, to: number) => {
+      let sum = 0;
+      let n = 0;
+      for (const phrase of [...yearOfDailySeeds(), "alpine"]) {
+        const p = params(phrase);
+        for (let z = from; z < to; z += 10) {
+          sum += halfWidth(p, z);
+          n++;
+        }
+      }
+      return sum / n;
+    };
+    const early = meanWidth(1500, 2000);
+    const deep = meanWidth(5000, 5500);
+    expect(deep, `deep ${deep.toFixed(1)}m vs early ${early.toFixed(1)}m`).toBeLessThan(early * 0.9);
+  }, 30_000);
+
+  it("keeps threading the racing line through a tighter gap", () => {
+    // Sampled across many seeds rather than at one z: the channel breathes on noise, and the
+    // claim is about the floor moving, not about any single metre.
+    const worst = (from: number, to: number) => {
+      let m = Infinity;
+      for (const phrase of ["alpine", "powder-chute-42", "a", "zzz"]) {
+        const p = params(phrase);
+        for (let z = from; z < to; z += 5) m = Math.min(m, gateClearance(p, z));
+      }
+      return m;
+    };
+    const early = worst(1500, 2000);
+    const deep = worst(5000, 5500);
+    expect(deep, `deep ${deep.toFixed(2)}m vs early ${early.toFixed(2)}m`).toBeLessThan(early);
   });
 
   it("makes the gulley snake harder the further down you get", () => {

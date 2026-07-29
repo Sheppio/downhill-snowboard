@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { RiderController } from "./controller";
+import { dragScaleAt, RiderController } from "./controller";
 import { TerrainField } from "../world/terrain";
 import { centreX, halfWidth, OUT_OF_BOUNDS_FRACTION, lateralFraction } from "../world/course";
 import { hashString } from "../core/rng";
 import { angleDelta, clamp } from "../core/math";
+import { pilotSteer } from "./pilot";
 
 function ride(seed: string, steer: number | ((t: number) => number), seconds: number) {
   const field = new TerrainField(hashString(seed));
@@ -292,4 +293,62 @@ describe("course geometry sanity", () => {
       expect(Number.isFinite(halfWidth(field.params, z))).toBe(true);
     }
   });
+});
+
+describe("the mountain keeps building speed", () => {
+  it("eases the drag from 1300m out to 5km, then holds", () => {
+    // Terminal speed is where slope acceleration balances drag, so it arrives within a few
+    // hundred metres and never moves again. That is why a long run used to feel identical at
+    // 7km and at 1.5km. Easing the drag raises the ceiling instead of leaving it flat.
+    expect(dragScaleAt(0)).toBe(1);
+    expect(dragScaleAt(1300)).toBe(1);
+    expect(dragScaleAt(3000)).toBeLessThan(1);
+    expect(dragScaleAt(5000)).toBeLessThan(dragScaleAt(3000));
+    expect(dragScaleAt(20_000), "the ceiling stops rising at 5km").toBe(dragScaleAt(5000));
+  });
+
+  it("actually gets the rider going faster deep in the run", () => {
+    // The check that matters: not that a number ramps, but that riding produces more speed.
+    //
+    // Compared as a mean over a window, across seeds, and ridden by the pilot. Every one of
+    // those is load-bearing:
+    //
+    // - Instantaneous speed swings between 28 and 39 m/s on the undulations alone, so a
+    //   peak-to-peak comparison measures which bump the rider happened to be on. An earlier
+    //   version compared peaks and passed with the ramp removed.
+    // - Straight-lining does not work either, and the reason is worth knowing: with no steer
+    //   the rider drifts into the bank and climbs it, and deep in the course the gulley is
+    //   narrower, so the bank arrives sooner. That cost cancelled the drag relief exactly.
+    //
+    // The deep window is also where the weave is hardest, so the pilot is carving more there
+    // and paying the carve tax for it. That works against this measurement, which makes a
+    // passing result the conservative one.
+    const meanSpeed = (from: number, to: number): number => {
+      let sum = 0;
+      let n = 0;
+      for (const phrase of ["alpine", "powder-chute-42", "zzz"]) {
+        const field = new TerrainField(hashString(phrase));
+        const rider = new RiderController(field);
+        for (let i = 0; i < 60 * 600 && rider.distance < to; i++) {
+          rider.update(1 / 60, pilotSteer(field.params, rider));
+          if (rider.distance >= from) {
+            sum += rider.speed;
+            n++;
+          }
+        }
+      }
+      return sum / n;
+    };
+
+    const early = meanSpeed(1000, 2000);
+    const deep = meanSpeed(5000, 6000);
+    expect(
+      deep,
+      `${deep.toFixed(1)} m/s past 5km vs ${early.toFixed(1)} m/s over the old plateau`,
+      // The measured margin is not large — 30.7 against 30.1 — because the extra speed is
+      // partly spent on the harder weave it is being carried through. With the relief removed
+      // the deep window comes out at 29.3, slower than the plateau, so the direction of the
+      // comparison is what carries the meaning rather than the size of it.
+    ).toBeGreaterThan(early);
+  }, 60_000);
 });

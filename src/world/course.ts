@@ -120,7 +120,7 @@ const WEAVE_GAIN_END = 4200;
  * worst case is ~0.87 today and ~1.41 is where an earlier, tighter set made seeds
  * unfollowable, so a gain of 1.3 takes it to ~1.14 — still clear of that line.
  */
-const WEAVE_GAIN_MAX = 1.3;
+const WEAVE_GAIN_MAX = 1.36;
 
 /** How much the centreline weave is amplified at a given distance down the mountain. */
 export function weaveGain(z: number): number {
@@ -155,6 +155,20 @@ export function centreSlope(params: CourseParams, z: number): number {
   return (centreX(params, z + h) - centreX(params, z - h)) / (2 * h);
 }
 
+// The gulley itself closes in deep in the course. This is the one lever that costs nothing
+// against the rider's turn-rate budget: a narrower corridor does not bend the racing line any
+// harder — if anything it straightens it, since the line's excursion is a fraction of this
+// width — it just leaves less room either side of it and brings the banks in closer.
+const NARROWING_START = 2200;
+const NARROWING_END = 5000;
+/** How much of the gulley's width remains once it has fully closed in. */
+const NARROWING_MIN = 0.82;
+
+/** Fraction of the nominal gulley width still open at a given distance. */
+export function narrowingAt(z: number): number {
+  return lerp(1, NARROWING_MIN, clamp01((z - NARROWING_START) / (NARROWING_END - NARROWING_START)));
+}
+
 /** Half-width of the rideable floor at a given distance down the mountain. */
 export function halfWidth(params: CourseParams, z: number): number {
   const t = z;
@@ -167,7 +181,7 @@ export function halfWidth(params: CourseParams, z: number): number {
   // centreX: the racing line is offset by a fraction of this width, so a curvature step here
   // feeds straight into the line the rider has to hold.
   const ramp = smootherstep(0, RUN_IN_LENGTH, t);
-  return clamped + (1 - ramp) * 10;
+  return (clamped + (1 - ramp) * 10) * narrowingAt(t);
 }
 
 /**
@@ -240,13 +254,24 @@ const GATE_CLEARANCE_START = 5.0;
 export const GATE_CLEARANCE_MIN = 3.1;
 /** Distance over which the channel tightens to its floor. */
 const GATE_CLEARANCE_RAMP = 1200;
+
+// The floor above is where the channel used to stop tightening, at ~1280m. Past that it goes
+// on closing, slowly, to the distance the course is meant to be brutal at. The rider is also
+// getting faster over the same stretch, so a gap that is narrower *and* arrives sooner is
+// tightening twice over — which is why this second stage is small.
+const GATE_SQUEEZE_START = 2200;
+const GATE_SQUEEZE_END = 5000;
+/** Clear half-width once the squeeze is complete. Rider radius is 0.6m. */
+export const GATE_CLEARANCE_DEEP = 2.5;
 /** How far the widest relief stretches open beyond the floor. */
 const GATE_BREATH = 2.4;
 
 /** Half-width of the clear channel around the racing line at a given distance, in metres. */
 export function gateClearance(params: CourseParams, z: number): number {
   const ramp = clamp01((z - RUN_IN_LENGTH) / GATE_CLEARANCE_RAMP);
-  const base = GATE_CLEARANCE_START + (GATE_CLEARANCE_MIN - GATE_CLEARANCE_START) * ramp;
+  const settled = GATE_CLEARANCE_START + (GATE_CLEARANCE_MIN - GATE_CLEARANCE_START) * ramp;
+  const squeeze = clamp01((z - GATE_SQUEEZE_START) / (GATE_SQUEEZE_END - GATE_SQUEEZE_START));
+  const base = settled + (GATE_CLEARANCE_DEEP - GATE_CLEARANCE_MIN) * squeeze;
 
   // Only ever widens, so the floor above stays a guarantee rather than an average
   const breath = fbm1(params.gateSeed ^ 0x9e3779b1, z, { octaves: 2, scale: 210 });

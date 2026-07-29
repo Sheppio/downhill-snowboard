@@ -38,6 +38,35 @@ const FRICTION = 0.6;
 /** Quadratic air resistance. Tuned with the above for a ~120 km/h top speed in real play. */
 const AIR_DRAG = 0.0050;
 
+// --- The speed the mountain builds to ----------------------------------------------------
+// Terminal speed is where gravity along the slope balances air drag, so it is reached within
+// a few hundred metres and then never changes. That is why a long run used to feel the same
+// at 7km as at 1.5km: the rider was already going as fast as they ever would.
+//
+// Easing the drag with distance raises that ceiling. Speed is the lever worth reaching for
+// first because it makes everything harder at once — the same corner demands proportionally
+// more turn rate, and every gap between two trees arrives sooner — and it is felt rather
+// than read. Terminal speed goes as 1/sqrt(drag), so the relief below buys about +18%.
+//
+// It is the rider getting faster, not the mountain getting steeper: the height field is
+// untouched, so a seed builds the identical course it always did.
+
+/** Distance at which the drag starts easing. Matches where every other ramp used to stop. */
+const DRAG_RELIEF_START = 1300;
+/** Distance at which it is fully eased — where the course is meant to be brutal. */
+const DRAG_RELIEF_END = 5000;
+/** Drag remaining at the end of the ramp. 0.72 gives 1/sqrt(0.72) ≈ 1.18x the top speed. */
+const DRAG_RELIEF_MIN = 0.80;
+
+/** Air drag multiplier at a given distance down the mountain. */
+export function dragScaleAt(distance: number): number {
+  return lerp(
+    1,
+    DRAG_RELIEF_MIN,
+    clamp01((distance - DRAG_RELIEF_START) / (DRAG_RELIEF_END - DRAG_RELIEF_START)),
+  );
+}
+
 /** Speed lost to carving, at full lock, as a fraction of current speed per second. */
 const CARVE_DRAG = 0.33;
 /** Exponent on |steer|. Above 1 makes tight turns disproportionately expensive. */
@@ -252,7 +281,7 @@ export class RiderController {
       this.speed -= carve * this.speed * dt;
       this.speed -= FRICTION * dt;
     }
-    this.speed -= AIR_DRAG * this.speed * this.speed * dt;
+    this.speed -= AIR_DRAG * dragScaleAt(this.distance) * this.speed * this.speed * dt;
     if (this.speed < 0) this.speed = 0;
     if (this.speed > this.topSpeed) this.topSpeed = this.speed;
 

@@ -19,6 +19,35 @@ The gulley walls are just steep snow, not invisible walls. Riding up one costs s
 gravity brings you back down, so you can bank off them deliberately. Stay out of the course
 for more than three seconds and the run ends.
 
+## Difficulty
+
+The mountain keeps getting harder until 5km, and then stops. Five things escalate:
+
+| | Opening | At 5km |
+| --- | --- | --- |
+| Obstacles per 12m | 3.2, reaching 10 by 1.3km | 15 |
+| Clear channel around the racing line | 5.0m, closing to 3.1m by 1.3km | 2.5m |
+| Gulley width | full | 82% |
+| Weave in the racing line | ×1, reaching ×1.36 by 4.2km | ×1.36 |
+| Top speed while holding the line | 34.7 m/s | 36.5 m/s |
+
+Nothing below 1300m changed when this was added, deliberately: that is the stretch nearly
+every attempt covers, and per-seed bests already recorded should still describe the same
+course.
+
+The escalation is bounded by one hard rule — **the racing line must never demand more turn
+rate than the rider can produce.** Following a line of curvature κ at speed v needs κ·v rad/s,
+and past that the corner is not hard, it is impossible, identically for everyone on that seed.
+The tightest corner across a year of daily seeds now asks 91% of full lock, against 82% before.
+That is the ceiling, and it is why the weave stops at ×1.36 rather than going further.
+
+Speed and the weave compete for the same budget, and speed wins ties: it makes the corners
+*and* the trees harder, where the weave only bends the line. Narrowing the gulley is the one
+lever that costs nothing against it — a tighter corridor does not bend the line at all.
+
+Past 5km the course is stationary. It is meant to be survivable there, not endless: the
+reference pilot used to reach 8km on 52 of 53 daily seeds and now manages it on 29.
+
 ## Seeds
 
 Every course is generated from a seed, and **the same seed always builds exactly the same

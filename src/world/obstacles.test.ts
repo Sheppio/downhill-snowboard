@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ObstacleField, ObstacleKind, SLICE_LENGTH, VARIANTS } from "./obstacles";
+import { densityAt, ObstacleField, ObstacleKind, SLICE_LENGTH, VARIANTS } from "./obstacles";
 import { TerrainField } from "./terrain";
 import {
   GATE_CLEARANCE_MIN,
@@ -80,10 +80,14 @@ describe("every course can be completed", () => {
     // plays" and "the geometry never becomes impossible at any distance".
     //
     // Worth knowing what this number is not: it is the *pilot's* limit as much as the
-    // course's. Ridden to 6000m the pilot completes all 53 daily seeds at the current weave
-    // gain of 1.3 and starts losing seeds at 1.35 — so if difficulty is ever raised past that
-    // point, check whether the failures are the course being unfair or simply this
-    // deliberately crude autopilot cutting corners, before assuming the former.
+    // course's, and the pilot is a poor judge of most of what makes the course hard. It holds
+    // the racing line to within about a metre, and the clear channel guarantees that line a
+    // path — so denser trees and a narrower gulley, which is most of what a player feels, cost
+    // it almost nothing. Only the line demanding more turn rate than it has really kills it.
+    //
+    // Measured across the 53 daily seeds with the escalation to 5km in place: the pilot dies
+    // before 8000m on 24 of them, worst at 3615m, against 1 of 53 before the escalation. So
+    // this 3000m bound is where the guarantee sits, and it clears the worst seed by 600m.
     const seeds = [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"];
     const RUN_DISTANCE = 3000;
 
@@ -293,4 +297,39 @@ describe("collision", () => {
       expect(obstacles.hitTest(gateX(terrain.params, z), z, 0.6, terrain.heightAt(gateX(terrain.params, z), z))).toBeNull();
     }
   });
+});
+
+describe("the trees keep thickening out to 5km", () => {
+  it("goes on asking for more past the opening ramp, then stops at 5km", () => {
+    // The opening ramp finished by 1300m and that was the end of it — a run that got that far
+    // met the same forest for the rest of its life, however long that was.
+    // The first ramp completes just past 1300m; from there to 2200m is the old plateau.
+    expect(densityAt(1400)).toBe(densityAt(2200));
+    expect(densityAt(3500)).toBeGreaterThan(densityAt(2200));
+    expect(densityAt(5000)).toBeGreaterThan(densityAt(3500));
+    expect(densityAt(12_000), "difficulty tops out at 5km").toBe(densityAt(5000));
+  });
+
+  it("actually places them, rather than asking for trees that will not fit", () => {
+    // Density is a request, not a result: the clear channel and the overlap rule both reject
+    // candidates, and the gulley is narrowing over the same stretch, so asking for more can
+    // easily deliver nothing. This counts what lands.
+    const placed = (z: number) => {
+      let total = 0;
+      const seeds = ["alpine", "powder-chute-42", "daily-2026-03-04", "zzz"];
+      for (const phrase of seeds) {
+        const terrain = new TerrainField(hashString(phrase));
+        const field = new ObstacleField(hashString(phrase), terrain.params, terrain);
+        const first = Math.floor(z / SLICE_LENGTH);
+        for (let i = first; i < first + 25; i++) total += field.slice(i).length;
+      }
+      return total / (seeds.length * 25);
+    };
+
+    const early = placed(1500);
+    const deep = placed(5000);
+    expect(deep, `${deep.toFixed(1)} per slice at 5km vs ${early.toFixed(1)} at 1.5km`).toBeGreaterThan(
+      early * 1.3,
+    );
+  }, 30_000);
 });
