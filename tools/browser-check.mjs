@@ -690,6 +690,12 @@ else console.log("✓ a different seed builds a different mountain");
   await page.evaluate(() => {
     localStorage.clear();
     localStorage.setItem("downhill.best.old-favourite", "4321");
+    // A record in the shape written before distances were kept: it must still be listed, with
+    // a dash where the metres go rather than a zero or a blank.
+    localStorage.setItem(
+      "downhill.scores.v1",
+      JSON.stringify([{ seed: "before-distances", score: 4321, at: Date.now() - 9e7 }]),
+    );
   });
   await page.reload({ waitUntil: "load" });
   await page.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
@@ -703,8 +709,12 @@ else console.log("✓ a different seed builds a different mountain");
     // Ends the run wherever the rider has got to, rather than waiting on a tree
     await page.evaluate(() => window.__game.endRun("crash"));
     await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+    const ended = {
+      score: (await page.textContent("#end-score")).replace(/\D/g, ""),
+      dist: (await page.textContent("#end-dist")).replace(/\D/g, ""),
+    };
     await page.click("#btn-menu");
-    return (await page.textContent("#end-score")).replace(/,/g, "");
+    return ended;
   };
   const custom = await ride("powder-chute-42");
   await ride("daily-2026-01-15");
@@ -718,21 +728,27 @@ else console.log("✓ a different seed builds a different mountain");
       seed: el.querySelector(".score-seed").textContent.trim(),
       score: el.querySelector(".score-value").textContent.replace(/,/g, ""),
       when: el.querySelector(".score-when").textContent.trim(),
+      dist: el.querySelector(".score-dist").textContent.trim(),
     })),
   );
-  const shown = rows.map((r) => `${r.seed} ${r.score} (${r.when})`).join(" · ");
+  const shown = rows.map((r) => `${r.seed} ${r.score}/${r.dist} (${r.when})`).join(" · ");
 
-  if (rows.length !== 2) fail(`leaderboard shows ${rows.length} rows, expected 2 — ${shown}`);
+  if (rows.length !== 3) fail(`leaderboard shows ${rows.length} rows, expected 3 — ${shown}`);
   else if (!/\b15\b/.test(rows[0].seed) || !/jan/i.test(rows[0].seed) || !/2026/.test(rows[0].seed))
     fail(`daily row is labelled "${rows[0].seed}", expected the date it encodes (2026-01-15)`);
   else if (!rows[0].when.startsWith("Daily"))
     fail(`daily row is not tagged as one: "${rows[0].when}"`);
   else if (rows[1].seed !== "powder-chute-42")
     fail(`custom seed row does not name the seed: ${JSON.stringify(rows[1])}`);
-  else if (rows[1].score !== custom)
-    fail(`custom seed row scored ${rows[1].score}, the run ended on ${custom}`);
+  else if (rows[1].score !== custom.score)
+    fail(`custom seed row scored ${rows[1].score}, the run ended on ${custom.score}`);
   else if (rows[1].when !== "just now")
     fail(`a run that just ended is dated "${rows[1].when}"`);
+  else if (rows[1].dist.replace(/\D/g, "") !== custom.dist)
+    fail(`custom row says ${rows[1].dist}, but that run ended at ${custom.dist}m`);
+  else if (!/m$/.test(rows[1].dist)) fail(`distance is unitless: "${rows[1].dist}"`);
+  else if (rows[2].dist !== "—")
+    fail(`a record with no distance shows "${rows[2].dist}" instead of a dash`);
   else if (rows.some((r) => r.seed === "old-favourite"))
     fail(`a best with no recorded time was listed anyway: ${shown}`);
   else console.log(`✓ leaderboard, newest first: ${shown}`);

@@ -1,13 +1,21 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { formatWhen, readBest, readRecord, readScores, recordBest } from "./leaderboard";
+import {
+  formatDistance,
+  formatWhen,
+  readBest,
+  readRecord,
+  readScores,
+  recordBest,
+} from "./leaderboard";
 
 /**
  * An in-memory localStorage.
  *
  * The suite runs in node, which has no storage at all, and a real browser's would carry state
  * between tests anyway. This implements the parts of the Storage interface the leaderboard
- * uses — including `length`/`key`, which the migration walks to find the old per-seed keys.
+ * uses, plus a switch to make every call throw — which is what a browser with storage
+ * disabled actually does.
  */
 class MemoryStorage {
   readonly map = new Map<string, string>();
@@ -62,37 +70,68 @@ const t = (hours: number) => BASE + hours * 3600_000;
 
 describe("recording a best", () => {
   it("keeps the score and when it was set", () => {
-    expect(recordBest("alpine", 1200, t(0))).toBe(true);
-    expect(readRecord("alpine")).toEqual({ seed: "alpine", score: 1200, at: t(0) });
+    expect(recordBest("alpine", 1200, 940.7, t(0))).toBe(true);
+    expect(readRecord("alpine")).toEqual({
+      seed: "alpine",
+      score: 1200,
+      at: t(0),
+      distance: 940,
+    });
     expect(readBest("alpine")).toBe(1200);
   });
 
   it("replaces the record when it is beaten, with the new time", () => {
-    recordBest("alpine", 1200, t(0));
-    expect(recordBest("alpine", 1800, t(5))).toBe(true);
+    recordBest("alpine", 1200, 500, t(0));
+    expect(recordBest("alpine", 1800, 500, t(5))).toBe(true);
 
     expect(readScores(), "one row per seed, not one per run").toHaveLength(1);
-    expect(readRecord("alpine")).toEqual({ seed: "alpine", score: 1800, at: t(5) });
+    expect(readRecord("alpine")).toEqual({
+      seed: "alpine",
+      score: 1800,
+      at: t(5),
+      distance: 500,
+    });
   });
 
   it("leaves the record and its time alone when the run does not beat it", () => {
-    recordBest("alpine", 1800, t(0));
-    expect(recordBest("alpine", 900, t(5))).toBe(false);
+    recordBest("alpine", 1800, 500, t(0));
+    expect(recordBest("alpine", 900, 500, t(5))).toBe(false);
     // Equalling a best is not a new achievement, so it must not restamp it either — otherwise
     // a repeated run would shuffle the seed back to the top of a list ordered by recency.
-    expect(recordBest("alpine", 1800, t(6))).toBe(false);
+    expect(recordBest("alpine", 1800, 500, t(6))).toBe(false);
 
-    expect(readRecord("alpine")).toEqual({ seed: "alpine", score: 1800, at: t(0) });
+    // The distance belongs to the run that set the record, so it stays put with everything else
+    expect(readRecord("alpine")).toEqual({
+      seed: "alpine",
+      score: 1800,
+      at: t(0),
+      distance: 500,
+    });
+  });
+
+  it("keeps the distance of the run that set the record", () => {
+    recordBest("alpine", 100, 80, t(0));
+    expect(readRecord("alpine")?.distance).toBe(80);
+
+    recordBest("alpine", 900, 720, t(1));
+    expect(readRecord("alpine")?.distance, "the new record's run, not the old one").toBe(720);
+  });
+
+  it("records a score whose distance is missing rather than dropping it", () => {
+    // A row can say "—" for how far; it cannot say nothing for the score.
+    expect(recordBest("alpine", 1200, Number.NaN, t(0))).toBe(true);
+    expect(readBest("alpine")).toBe(1200);
+    expect(readRecord("alpine")?.distance).toBeUndefined();
   });
 
   it("does not record a scoreless run", () => {
-    expect(recordBest("alpine", 0, t(0))).toBe(false);
+    expect(recordBest("alpine", 0, 500, t(0))).toBe(false);
     expect(readScores()).toEqual([]);
   });
 
   it("keeps seeds apart", () => {
-    recordBest("alpine", 1200, t(0));
-    recordBest("powder-bowl-12", 400, t(1));
+    recordBest("alpine", 1200, 500, t(0));
+    recordBest("powder-bowl-12", 400, 500, t(1));
 
     expect(readBest("alpine")).toBe(1200);
     expect(readBest("powder-bowl-12")).toBe(400);
@@ -105,9 +144,9 @@ describe("ordering", () => {
   it("puts the newest best at the top", () => {
     // Scores descend as the times ascend, so ordering by score would give exactly the
     // opposite list — the check would pass on either rule if they all scored the same.
-    recordBest("first", 300, t(0));
-    recordBest("second", 200, t(1));
-    recordBest("third", 100, t(2));
+    recordBest("first", 300, 500, t(0));
+    recordBest("second", 200, 500, t(1));
+    recordBest("third", 100, 500, t(2));
 
     expect(readScores().map((r) => r.seed)).toEqual(["third", "second", "first"]);
   });
@@ -115,11 +154,11 @@ describe("ordering", () => {
   it("lifts a seed back to the top when its best is beaten", () => {
     // The point of ordering by achievement rather than by score: the list shows what you have
     // been doing lately, so an old seed you have just improved on comes back into view.
-    recordBest("old", 5000, t(0));
-    recordBest("new", 100, t(1));
+    recordBest("old", 5000, 500, t(0));
+    recordBest("new", 100, 500, t(1));
     expect(readScores().map((r) => r.seed)).toEqual(["new", "old"]);
 
-    recordBest("old", 5100, t(2));
+    recordBest("old", 5100, 500, t(2));
     expect(readScores().map((r) => r.seed)).toEqual(["old", "new"]);
   });
 });
@@ -140,6 +179,18 @@ describe("scores with no time on them", () => {
 
     expect(readScores().map((r) => r.seed)).toEqual(["timed"]);
     expect(readBest("undated")).toBe(0);
+  });
+
+  it("still lists a record set before distances were kept", () => {
+    // A missing distance is not a missing record: the score and its time are both there, and
+    // the row shows a dash for how far. Only a missing *time* disqualifies a row.
+    storage.setItem(
+      "downhill.scores.v1",
+      JSON.stringify([{ seed: "before-distances", score: 4321, at: t(0) }]),
+    );
+
+    expect(readBest("before-distances")).toBe(4321);
+    expect(readRecord("before-distances")?.distance).toBeUndefined();
   });
 
   it("leaves bests in the old per-seed format where they are", () => {
@@ -177,7 +228,7 @@ describe("storage that cannot be trusted", () => {
     // every method throw. A high score is never worth crashing a game over.
     storage.broken = true;
 
-    expect(() => recordBest("alpine", 1200, t(0))).not.toThrow();
+    expect(() => recordBest("alpine", 1200, 500, t(0))).not.toThrow();
     expect(readScores()).toEqual([]);
     expect(readBest("alpine")).toBe(0);
   });
@@ -185,7 +236,7 @@ describe("storage that cannot be trusted", () => {
   it("does not throw when there is no storage at all", () => {
     delete (globalThis as { localStorage?: unknown }).localStorage;
 
-    expect(() => recordBest("alpine", 1200, t(0))).not.toThrow();
+    expect(() => recordBest("alpine", 1200, 500, t(0))).not.toThrow();
     expect(readScores()).toEqual([]);
   });
 });
@@ -209,5 +260,17 @@ describe("how long ago", () => {
   it("does not report the future as a negative age", () => {
     // Phones change timezone and get their clocks corrected; a record can end up ahead of now.
     expect(formatWhen(now + 3600_000, now)).toBe("just now");
+  });
+});
+
+describe("how far", () => {
+  it("reads as metres", () => {
+    expect(formatDistance(412)).toBe("412m");
+    expect(formatDistance(4120)).toMatch(/^4.120m$/); // grouped in the runtime's locale
+  });
+
+  it("shows a dash when the run's distance was never recorded", () => {
+    // Not "0m": that reads as a run that went nowhere, which is a different claim entirely.
+    expect(formatDistance(undefined)).toBe("—");
   });
 });

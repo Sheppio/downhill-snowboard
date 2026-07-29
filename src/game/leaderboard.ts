@@ -21,6 +21,11 @@ export interface ScoreRecord {
   score: number;
   /** When that best was set, epoch ms. Always a real time — see `parse`. */
   at: number;
+  /**
+   * How far that run got, in metres. Absent on bests set before this was kept — the run is
+   * long gone, so there is nothing to fill it in from and the row simply says so.
+   */
+  distance?: number;
 }
 
 const STORE_KEY = "downhill.scores.v1";
@@ -72,7 +77,13 @@ function parse(raw: string): ScoreRecord[] {
     const at = Number(item.at);
     if (!Number.isFinite(at) || at <= 0) continue;
     seen.add(item.seed);
-    out.push({ seed: item.seed, score, at });
+
+    const record: ScoreRecord = { seed: item.seed, score, at };
+    // Unlike the time, a missing distance does not disqualify a record: the score and when it
+    // was set are what the row is *for*, and both are still there.
+    const distance = Math.floor(Number(item.distance));
+    if (Number.isFinite(distance) && distance > 0) record.distance = distance;
+    out.push(record);
   }
   return out;
 }
@@ -120,8 +131,17 @@ export function readBest(seed: string): number {
  * A run that merely equals the best leaves the timestamp alone: the stamp marks when the
  * score was *achieved*, so repeating it is not a new achievement and must not reshuffle the
  * ordering. `now` is injectable so the ordering can be tested without waiting for a clock.
+ *
+ * The distance belongs to the run that set the record, not to the seed, so it is replaced
+ * wholesale along with the score rather than tracked as a best of its own. Score already
+ * rises with distance — they would only come apart on a run that went further but slower.
  */
-export function recordBest(seed: string, score: number, now: number = Date.now()): boolean {
+export function recordBest(
+  seed: string,
+  score: number,
+  distance: number,
+  now: number = Date.now(),
+): boolean {
   const value = Math.floor(score);
   if (value <= 0) return false;
 
@@ -129,7 +149,11 @@ export function recordBest(seed: string, score: number, now: number = Date.now()
   const existing = records.find((r) => r.seed === seed);
   if (existing && value <= existing.score) return false;
 
-  save([...records.filter((r) => r.seed !== seed), { seed, score: value, at: now }]);
+  const record: ScoreRecord = { seed, score: value, at: now };
+  const metres = Math.floor(distance);
+  if (Number.isFinite(metres) && metres > 0) record.distance = metres;
+
+  save([...records.filter((r) => r.seed !== seed), record]);
   return true;
 }
 
@@ -157,4 +181,14 @@ export function formatWhen(at: number, now: number = Date.now()): string {
     month: "short",
     ...(sameYear ? {} : { year: "numeric" }),
   });
+}
+
+/**
+ * How far a recorded run got, for the leaderboard rows.
+ *
+ * A best set before distances were kept shows a dash. There is no way to recover the number —
+ * the run it belonged to is long over — and a zero would read as a run that went nowhere.
+ */
+export function formatDistance(distance: number | undefined): string {
+  return distance === undefined ? "—" : `${distance.toLocaleString()}m`;
 }

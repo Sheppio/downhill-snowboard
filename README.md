@@ -32,7 +32,7 @@ mountain** — same terrain, same corners, same trees, on any device.
 ## Your scores
 
 **Your scores** on the start screen lists your best on every seed you have ridden, one row per
-seed, with when you set it.
+seed, with how far that run got and when you set it.
 
 The list is ordered by *when the best was made*, newest at the top — not by score. Beating your
 best on a seed lifts it back to the top, so the list reads as what you have been riding lately
@@ -48,7 +48,9 @@ the date moves on, nothing else in the game can reach them.
 It lives in the browser's local storage, so it is per-device and per-browser: there is no
 account and nothing is sent anywhere. Every row states when it was set, so a score with no
 recorded time is not listed at all — that includes bests from before the list existed, which
-were stored as a bare number with nowhere to keep a date.
+were stored as a bare number with nowhere to keep a date. A record from before distances were
+kept is still listed, with a dash where the metres go: the score and its date are what the row
+is for, and both are still there.
 
 ## Running it
 

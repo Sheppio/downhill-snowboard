@@ -5,7 +5,7 @@
  * and safe-area insets come for free, and none of it costs a draw call.
  */
 
-import { formatWhen, readScores } from "../game/leaderboard";
+import { formatDistance, formatWhen, readScores } from "../game/leaderboard";
 import { speedMultiplier } from "../game/score";
 import { dailyLabel, isDaily, seedLabel } from "../game/seed";
 
@@ -152,11 +152,13 @@ export class Hud {
         const ride = document.createElement("button");
         ride.type = "button";
         ride.className = "score-row";
-        ride.setAttribute("aria-label", `Ride ${label}, your best ${r.score}`);
+        const far = formatDistance(r.distance);
+        ride.setAttribute("aria-label", `Ride ${label}, your best ${r.score} over ${far}`);
         ride.append(
           cell("score-seed", label),
           cell("score-value", r.score.toLocaleString()),
           cell("score-when", isDaily(r.seed) ? `Daily · ${when}` : when),
+          cell("score-dist", far),
           cell("score-go", "›"),
         );
         ride.addEventListener("click", () => this.callbacks.onRideSeed(r.seed));

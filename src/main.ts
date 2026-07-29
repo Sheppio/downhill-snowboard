@@ -394,7 +394,7 @@ class Game {
     this.hud.setOutOfBounds(false, 1);
 
     const score = this.score.value;
-    const isRecord = recordBest(this.seed, score);
+    const isRecord = recordBest(this.seed, score, this.controller.distance);
 
     this.hud.showEnd({
       reason: this.endReason,
