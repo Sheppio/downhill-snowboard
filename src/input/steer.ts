@@ -28,7 +28,16 @@
  * is held between events, so there is nothing left to fall out of step.
  *
  * Pointer Events cannot do this — a PointerEvent describes one pointer and says nothing about
- * the others — so they are kept only for the mouse, where the problem does not arise.
+ * the others — so fingers are handled here and the mouse is handled by plain mouse events.
+ *
+ * **Not Pointer Events for the mouse either**, which is the subtler half. Pointer Events also
+ * fire for touch, so both APIs described the same finger, and the guard that stopped it being
+ * counted twice could only be set once a touch event had been seen. The browser fires
+ * `pointerdown` before `touchstart` and `pointerup` before `touchend`, so the very first touch
+ * of a page was added while the guard was off and skipped on removal once it was on — leaving
+ * a contact stuck for the life of the page, holding a turn nobody was asking for. Mouse events
+ * do not fire for touch (the compatibility ones are suppressed by `preventDefault` below), so
+ * the two inputs cannot describe the same contact and no guard is needed at all.
  */
 
 import { clamp } from "../core/math";
@@ -66,11 +75,8 @@ export interface Contact {
 export class SteerInput {
   /** Raw target in [-1, 1]. Negative is left. Smoothing happens in the rider controller. */
   private target = 0;
-  /**
-   * Mouse and pen only. Touches are never stored — see the note at the top of the file.
-   * A mouse cannot be one of several contacts, so there is nothing here that can drift.
-   */
-  private readonly pointers = new Map<number, Contact>();
+  /** The mouse, while its button is held. There is only ever one, so nothing can drift. */
+  private mouse: Contact | null = null;
   /** Fingers as of the last touch event. Replaced wholesale each time, never edited. */
   private readonly touchPts: Contact[] = [];
   /**
@@ -84,8 +90,6 @@ export class SteerInput {
   private keyLeft = false;
   private keyRight = false;
   private detachers: (() => void)[] = [];
-  /** Set the first time a real touch event arrives — see `duplicatesATouch`. */
-  private sawTouch = false;
 
   constructor(private readonly element: HTMLElement) {
     this.attach();
@@ -113,19 +117,23 @@ export class SteerInput {
   }
 
   /**
-   * Drop the steer. Called on every startRun, pause and resume.
+   * Clear held input. Called on every startRun, pause and resume.
    *
-   * It does not need to know what is on the glass, and deliberately does not try: the next
-   * touch event carries the full contact list and puts the truth back. That is what stops a
-   * finger held across a pause from being stranded, which used to need its own special case.
+   * The fingers are deliberately *kept*. `touchPts` is the last authoritative statement of what
+   * is on the glass and there is nothing better to replace it with — clearing it stranded any
+   * thumb that was already down and not moving, because only an event can restore the list and
+   * a motionless thumb sends none. That was a finger with no ring under it and no effect on
+   * the rider, right at the start of a run, which is when a player is most likely to already
+   * have a thumb planted.
+   *
+   * Keeping them is also simply correct for a control that maps position to turn: if the
+   * finger really is there, it really is asking for that turn.
    */
   reset(): void {
-    this.target = 0;
-    this.pointers.clear();
-    this.touchPts.length = 0;
-    this.live.length = 0;
+    this.mouse = null;
     this.keyLeft = false;
     this.keyRight = false;
+    this.recompute();
   }
 
   /**
@@ -143,7 +151,7 @@ export class SteerInput {
     // since the duplicate sits at the same position and cannot move the mean.
     this.live.length = 0;
     for (const p of this.touchPts) this.live.push(p);
-    for (const p of this.pointers.values()) this.live.push(p);
+    if (this.mouse) this.live.push(this.mouse);
 
     if (this.live.length === 0) {
       // Straighten up on release. The controller damps this, so it isn't a snap.
@@ -172,19 +180,25 @@ export class SteerInput {
   private attach(): void {
     const el = this.element;
 
-    // Pointer capture keeps a finger steering after it slides off the canvas, but it is not
-    // worth the input if it fails: setPointerCapture throws InvalidPointerId when the browser
-    // no longer considers the pointer active, which can happen if it is released between the
-    // event being queued and this handler running. Capturing *after* the steer is recorded,
-    // and swallowing the throw, means the worst case is losing the capture rather than losing
-    // the turn.
-    const capture = (id: number, on: boolean) => {
-      try {
-        if (on) el.setPointerCapture?.(id);
-        else el.releasePointerCapture?.(id);
-      } catch {
-        /* pointer already gone; nothing to capture or release */
-      }
+    /**
+     * Is this contact pressing a UI control rather than steering?
+     *
+     * Only buttons and inputs take touches at all — the overlay itself is `pointer-events:
+     * none` — so anything else landed on the canvas and is a steer.
+     *
+     * The visibility test is the part that matters. `Touch.target` is where the contact
+     * *started* and never changes, so a thumb that came down on "Ride" and stayed down was
+     * excluded for its whole life, long after the menu it landed on had gone: no ring, no
+     * turn, right at the start of a run. Once the control is off screen the contact is just a
+     * finger on the canvas, and it counts.
+     */
+    const pressingAControl = (target: EventTarget | null): boolean => {
+      const node = target as Element | null;
+      if (!node?.closest) return false;
+      // Duck-typed rather than `instanceof HTMLElement`, which does not exist off the browser
+      // and would make this unreachable from the unit tests.
+      const control = node.closest("button, input") as { offsetParent?: unknown } | null;
+      return control != null && control.offsetParent !== null;
     };
 
     /**
@@ -200,53 +214,47 @@ export class SteerInput {
       for (let i = 0; i < e.touches.length; i++) {
         const t = e.touches[i];
         if (!t) continue;
-        // A finger that came down on a HUD button is pressing the button, not steering.
-        // `target` is where the touch *started*, so sliding off the canvas keeps steering.
-        const target = t.target as Node | null;
-        if (target && el.contains && !el.contains(target)) continue;
+        if (pressingAControl(t.target)) continue;
         this.touchPts.push({ x: t.clientX, y: t.clientY });
       }
-      // Seeing one touch event is proof this browser reports fingers that way, which is a far
-      // better test than asking whether `ontouchstart` exists — that is a famously unreliable
-      // signal, and getting it wrong here means both paths steering at once.
-      this.sawTouch = true;
       this.recompute();
       e.preventDefault();
     };
 
     /**
-     * Touch-derived pointer events, once we know this browser sends real touch events too.
+     * Fingers are handled by the touch listeners, so a touch-flavoured pointer is a duplicate.
      *
-     * Handling both would count every finger twice. It would also be worse than double
-     * counting, because the pointer path remembers contacts and the touch path does not, so a
-     * stale pointer could outlive the finger it describes.
+     * Stateless, and that is the whole point. This used to consult a flag that only became
+     * true once a touch event had been seen — and because the browser fires `pointerdown`
+     * before `touchstart`, the very first touch of a page was let *in* while the flag was off
+     * and skipped on the way *out* once it was on. The contact stuck for the life of the page,
+     * holding a turn the player had released. A test on the event's own `pointerType` gives
+     * the same answer for a down and its matching up, always, so the pair cannot come apart.
+     *
+     * Mouse events would sidestep the question, but they are not available: Babylon calls
+     * preventDefault on pointerdown, which suppresses the compatibility mouse events entirely,
+     * so `mousedown` never arrives on the canvas.
      */
-    const duplicatesATouch = (e: PointerEvent) => this.sawTouch && e.pointerType === "touch";
+    const isFinger = (e: PointerEvent) => e.pointerType === "touch";
 
-    const onDown = (e: PointerEvent) => {
-      if (duplicatesATouch(e)) return;
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      this.recompute();
-      capture(e.pointerId, true);
-      e.preventDefault();
-    };
-
-    const onMove = (e: PointerEvent) => {
-      if (duplicatesATouch(e)) return;
-      // `buttons` is non-zero only while something is actually pressed, so a mouse moving
-      // across the canvas with no button held does not steer.
-      if (!this.pointers.has(e.pointerId) && e.buttons === 0) return;
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const onPointerDown = (e: PointerEvent) => {
+      if (isFinger(e) || pressingAControl(e.target)) return;
+      this.mouse = { x: e.clientX, y: e.clientY };
       this.recompute();
       e.preventDefault();
     };
 
-    const onUp = (e: PointerEvent) => {
-      if (duplicatesATouch(e)) return;
-      if (!this.pointers.delete(e.pointerId)) return;
+    const onPointerMove = (e: PointerEvent) => {
+      if (isFinger(e) || !this.mouse) return; // hovering with no button held is not a steer
+      this.mouse = { x: e.clientX, y: e.clientY };
       this.recompute();
-      capture(e.pointerId, false);
       e.preventDefault();
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (isFinger(e) || !this.mouse) return;
+      this.mouse = null;
+      this.recompute();
     };
 
     const onKey = (down: boolean) => (e: KeyboardEvent) => {
@@ -279,13 +287,12 @@ export class SteerInput {
       this.detachers.push(() => el.removeEventListener(type, onTouch as EventListener, opts));
     }
 
-    el.addEventListener("pointerdown", onDown, opts);
-    el.addEventListener("pointermove", onMove, opts);
-    el.addEventListener("pointerup", onUp, opts);
-    el.addEventListener("pointercancel", onUp, opts);
+    el.addEventListener("pointerdown", onPointerDown, opts);
+    el.addEventListener("pointermove", onPointerMove, opts);
+    el.addEventListener("pointerup", onPointerUp, opts);
+    el.addEventListener("pointercancel", onPointerUp, opts);
     // A mouse released outside the window would otherwise leave the button stuck down.
-    window.addEventListener("pointerup", onUp, opts);
-    window.addEventListener("pointercancel", onUp, opts);
+    window.addEventListener("pointerup", onPointerUp, opts);
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
     // Losing focus mid-turn would otherwise leave the rider locked into a carve
@@ -293,12 +300,11 @@ export class SteerInput {
     window.addEventListener("blur", onBlur);
 
     this.detachers.push(
-      () => el.removeEventListener("pointerdown", onDown, opts),
-      () => el.removeEventListener("pointermove", onMove, opts),
-      () => el.removeEventListener("pointerup", onUp, opts),
-      () => el.removeEventListener("pointercancel", onUp, opts),
-      () => window.removeEventListener("pointerup", onUp, opts),
-      () => window.removeEventListener("pointercancel", onUp, opts),
+      () => el.removeEventListener("pointerdown", onPointerDown, opts),
+      () => el.removeEventListener("pointermove", onPointerMove, opts),
+      () => el.removeEventListener("pointerup", onPointerUp, opts),
+      () => el.removeEventListener("pointercancel", onPointerUp, opts),
+      () => window.removeEventListener("pointerup", onPointerUp, opts),
       () => window.removeEventListener("keydown", keyDown),
       () => window.removeEventListener("keyup", keyUp),
       () => window.removeEventListener("blur", onBlur),

@@ -76,20 +76,49 @@ else console.log(`✓ riding: ${JSON.stringify(riding)}`);
 // Each measurement restarts the run first. Obstacles begin 20m in, and an unsteered rider
 // now crashes within a few seconds, so measuring back-to-back would silently take the second
 // reading after the run had already ended.
-const box = await page.locator("#game").boundingBox();
 const restart = async () => {
   await page.evaluate(() => window.__game.startRun(window.__game.seed));
   await page.waitForTimeout(250);
 };
+// Held with a touch, not `page.mouse`. This context emulates a phone, and Chromium suppresses
+// the compatibility mouse events there — `page.mouse.down()` produces a pointerdown and no
+// mousedown at all, so a mouse-driven measurement here silently measures nothing. The mouse
+// path is covered separately at the end, in a desktop context where it actually exists.
+const touchAt = (fraction, phase) =>
+  page.evaluate(
+    ([f, p]) => {
+      const canvas = document.querySelector("#game");
+      const r = canvas.getBoundingClientRect();
+      const mk = () => [
+        new Touch({
+          identifier: 700,
+          target: canvas,
+          clientX: r.left + r.width * f,
+          clientY: r.top + r.height * 0.7,
+        }),
+      ];
+      const touches = p === "end" ? [] : mk();
+      canvas.dispatchEvent(
+        new TouchEvent(p === "end" ? "touchend" : "touchstart", {
+          touches,
+          targetTouches: touches,
+          changedTouches: mk(),
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    [fraction, phase],
+  );
+
 const headingAfterHold = async (fraction, ms) => {
   await restart();
   const before = await page.evaluate(() => window.__game.controller.heading);
-  await page.mouse.move(box.x + box.width * fraction, box.y + box.height * 0.7);
-  await page.mouse.down();
+  await touchAt(fraction, "start");
   await page.waitForTimeout(ms);
   const after = await page.evaluate(() => window.__game.controller.heading);
   const state = await page.evaluate(() => window.__game.state);
-  await page.mouse.up();
+  await touchAt(fraction, "end");
   await page.waitForTimeout(250);
   if (state !== "playing") fail(`run ended mid-measurement (state ${state})`);
   return after - before;
@@ -101,6 +130,29 @@ await shot("03-carving");
 console.log(`  turn from slight-right: ${gentle.toFixed(3)} rad, far-right: ${hard.toFixed(3)} rad`);
 if (!(hard > gentle && gentle > 0)) fail("steering is not proportional to finger position");
 else console.log("✓ steering scales with how far right the finger is");
+
+// --- The very first touch of the page must leave nothing behind ----------------------------
+// Driven through the browser's own input pipeline rather than synthesised, because the fault
+// this guards lived in the *ordering* of real events: the browser fires pointerdown before
+// touchstart, so a page that also listened to Pointer Events picked the finger up before it
+// knew touch events were coming, and skipped it on release once it did. That left a contact
+// stuck for the life of the page, holding a turn the player had let go of. Only a real tap
+// reproduces it; a dispatched event does not.
+await restart();
+const firstTouch = await page.evaluate(() => ({ before: window.__game.input.touchCount }));
+await page.touchscreen.tap(120, 700);
+await page.waitForTimeout(150);
+const afterTap = await page.evaluate(() => ({
+  contacts: window.__game.input.touchCount,
+  steer: window.__game.input.value,
+  rings: [...document.querySelectorAll(".touch-dot")].filter((d) => d.style.display !== "none")
+    .length,
+}));
+if (firstTouch.before !== 0) fail(`started with ${firstTouch.before} contacts already`);
+else if (afterTap.contacts !== 0)
+  fail(`a tap left ${afterTap.contacts} contact(s) behind, steering ${afterTap.steer.toFixed(2)}`);
+else if (afterTap.rings !== 0) fail(`a tap left ${afterTap.rings} ring(s) on screen`);
+else console.log(`✓ the first real tap leaves no contact and no ring behind`);
 
 // --- Multi-touch, driven by real TouchEvents ----------------------------------------------
 // The unit tests drive a stand-in for the canvas, so they would still pass if the listeners
@@ -189,9 +241,11 @@ else
       `${tapping.recovered.toFixed(2)})`,
   );
 
-// --- A finger still on the glass after a reset must not be stranded ------------------------
-// input.reset() runs on startRun, pause and resume. It no longer tries to remember what is
-// down; the next touch event says so.
+// --- A finger still on the glass must survive a reset --------------------------------------
+// input.reset() runs on startRun, pause and resume, and it deliberately keeps the fingers. A
+// thumb already down and not moving sends no events, so clearing the list stranded it: no ring
+// and no turn, right when a run begins. Keeping it is also the honest answer for a control
+// that maps position to turn — the finger really is there.
 await restart();
 const stranded = await page.evaluate(`(() => {
   ${touchScript}
@@ -199,7 +253,7 @@ const stranded = await page.evaluate(`(() => {
   send("touchstart", [0.97], [0.97]);
   const held = steer();
   g.pause();
-  const paused = steer(); // reset() has dropped the steer, which is intended
+  const paused = steer(); // the finger is still down, so it is still steering
   g.resume();
   send("touchmove", [0.97], [0.97]); // same finger, never lifted
   const afterResume = steer();
@@ -207,7 +261,8 @@ const stranded = await page.evaluate(`(() => {
   return { held, paused, afterResume, after: steer() };
 })()`);
 if (!(stranded.held > 0.8)) fail(`finger down gave ${stranded.held.toFixed(2)}`);
-else if (stranded.paused !== 0) fail(`pause did not drop the steer: ${stranded.paused}`);
+else if (!(stranded.paused > 0.8))
+  fail(`a finger held across a pause was dropped: steer ${stranded.paused.toFixed(2)}`);
 else if (!(stranded.afterResume > 0.8))
   fail(`finger stranded by reset: steer was ${stranded.afterResume.toFixed(2)} after resume`);
 else if (stranded.after !== 0) fail(`release after a reset was ignored: ${stranded.after}`);
@@ -625,6 +680,41 @@ if (JSON.stringify(other) === JSON.stringify(after)) fail("different seeds produ
 else console.log("✓ a different seed builds a different mountain");
 
 console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ no console errors");
+// --- The mouse, in a context where it actually exists --------------------------------------
+// Everything above runs in an emulated phone, where Chromium suppresses compatibility mouse
+// events entirely — so none of it can see the desktop path. This opens a plain desktop context
+// to check the mouse still steers and, more importantly, that releasing it lets go: a button
+// that sticks down is the desktop form of the phantom contact this build exists to remove.
+{
+  const desktop = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+  const dp = await desktop.newPage();
+  await dp.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+  await dp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+  await dp.evaluate(() => window.__game.startRun(window.__game.seed));
+  await dp.waitForTimeout(200);
+
+  const b = await dp.locator("#game").boundingBox();
+  await dp.mouse.move(b.x + b.width * 0.95, b.y + b.height * 0.7);
+  await dp.mouse.down();
+  await dp.waitForTimeout(120);
+  const held = await dp.evaluate(() => window.__game.input.value);
+  await dp.mouse.up();
+  await dp.waitForTimeout(120);
+  const released = await dp.evaluate(() => ({
+    steer: window.__game.input.value,
+    contacts: window.__game.input.touchCount,
+  }));
+  await desktop.close();
+
+  if (!(held > 0.8)) fail(`mouse held right gave ${held.toFixed(2)}`);
+  else if (released.steer !== 0 || released.contacts !== 0)
+    fail(
+      `mouse release left steer ${released.steer.toFixed(2)} and ` +
+        `${released.contacts} contact(s)`,
+    );
+  else console.log(`✓ the mouse steers on desktop, and releasing it lets go`);
+}
+
 if (errors.length) process.exitCode = 1;
 
 await browser.close();

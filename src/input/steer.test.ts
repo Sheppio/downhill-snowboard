@@ -32,10 +32,10 @@ class FakeElement {
     return node === this || node === undefined || node === null;
   }
 
-  /** A pointer event, for the mouse path. */
-  emit(type: string, pointerId: number, clientX: number, buttons = 1): void {
+  /** A pointer event. `pointerType` decides whether it is treated as a mouse or a duplicate. */
+  emit(type: string, clientX: number, pointerType = "mouse"): void {
     for (const fn of this.listeners.get(type) ?? []) {
-      fn({ pointerId, clientX, buttons, pointerType: "mouse", preventDefault() {} });
+      fn({ clientX, clientY: 400, pointerType, target: this, preventDefault() {} });
     }
   }
 
@@ -121,16 +121,31 @@ describe("steering follows how far right the finger is", () => {
   });
 
   it("still works from a mouse, which sends no touch events at all", () => {
-    el.emit("pointerdown", 1, at(0.9));
+    el.emit("pointerdown", at(0.9));
     expect(steer.value).toBeGreaterThan(0.5);
-    el.emit("pointerup", 1, at(0.9));
+    el.emit("pointerup", at(0.9));
     expect(steer.value).toBe(0);
   });
 
   it("ignores a mouse moving with no button held", () => {
-    el.emit("pointermove", 7, at(1), 0); // buttons: 0 — nothing pressed
+    el.emit("pointermove", at(1));
     expect(steer.value).toBe(0);
     expect(steer.isEngaged).toBe(false);
+  });
+
+  it("never lets a touch-flavoured pointer become a contact", () => {
+    // The browser fires pointerdown before touchstart and pointerup before touchend, so a
+    // check that could change state between the two let the first touch of a page in and then
+    // skipped it on the way out — leaving a contact stuck for the life of the page. Testing
+    // pointerType gives the same answer both times, so the pair cannot come apart.
+    el.emit("pointerdown", at(0.95), "touch");
+    el.touch("touchstart", [at(0.95)]);
+    expect(steer.touchCount, "the finger is one contact, not two").toBe(1);
+
+    el.emit("pointerup", at(0.95), "touch");
+    el.touch("touchend", []);
+    expect(steer.touchCount, "nothing may survive the release").toBe(0);
+    expect(steer.value).toBe(0);
   });
 });
 
@@ -209,22 +224,14 @@ describe("two-finger steering", () => {
     expect(steer.value, "the held thumb must still be steering").toBeLessThan(-0.5);
   });
 
-  it("recovers a finger that was down when the run restarted", () => {
-    // reset() runs on every startRun, pause and resume. It no longer tries to know what is on
-    // the glass — the next touch event says so.
-    el.touch("touchstart", [at(0.9)]);
-    steer.reset();
-    expect(steer.value).toBe(0);
-
-    el.touch("touchmove", [at(0.9)]);
-    expect(steer.value, "a finger still on the glass must steer again").toBeGreaterThan(0);
-  });
-
   it("does not steer from a finger that came down on a HUD button", () => {
     // Touches carry every contact on the surface, including one pressing pause. `target` is
     // where the touch started, so this stays out of the average without losing a finger that
     // merely slid over the HUD.
-    const button = { name: "pause" };
+    const button: { closest: () => unknown; offsetParent: unknown } = {
+      closest: () => button,
+      offsetParent: {}, // on screen
+    };
     for (const fn of (el as unknown as { listeners: Map<string, ((e: unknown) => void)[]> })
       .listeners.get("touchstart") ?? []) {
       fn({
@@ -250,30 +257,47 @@ describe("two-finger steering", () => {
     // A mouse press and release alongside the finger. On release the pointer map is empty,
     // and the pointer path used to recompute from that alone — zeroing the steer even though
     // a finger was still on the glass.
-    el.emit("pointerdown", 99, at(0.9));
-    el.emit("pointerup", 99, at(0.9));
+    el.emit("pointerdown", at(0.9));
+    el.emit("pointerup", at(0.9));
     expect(steer.value, "the finger on the glass must still be steering").toBeLessThan(-0.5);
   });
 
-  it("ignores touch-derived pointer events once touch events are seen", () => {
-    // Both would otherwise count the same finger twice, and the pointer copy would outlive
-    // the finger, because that path remembers contacts and the touch path does not.
-    el.touch("touchstart", [at(0.9)]);
-    const oneFinger = steer.value;
+  it("keeps fingers that are still on the glass across a reset", () => {
+    // reset() runs on every startRun, pause and resume. Clearing the contacts stranded a thumb
+    // that was already down and not moving: only an event can restore the list, and a
+    // motionless thumb sends none. No ring, no turn, right when a run begins.
+    el.touch("touchstart", [at(0.95)]);
+    const before = steer.value;
+    expect(before).toBeGreaterThan(0.5);
 
-    for (const fn of (el as unknown as { listeners: Map<string, ((e: unknown) => void)[]> })
-      .listeners.get("pointerdown") ?? []) {
-      fn({ pointerId: 7, clientX: at(0.9), buttons: 1, pointerType: "touch", preventDefault() {} });
-    }
-    expect(steer.touchCount, "the same finger must not be counted twice").toBe(1);
-    expect(steer.value).toBeCloseTo(oneFinger, 5);
+    steer.reset();
+    expect(steer.touchCount, "the finger is still on the glass").toBe(1);
+    expect(steer.value).toBeCloseTo(before, 5);
+
+    // Held input that has no way to announce itself still goes
+    el.touch("touchend", []);
+    expect(steer.value).toBe(0);
+    expect(steer.isEngaged).toBe(false);
   });
 
-  it("forgets every touch on reset", () => {
-    el.touch("touchstart", [at(1), at(0.9)]);
-    steer.reset();
-    expect(steer.value).toBe(0);
-    expect(steer.touchCount).toBe(0);
-    expect(steer.isEngaged).toBe(false);
+  it("counts a finger that began on a control once that control is gone", () => {
+    // Touch.target is where the contact started and never changes. A thumb that came down on
+    // "Ride" and stayed down was excluded for its whole life, long after the menu had gone.
+    const hiddenButton = { closest: () => hiddenButton, offsetParent: null };
+    const visibleButton = { closest: () => visibleButton, offsetParent: {} };
+
+    const send = (target: unknown) => {
+      for (const fn of (el as unknown as { listeners: Map<string, ((e: unknown) => void)[]> })
+        .listeners.get("touchstart") ?? []) {
+        fn({ touches: [{ clientX: at(0.95), clientY: 400, target }], preventDefault() {} });
+      }
+    };
+
+    send(visibleButton);
+    expect(steer.touchCount, "pressing a button on screen is not a steer").toBe(0);
+
+    send(hiddenButton);
+    expect(steer.touchCount, "the menu has gone; this is just a finger now").toBe(1);
+    expect(steer.value).toBeGreaterThan(0.5);
   });
 });

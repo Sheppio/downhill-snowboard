@@ -326,8 +326,9 @@ class Game {
   private pause(): void {
     if (this.state !== "playing") return;
     this.state = "paused";
-    // Drop the steer, or a finger held down when the panel opened would still be carving
-    // when play resumes.
+    // Clears held keys and the mouse. Fingers are kept on purpose: a thumb still on the glass
+    // when the panel opened is still asking for that turn when play resumes, and clearing it
+    // used to strand it entirely — a motionless thumb sends no events to restore itself with.
     this.input.reset();
     this.spray.stop();
     this.hud.showPaused(this.controller.distance, this.score.value);
