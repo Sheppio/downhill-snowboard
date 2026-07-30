@@ -568,6 +568,66 @@ body {
   paint-order: stroke fill;
 }
 
+/* ------------------------------------------------- Landscape and short screens */
+
+/* Turned on its side a phone has plenty of width and very little height, so the two things
+   that were comfortable in portrait stop being so: the readouts crowd the rider, who is
+   centred low in the frame, and a full-height panel no longer fits between the safe areas. */
+@media (orientation: landscape) and (max-height: 560px) {
+  /* Distance moves out of the middle, where the rider is */
+  .hud-row-bottom {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .hud-row-bottom > :nth-child(2) {
+    justify-self: end;
+  }
+
+  /* Panels get shorter rather than scrolling: a menu you have to scroll to find the Ride
+     button on is worse than a slightly tighter one. */
+  .panel {
+    padding: 14px 18px;
+    gap: 8px;
+    border-radius: 20px;
+  }
+
+  .panel h1 {
+    font-size: clamp(26px, 6vh, 38px);
+  }
+
+  .panel h2 {
+    font-size: clamp(20px, 5vh, 28px);
+  }
+
+  .tagline {
+    margin-bottom: 0;
+    font-size: 13px;
+  }
+
+  .btn {
+    min-height: 44px;
+    padding: 9px 16px;
+  }
+
+  #seed-input {
+    min-height: 44px;
+    padding: 9px 10px;
+  }
+
+  .final-score {
+    font-size: clamp(34px, 9vh, 48px);
+  }
+
+  .breakdown {
+    padding: 6px 0;
+  }
+
+  /* The list is what should give way when there is no room, not the Back button below it */
+  .scores-list {
+    max-height: 38vh;
+  }
+}
+
 /* -------------------------------------------------------------- Loading */
 
 .panel-loading {

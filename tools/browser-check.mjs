@@ -896,6 +896,93 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     );
 }
 
+// --- Landscape ---------------------------------------------------------------------------------
+// The game used to call screen.orientation.lock("portrait-primary") on every run. Android
+// honours that while fullscreen and iOS ignores it, so turning the phone did nothing on exactly
+// one of the two platforms. The spy below is the direct guard against that coming back; the
+// rest checks the orientation is actually playable now that it is reachable.
+{
+  const land = await browser.newContext({
+    viewport: { width: 844, height: 390 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const lp = await land.newPage();
+  const errs = [];
+  lp.on("pageerror", (e) => errs.push(e.message));
+  await lp.addInitScript(() => {
+    window.__lockCalls = [];
+    try {
+      const o = screen.orientation;
+      if (o) o.lock = (which) => (window.__lockCalls.push(which), Promise.resolve());
+    } catch {
+      /* nothing to stub */
+    }
+  });
+  await lp.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+  await lp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+
+  const menu = await lp.evaluate(() => {
+    const r = document.querySelector("#start .panel").getBoundingClientRect();
+    return { panel: Math.round(r.height), view: window.innerHeight };
+  });
+
+  await lp.click("#btn-ride");
+  await lp.waitForSelector("#hud:not([hidden])", { timeout: 10000 });
+  // Short enough that an unsteered rider is still on its feet. Measured after a crash the
+  // framing is `watchCrash`'s, not the chase camera's, and means nothing here.
+  await lp.waitForTimeout(700);
+  await lp.screenshot({ path: `${OUT}/08-landscape.png` });
+
+  const view = await lp.evaluate(() => {
+    const g = window.__game;
+    const cam = g.camera.camera;
+    const e = g.engine;
+    const ar = e.getRenderWidth() / e.getRenderHeight();
+    const p = cam.position;
+    const t = cam.getTarget();
+    const c = g.controller;
+    const ry = g.field.heightAt(c.renderX, c.renderZ) + 0.9; // mid-torso
+    const pitch = (x, y, z) => Math.atan2(y, Math.hypot(x, z));
+    const below = pitch(t.x - p.x, t.y - p.y, t.z - p.z) - pitch(c.renderX - p.x, ry - p.y, c.renderZ - p.z);
+    const dist = document.querySelector(".stat-dist").getBoundingClientRect();
+    return {
+      locks: window.__lockCalls,
+      state: g.state,
+      horizFov: (2 * Math.atan(Math.tan(cam.fov / 2) * ar) * 180) / Math.PI,
+      // 0 is the centre of the frame, 1 the bottom edge
+      riderDownFrame: 0.5 + 0.5 * (Math.tan(below) / Math.tan(cam.fov / 2)),
+      distClearOfCentre: dist.left > window.innerWidth * 0.6 || dist.right < window.innerWidth * 0.4,
+      dist: Math.round(g.controller.distance),
+    };
+  });
+  await land.close();
+
+  if (view.locks.length)
+    fail(`the orientation was locked to ${view.locks.join(", ")} — landscape is unreachable`);
+  else if (view.state !== "playing")
+    fail(`the run was ${view.state} when the framing was measured, so it measured nothing`);
+  else if (!(view.dist > 0)) fail("the run did not advance in landscape");
+  // Both bounded at both ends. A one-sided check let a nonsense camera through: mangling the
+  // cap produced a -88° view with the rider 110% *above* the frame, and "not too wide, not too
+  // low" was satisfied by both.
+  else if (!(view.horizFov > 20 && view.horizFov < 84))
+    fail(`landscape shows a ${view.horizFov.toFixed(0)}° view, against portrait's 31°`);
+  else if (!(view.riderDownFrame > 0.4 && view.riderDownFrame < 0.92))
+    fail(`the rider sits ${(view.riderDownFrame * 100).toFixed(0)}% down the frame`);
+  else if (!view.distClearOfCentre)
+    fail("the distance readout sits over the rider, who is centred in landscape");
+  else if (menu.panel > menu.view)
+    fail(`the menu is ${menu.panel}px tall in a ${menu.view}px viewport, so it has to be scrolled`);
+  else if (errs.length) fail(`landscape console errors: ${errs.join("; ")}`);
+  else
+    console.log(
+      `✓ landscape plays: no orientation lock, ${view.horizFov.toFixed(0)}° wide, rider ` +
+        `${(view.riderDownFrame * 100).toFixed(0)}% down the frame, menu ${menu.panel}/${menu.view}px`,
+    );
+}
+
 // --- The mouse, in a context where it actually exists --------------------------------------
 // Everything above runs in an emulated phone, where Chromium suppresses compatibility mouse
 // events entirely — so none of it can see the desktop path. This opens a plain desktop context

@@ -11,6 +11,11 @@ Built with [Babylon.js](https://www.babylonjs.com/) and [Havok](https://www.havo
 Hold a finger anywhere on the screen and slide it left or right. Let go to straighten up.
 Arrow keys or `A`/`D` work on desktop.
 
+Portrait or landscape, whichever you prefer — the game does not lock the orientation. Babylon's
+`fov` is the *vertical* angle, so turning the phone would otherwise open the view from 31° wide
+to 105°, which is a different game rather than the same one rotated; the camera caps the
+horizontal view at 80° and aims lower to keep the rider in the same place in the frame.
+
 Follow the gulley down the mountain, dodge the trees and rocks, and go as far as you can. Score
 is the distance you cover, with a small multiplier for speed — so a fast clean line beats a
 cautious one, but not by enough to make straight-lining into a tree a good idea.

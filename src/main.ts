@@ -254,18 +254,21 @@ class Game {
     void this.requestImmersive();
   }
 
-  /** Fullscreen and landscape lock, where the browser allows it. Failure is fine. */
+  /**
+   * Fullscreen, where the browser allows it. Failure is fine.
+   *
+   * Deliberately does *not* lock the orientation. It used to lock to portrait-primary, which
+   * Android honours while fullscreen and iOS ignores — so the game was pinned to portrait on
+   * exactly one of the two platforms, and turning the phone did nothing. Both orientations
+   * play, so which one to hold is the player's business, not the game's.
+   */
   private async requestImmersive(): Promise<void> {
     try {
       if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
         await document.documentElement.requestFullscreen({ navigationUI: "hide" });
       }
-      const orientation = screen.orientation as
-        | (ScreenOrientation & { lock?: (o: string) => Promise<void> })
-        | undefined;
-      await orientation?.lock?.("portrait-primary");
     } catch {
-      // Desktop browsers and iOS Safari both refuse parts of this; the game plays regardless
+      // Desktop browsers and iOS Safari both refuse this; the game plays regardless
     }
   }
 

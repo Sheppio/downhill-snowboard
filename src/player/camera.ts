@@ -32,6 +32,28 @@ const COURSE_LOOK = 42;
 const BASE_FOV = 0.95;
 const FOV_AT_SPEED = 1.16;
 
+/**
+ * Widest horizontal view we will present, radians (80°).
+ *
+ * Babylon's `fov` is the *vertical* angle, so the horizontal view is whatever the aspect ratio
+ * makes of it. On a phone held upright that is a 30° slit, which is the view the whole game was
+ * tuned against. Turned on its side the same vertical angle opens to 105° — three and a half
+ * times as much warning of a tree coming, plus the smeared perspective a very wide angle gives.
+ *
+ * So the vertical angle is reduced in landscape until the horizontal view fits inside this cap.
+ * Portrait never reaches it and is left exactly as it was.
+ */
+const MAX_HORIZONTAL_FOV = 1.4;
+
+/**
+ * The vertical FOV to actually use: the one asked for, or as much of it as keeps the horizontal
+ * view inside MAX_HORIZONTAL_FOV at this aspect ratio.
+ */
+function fitToScreen(verticalFov: number, aspect: number): number {
+  const widest = 2 * Math.atan(Math.tan(MAX_HORIZONTAL_FOV / 2) / Math.max(aspect, 0.01));
+  return Math.min(verticalFov, widest);
+}
+
 /** Fractions of error remaining after one second. Lower = snappier. */
 const YAW_SMOOTHING = 0.00002;
 const POS_SMOOTHING = 0.0000005;
@@ -100,11 +122,44 @@ export class ChaseCamera {
       p.y = expDamp(p.y, wantY, POS_SMOOTHING * 0.02, dt);
     }
 
-    this.target.set(rx + sin * LOOK_AHEAD, ry + LOOK_HEIGHT, rz + cos * LOOK_AHEAD);
-    this.camera.setTarget(this.target);
-
     // Widening the FOV with speed is the cheapest possible sense of rush
-    this.camera.fov = lerp(this.camera.fov, lerp(BASE_FOV, FOV_AT_SPEED, speedT), 1 - Math.pow(0.02, dt));
+    const wanted = lerp(this.camera.fov, lerp(BASE_FOV, FOV_AT_SPEED, speedT), 1 - Math.pow(0.02, dt));
+    const fov = fitToScreen(wanted, this.aspect());
+    this.camera.fov = fov;
+
+    this.target.set(
+      rx + sin * LOOK_AHEAD,
+      this.lookHeight(rx, ry, rz, wanted, fov),
+      rz + cos * LOOK_AHEAD,
+    );
+    this.camera.setTarget(this.target);
+  }
+
+  /**
+   * Height to aim at, which is LOOK_HEIGHT unless the aspect cap has narrowed the view.
+   *
+   * LOOK_HEIGHT was tuned against a phone held upright, and it puts the rider about halfway
+   * between the centre of the frame and the bottom of it. That placement is an *angle* below
+   * the camera axis, so shortening the vertical view — which is exactly what capping the
+   * horizontal one does — pushes the rider down the frame and, in landscape, into the bottom
+   * edge alongside the distance readout.
+   *
+   * So the angle is scaled by however much of the view survived the cap, which aims lower and
+   * brings the rider back to the same place in the frame. When nothing is capped the two FOVs
+   * are equal, the scale is 1, and this returns `ry + LOOK_HEIGHT` exactly — portrait is
+   * untouched, including as the FOV pulses with speed.
+   */
+  private lookHeight(rx: number, ry: number, rz: number, wanted: number, capped: number): number {
+    const p = this.camera.position;
+    const behind = Math.hypot(p.x - rx, p.z - rz);
+    const run = behind + LOOK_AHEAD;
+    if (run < 1e-3) return ry + LOOK_HEIGHT;
+
+    const above = p.y - ry;
+    const riderPitch = Math.atan2(above, Math.max(behind, 1e-3));
+    const basePitch = Math.atan2(above - LOOK_HEIGHT, run);
+    const axisPitch = riderPitch - (riderPitch - basePitch) * (capped / wanted);
+    return p.y - Math.tan(axisPitch) * run;
   }
 
   /** Pull back and stop leading once the rider has crashed, so the tumble stays in frame. */
@@ -117,6 +172,13 @@ export class ChaseCamera {
     p.y = expDamp(p.y, y + 5, 0.0001, dt);
     this.target.set(x, y + 0.6, z);
     this.camera.setTarget(this.target);
-    this.camera.fov = expDamp(this.camera.fov, BASE_FOV, 0.02, dt);
+    this.camera.fov = fitToScreen(expDamp(this.camera.fov, BASE_FOV, 0.02, dt), this.aspect());
+  }
+
+  /** Width over height of what is being rendered. */
+  private aspect(): number {
+    const engine = this.camera.getScene().getEngine();
+    const h = engine.getRenderHeight();
+    return h > 0 ? engine.getRenderWidth() / h : 1;
   }
 }
