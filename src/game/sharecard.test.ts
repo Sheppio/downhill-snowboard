@@ -79,22 +79,18 @@ class RecordingContext implements CardContext {
   }
 }
 
-/** A fixed "now", so a card that shows an age draws the same one every run. */
-const NOW = Date.UTC(2026, 6, 20, 9, 0, 0);
-
 const RESULT: CardResult = {
   score: 5152,
   distance: 4139.7,
   topSpeed: 34.2,
   seed: "powder-chute-42",
   strap: "New personal best!",
-  at: NOW,
   url: "https://example.test/?seed=powder-chute-42",
 };
 
 function draw(overrides: Partial<CardResult> = {}): RecordingContext {
   const ctx = new RecordingContext();
-  drawShareCard(ctx, { ...RESULT, ...overrides }, undefined, NOW);
+  drawShareCard(ctx, { ...RESULT, ...overrides });
   return ctx;
 }
 
@@ -141,32 +137,36 @@ describe("what the card says", () => {
 });
 
 describe("a card made from a scores-list row", () => {
-  // That row knows a score, how far it got and when — never a top speed, because the
-  // leaderboard has never stored one.
   const fromList = (over: Partial<CardResult> = {}) =>
-    draw({ topSpeed: undefined, strap: "My best on this seed", ...over });
+    draw({ strap: "My best on this seed", ...over });
 
-  it("shows when the score was set where the top speed would go", () => {
-    // Rather than a dash in the best half of the card. "3d ago" on a score says something.
-    const said = fromList({ at: NOW - 3 * 86_400_000 }).said();
-    expect(said).toContain("SET");
-    expect(said).toContain("3d ago");
-    expect(said).not.toContain("TOP SPEED");
-    expect(said).not.toMatch(/km\/h/);
-  });
-
-  it("still shows the score, the distance and the seed", () => {
+  it("is the same card, with the same two stats", () => {
+    // The whole point of storing a top speed on the record: a best sent from the list should
+    // be indistinguishable from one sent the moment the run ended.
     const said = fromList().said();
-    expect(said).toContain("5,152");
+    expect(said).toContain("DISTANCE");
     expect(said).toContain("4,139m");
+    expect(said).toContain("TOP SPEED");
+    expect(said).toContain("123km/h");
     expect(said).toContain("powder-chute-42");
   });
 
-  it("shows a dash for a record kept before distances were", () => {
-    // Not "0m", which reads as a run that went nowhere — a different claim entirely.
-    const said = fromList({ distance: undefined }).said();
-    expect(said).toContain("—");
+  it("lays out identically to a card from a finished run", () => {
+    // Same labels in the same places, so only the numbers and the strap can differ.
+    const ended = draw().texts.map((t) => `${t.x},${t.y}`);
+    const listed = fromList().texts.map((t) => `${t.x},${t.y}`);
+    expect(listed).toEqual(ended);
+  });
+
+  it("shows a dash for what a best predating the record cannot say", () => {
+    // Not "0m" or "0km/h", which describe a run that went nowhere at no speed — a different
+    // claim entirely, and one that would be a lie on a picture people send each other.
+    const said = fromList({ distance: undefined, topSpeed: undefined }).said();
+    expect(said).toContain("DISTANCE");
+    expect(said).toContain("TOP SPEED");
     expect(said).not.toContain("0m");
+    expect(said).not.toContain("0km/h");
+    expect(said.match(/—/g) ?? [], "one for each of the two it cannot answer").toHaveLength(2);
   });
 });
 

@@ -97,9 +97,14 @@ distance, top speed, and the seed — with the challenge link attached. On a pho
 WhatsApp, Messages, or whatever else is installed.
 
 **Every row of Your scores has its own ↗**, so a best from last week can be sent as easily as
-the run you just finished. That card knows less, because the leaderboard has never stored a top
-speed: it shows when the score was set instead of inventing one, and a best from before
-distances were kept shows a dash rather than a zero.
+the run you just finished — and it sends the same card. That is the only reason the leaderboard
+stores a run's top speed at all: nothing displays it, the rows do not show it, and it has no
+bearing on the score. It is kept so a share from the list is indistinguishable from a share the
+moment the run ended.
+
+A best set before those were kept shows a dash where the number would be. Not a zero, which
+would describe a run that went nowhere at no speed — a different claim entirely, and not one to
+put on a picture people send each other.
 
 The card is drawn on a canvas rather than screenshotted from the end screen. A screenshot would
 mean `html2canvas`, which is a large dependency that re-implements CSS layout badly; drawing it

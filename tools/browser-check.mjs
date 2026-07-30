@@ -1088,9 +1088,10 @@ else console.log("✓ a different seed builds a different mountain");
   else console.log(`✓ leaderboard, newest first: ${shown}`);
 
   // --- Every row can be shared, not just the run you have only just finished
-  // Checked on the row for a *stored* best, which knows less than a finished run does: there
-  // is no top speed on it, and the third row has no distance either. Both gaps have to show
-  // as something a recipient can read rather than as "undefined" or "0m".
+  // Checked on row 2, a best set by a real run earlier in this check: its card has to be the
+  // same card the end screen sent, which means the top speed has to have survived in storage.
+  // Row 3 is the other half — a planted record from before those were kept, which has to show
+  // dashes rather than "undefined" or a zero.
   {
     await page.evaluate(() => {
       window.__shared = null;
@@ -1113,7 +1114,7 @@ else console.log("✓ a different seed builds a different mountain");
     // The press starts the card; the tap sends it. Driven as two events rather than one click
     // because that split is the whole mechanism — `navigator.share` needs the tap's own
     // activation, so the render has to have started before it.
-    const shareButton = await page.$("#scores-list li:nth-child(3) .score-share");
+    const shareButton = await page.$("#scores-list li:nth-child(2) .score-share");
     if (!shareButton) fail("no share button on the scores rows");
     else {
       await shareButton.dispatchEvent("pointerdown");
@@ -1124,21 +1125,37 @@ else console.log("✓ a different seed builds a different mountain");
       await shareButton.click();
       await page.waitForFunction(() => window.__shared != null, { timeout: 10000 });
       const sent = await page.evaluate(() => window.__shared);
-      const tick = await page.textContent("#scores-list li:nth-child(3) .score-share");
+      const tick = await page.textContent("#scores-list li:nth-child(2) .score-share");
+
+      // What the two rows can actually put on a card, straight out of storage
+      const kept = await page.evaluate(() => {
+        const rows = JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]");
+        const of = (seed) => rows.find((r) => r.seed === seed) ?? null;
+        return { run: of("powder-chute-42"), old: of("before-distances") };
+      });
 
       const problems = [];
       if (!ready) problems.push("pressing a row never started drawing its card");
       if (sent.type !== "image/png") problems.push(`shared a ${sent.type ?? "nothing"}`);
-      if (!sent.url?.includes("before-distances"))
+      if (!sent.url?.includes("powder-chute-42"))
         problems.push(`the link does not name the row's seed: ${sent.url}`);
       if (/\d/.test(sent.text ?? "")) problems.push(`the message restates the card: "${sent.text}"`);
       if (tick !== "✓") problems.push(`the row gave no confirmation, it still says "${tick}"`);
+      // The card from a row can only match the card from the end screen if the run's top speed
+      // was kept. Nothing else in the game stores or shows it, so nothing else would notice.
+      if (!(kept.run?.topSpeed > 0))
+        problems.push(`the run's top speed was not kept: ${JSON.stringify(kept.run)}`);
+      if (!(kept.run?.distance > 0))
+        problems.push(`the run's distance was not kept: ${JSON.stringify(kept.run)}`);
+      if (kept.old?.topSpeed !== undefined)
+        problems.push(`a best from before top speeds were kept invented one: ${kept.old.topSpeed}`);
 
       if (problems.length) fail(`sharing a scores row — ${problems.join("; ")}`);
       else
         console.log(
-          `✓ every scores row shares its own seed (${(sent.size / 1024).toFixed(0)}KB card for ` +
-            `"before-distances", a stored best with no top speed and no distance)`,
+          `✓ every scores row shares its own seed: a ${(sent.size / 1024).toFixed(0)}KB card for ` +
+            `"powder-chute-42", carrying the ${Math.round(kept.run.topSpeed * 3.6)}km/h and ` +
+            `${kept.run.distance}m the run stored — the same card the end screen sends`,
         );
     }
   }

@@ -17,7 +17,7 @@
  */
 
 import { hashString, makeRng } from "../core/rng";
-import { formatDistance, formatWhen } from "./leaderboard";
+import { formatDistance } from "./leaderboard";
 import { isDaily, seedLabel } from "./seed";
 
 /**
@@ -32,17 +32,16 @@ export const CARD_SIZE = 1080;
 /**
  * Everything the card needs, from wherever it is being shared.
  *
- * Two places produce one: a run that has just ended, which knows all of it, and a row on the
- * scores list, which knows what was stored — a score, how far it got, and when. The optional
- * fields are the difference between the two, and the card fills the gap rather than pretending:
- * where there is no top speed there is a date instead, and a record kept before distances were
- * shows a dash.
+ * Two places produce one, and both produce the same card: a run that has just ended, and a row
+ * on the scores list, which reads the same figures back out of the record it stored. The
+ * optional fields are for bests kept before the leaderboard held them, which show a dash rather
+ * than a number nobody could stand behind.
  */
 export interface CardResult {
   score: number;
   /** Metres. Absent on a best recorded before distances were kept. */
   distance?: number;
-  /** Metres per second, as the controller keeps it. Absent when sharing from the scores list. */
+  /** Metres per second, as the controller keeps it. Absent on a best from before it was kept. */
   topSpeed?: number;
   seed: string;
   /**
@@ -52,8 +51,6 @@ export interface CardResult {
    * says one thing, a row on the list says another, and the card should not be guessing.
    */
   strap: string;
-  /** When the score was set, epoch ms. Shown where the top speed would be, when there is none. */
-  at?: number;
   /** A link that drops the recipient straight onto this course. */
   url: string;
 }
@@ -113,6 +110,16 @@ const font = (size: number, weight = 700) => `${weight} ${size}px ${FACE}`;
 /** Metres per second to the km/h the HUD and the end screen both show. */
 export function toKmh(speed: number): number {
   return Math.round(speed * 3.6);
+}
+
+/**
+ * A run's top speed, or a dash where it was never recorded.
+ *
+ * The dash is for bests set before the leaderboard kept a top speed. Not "0km/h", which would
+ * describe a run that never moved — the same reason a missing distance is not "0m".
+ */
+export function formatSpeed(speed: number | undefined): string {
+  return speed === undefined ? "—" : `${toKmh(speed)}km/h`;
 }
 
 /**
@@ -183,12 +190,7 @@ function tree(ctx: CardContext, x: number, base: number, height: number): void {
  * Split from the canvas plumbing below so the layout can be exercised without one, and kept
  * pure: given the same result it draws the same card, on any device.
  */
-export function drawShareCard(
-  ctx: CardContext,
-  r: CardResult,
-  size = CARD_SIZE,
-  now = Date.now(),
-): void {
+export function drawShareCard(ctx: CardContext, r: CardResult, size = CARD_SIZE): void {
   const mid = size / 2;
   /**
    * Where the scenery starts and the words stop.
@@ -269,12 +271,11 @@ export function drawShareCard(
     ctx.font = font(size * 0.026, 800);
     ctx.fillText(label, x, size * 0.5);
   };
+  // The same two stats wherever the share came from, so every card is the same card. A best
+  // shared from the scores list reads its top speed back out of the record; one set before
+  // that was kept has no answer and shows a dash, exactly as a missing distance does.
   stat("DISTANCE", formatDistance(r.distance), size * 0.28);
-  // A run that just ended knows its top speed; a row on the scores list does not, and putting
-  // a dash there would waste the best half of the card. When it was set is the fact that row
-  // actually has, and it is worth reading — "3d ago" on a score says something about it.
-  if (r.topSpeed != null) stat("TOP SPEED", `${toKmh(r.topSpeed)}km/h`, size * 0.72);
-  else stat("SET", r.at != null ? formatWhen(r.at, now) : "—", size * 0.72);
+  stat("TOP SPEED", formatSpeed(r.topSpeed), size * 0.72);
 
   // --- The seed, full width: it is the whole reason this is worth sending
   const label = cardSeedLabel(r.seed);

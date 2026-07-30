@@ -26,6 +26,14 @@ export interface ScoreRecord {
    * long gone, so there is nothing to fill it in from and the row simply says so.
    */
   distance?: number;
+  /**
+   * The run's top speed, in metres per second.
+   *
+   * Kept only so a score shared from the list can show the same card as one shared from the
+   * end screen. Nothing in the game reads it otherwise — the rows do not show it, and it has
+   * no bearing on the score. Absent on bests set before it was kept, which show a dash.
+   */
+  topSpeed?: number;
   /** Which mountain it was set on. See COURSE_GENERATION. */
   gen: number;
 }
@@ -110,6 +118,8 @@ function parse(raw: string): { records: ScoreRecord[]; dropped: boolean } {
     // was set are what the row is *for*, and both are still there.
     const distance = Math.floor(Number(item.distance));
     if (Number.isFinite(distance) && distance > 0) record.distance = distance;
+    const topSpeed = Number(item.topSpeed);
+    if (Number.isFinite(topSpeed) && topSpeed > 0) record.topSpeed = topSpeed;
     out.push(record);
   }
   return { records: out, dropped: out.length !== data.length };
@@ -174,6 +184,7 @@ export function recordBest(
   seed: string,
   score: number,
   distance: number,
+  topSpeed: number,
   now: number = Date.now(),
 ): boolean {
   const value = Math.floor(score);
@@ -186,6 +197,7 @@ export function recordBest(
   const record: ScoreRecord = { seed, score: value, at: now, gen: COURSE_GENERATION };
   const metres = Math.floor(distance);
   if (Number.isFinite(metres) && metres > 0) record.distance = metres;
+  if (Number.isFinite(topSpeed) && topSpeed > 0) record.topSpeed = topSpeed;
 
   save([...records.filter((r) => r.seed !== seed), record]);
   return true;

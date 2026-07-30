@@ -228,7 +228,7 @@ class Game {
    */
   private bankScore(): void {
     if (this.state !== "playing" && this.state !== "paused" && this.state !== "crashing") return;
-    recordBest(this.seed, this.score.value, this.controller.distance);
+    recordBest(this.seed, this.score.value, this.controller.distance, this.controller.topSpeed);
   }
 
   /**
@@ -244,9 +244,9 @@ class Game {
     return {
       score: record.score,
       distance: record.distance,
+      topSpeed: record.topSpeed,
       seed,
       strap: "My best on this seed",
-      at: record.at,
       url: shareUrl(seed),
     };
   }
@@ -479,7 +479,7 @@ class Game {
     // storage now: banking mid-run means the run's own score may already be in there, and
     // asking storage would then deny the run the record it just set.
     const isRecord = score > this.bestAtStart;
-    recordBest(this.seed, score, this.controller.distance);
+    recordBest(this.seed, score, this.controller.distance, this.controller.topSpeed);
 
     const best = readBest(this.seed);
     const result: CardResult = {
@@ -488,7 +488,6 @@ class Game {
       topSpeed: this.controller.topSpeed,
       seed: this.seed,
       strap: isRecord ? "New personal best!" : `Best on this seed: ${best.toLocaleString()}`,
-      at: Date.now(),
       url: shareUrl(this.seed),
     };
     this.lastResult = result;
