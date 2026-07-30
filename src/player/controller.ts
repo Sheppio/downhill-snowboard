@@ -27,6 +27,26 @@ const MAX_FRAME_TIME = 0.25;
 
 const GRAVITY = 9.81;
 
+/**
+ * The rider's collision shape: a capsule lying along the board, in metres.
+ *
+ * Both figures are the rider mesh's own silhouette, measured in its local frame with the rig
+ * flattened. This used to be a single 0.6m circle, which was wrong in both directions at once
+ * — 2.4× too wide across the direction of travel, and 0.2m short at each tip. Sideways is the
+ * axis you dodge on, so what players saw was crashing into trees they had visibly passed.
+ *
+ * The widest part across is the goggles, not the board; the board itself is only 0.16m. Taken
+ * at rest, deliberately: at full lean the rider's head swings the better part of a metre out
+ * over the snow, and a hitbox that grew every time you turned hard would be unreadable — and
+ * it leans to the *inside* of the turn, away from whatever is being dodged. What threads a
+ * gap is the board and the legs, and this is their width.
+ *
+ * They live here rather than next to the game loop so the collision tests can import the same
+ * numbers the game plays with, instead of restating them and drifting.
+ */
+export const RIDER_HALF_WIDTH = 0.24;
+export const RIDER_HALF_LENGTH = 0.81;
+
 // --- Tuning ------------------------------------------------------------------------------
 // These are the numbers that decide whether the game feels good. CARVE_DRAG is the most
 // important one: it sets the price of a tight turn.
@@ -148,6 +168,10 @@ export class RiderController {
   vy = 0;
   airborne = false;
   steer = 0;
+
+  /** The rider's own collision capsule, so whatever tests against it need not restate it. */
+  readonly halfWidth = RIDER_HALF_WIDTH;
+  readonly halfLength = RIDER_HALF_LENGTH;
 
   gradX = 0;
   gradZ = 0;

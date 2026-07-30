@@ -689,6 +689,104 @@ else {
     );
 }
 
+// --- The rider's collider has to be the shape of the rider ---------------------------------
+// The other half of the same fault. The obstacle colliders above were only one side of "you
+// crashed into empty snow": the rider itself was a 0.6m circle, against a mesh 0.24m across
+// and 0.81m long. Sideways is the axis you dodge on, so the error a player felt was two and a
+// half times too much collider exactly where it hurt.
+//
+// Measured off the built mesh, like the obstacle silhouettes, because the unit tests read the
+// same constants the game does and cannot see the two drifting apart from the model.
+const shape = await page.evaluate(() => {
+  const g = window.__game;
+  const root = g.scene.getTransformNodeByName("rider");
+  // Flatten the rig: this is a measurement of the shape, not of a moment's lean and pitch
+  root.rotation.set(0, 0, 0);
+  root.position.set(0, 0, 0);
+  for (const child of root.getChildren()) child.rotation?.set(0, 0, 0);
+
+  let across = 0;
+  let along = 0;
+  for (const m of root.getChildMeshes()) {
+    if (m.name.includes("shadow")) continue; // a mark on the snow, not part of the rider
+    m.computeWorldMatrix(true);
+    m.refreshBoundingInfo();
+    const b = m.getBoundingInfo().boundingBox;
+    across = Math.max(across, Math.abs(b.minimumWorld.x), Math.abs(b.maximumWorld.x));
+    along = Math.max(along, Math.abs(b.minimumWorld.z), Math.abs(b.maximumWorld.z));
+  }
+
+  // Where the game's own collision actually starts, found by bisection against a real tree.
+  // The rider's dimensions come off the controller, so this is the collider the game plays
+  // with rather than one the check supplied to itself.
+  const c = g.controller;
+  let tree = null;
+  for (let i = 3; i < 80 && !tree; i++) {
+    for (const o of g.obstacles.slice(i)) if (o.kind === 0) { tree = o; break; }
+  }
+  const hits = (dx, dz, heading) =>
+    g.obstacles.hitTest(
+      tree.x + dx, tree.z + dz, tree.y, heading, c.halfWidth, c.halfLength,
+    ) === tree;
+  const edge = (dir, heading) => {
+    let hit = 0, miss = 8;
+    for (let i = 0; i < 40; i++) {
+      const mid = (hit + miss) / 2;
+      if (hits(dir[0] * mid, dir[1] * mid, heading)) hit = mid;
+      else miss = mid;
+    }
+    return miss;
+  };
+  const RIGHT = [1, 0];
+  const AHEAD = [0, 1];
+  return {
+    mesh: { across: +across.toFixed(3), along: +along.toFixed(3) },
+    used: { across: c.halfWidth, along: c.halfLength },
+    side: +edge(RIGHT, 0).toFixed(3),
+    nose: +edge(AHEAD, 0).toFixed(3),
+    turnedSide: +edge(RIGHT, Math.PI / 2).toFixed(3),
+    turnedNose: +edge(AHEAD, Math.PI / 2).toFixed(3),
+  };
+});
+{
+  const problems = [];
+  // The constants have to describe the model, not a shape it used to be
+  if (Math.abs(shape.used.across - shape.mesh.across) > 0.06)
+    problems.push(
+      `collides ${shape.used.across}m across a rider ${shape.mesh.across}m across`,
+    );
+  if (Math.abs(shape.used.along - shape.mesh.along) > 0.06)
+    problems.push(`collides ${shape.used.along}m along a rider ${shape.mesh.along}m long`);
+
+  // The reach itself is the obstacle's radius plus the rider's, and the obstacle's cancels in
+  // the difference — so this compares the collider's own proportions against the mesh's,
+  // without needing to know the tree or the forgiveness.
+  const shapeOfCollider = shape.nose - shape.side;
+  const shapeOfMesh = shape.mesh.along - shape.mesh.across;
+  if (Math.abs(shapeOfCollider - shapeOfMesh) > 0.08)
+    problems.push(
+      `collider is ${shapeOfCollider.toFixed(2)}m longer than it is wide, the rider ` +
+        `${shapeOfMesh.toFixed(2)}m`,
+    );
+
+  // And it has to turn with the board, or "long" and "wide" mean nothing
+  if (Math.abs(shape.turnedSide - shape.nose) > 0.03 ||
+      Math.abs(shape.turnedNose - shape.side) > 0.03)
+    problems.push(
+      `turned across the hill the collider still reaches ${shape.turnedSide.toFixed(2)}m ` +
+        `sideways and ${shape.turnedNose.toFixed(2)}m ahead, unchanged from ` +
+        `${shape.side.toFixed(2)}/${shape.nose.toFixed(2)}`,
+    );
+
+  if (problems.length) fail(`the rider's collider is not the rider's shape — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ rider collides as a board: ${shape.mesh.across}m across and ${shape.mesh.along}m long, ` +
+        `stopping at ${shape.side}m beside a tree and ${shape.nose}m ahead of one, and swapping ` +
+        `the two when turned across the hill`,
+    );
+}
+
 // --- Retry, and the same seed must rebuild the same course ---------------------------------
 const before = await page.evaluate(() => {
   const g = window.__game;
@@ -735,7 +833,26 @@ else console.log("✓ a different seed builds a different mountain");
 // there is no honest date to give it.
 {
   await page.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+  await page.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+
+  // Which course generation this build stamps its scores with, learned from a record it writes
+  // itself rather than written down here. The stamp moves whenever a change makes old scores
+  // incomparable, and a literal would silently turn the row below into one more thing to drop
+  // — the check would still pass, having stopped testing what it was written for.
   await page.evaluate(() => {
+    localStorage.clear();
+    window.__game.startRun("stamp-probe");
+  });
+  await page.waitForTimeout(900);
+  await page.evaluate(() => window.__game.endRun("crash"));
+  await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+  const currentGen = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]")[0]?.gen ?? null,
+  );
+  await page.click("#btn-menu");
+  if (currentGen == null) fail("no score was recorded to read the course generation from");
+
+  await page.evaluate((gen) => {
     localStorage.clear();
     localStorage.setItem("downhill.best.old-favourite", "4321");
     localStorage.setItem(
@@ -743,14 +860,13 @@ else console.log("✓ a different seed builds a different mountain");
       JSON.stringify([
         // Written before distances were kept, but on the course as it stands: still listed,
         // with a dash where the metres go rather than a zero or a blank.
-        { seed: "before-distances", score: 4321, at: Date.now() - 9e7, gen: 2 },
-        // Set on the mountain as it was before it kept getting harder past 1300m. Not
-        // comparable with anything set now, so it should be gone from the list *and* from
-        // storage — an unstamped record is generation 1 by definition.
+        { seed: "before-distances", score: 4321, at: Date.now() - 9e7, gen },
+        // Set on an earlier mountain. Not comparable with anything set now, so it should be
+        // gone from the list *and* from storage — an unstamped record is generation 1.
         { seed: "old-mountain", score: 99999, at: Date.now() - 9e7 },
       ]),
     );
-  });
+  }, currentGen);
   await page.reload({ waitUntil: "load" });
   await page.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
 

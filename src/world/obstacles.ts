@@ -9,8 +9,8 @@
  * copy drawn in a single call. On a phone this is the difference between a smooth 60fps and
  * a slideshow; hundreds of individual meshes would be hundreds of draw calls.
  *
- * Collision is an analytic circle test rather than a physics query, for a reason that matters
- * here specifically: the game's whole premise is that a seed plays out identically for
+ * Collision is an analytic distance test rather than a physics query, for a reason that
+ * matters here specifically: the game's whole premise is that a seed plays out identically for
  * everybody. A deterministic distance check gives exactly that, where a physics engine's
  * contact callbacks vary with float behaviour across devices. Havok is still doing real work
  * — it drives the wipeout tumble in `wipeout.ts`.
@@ -137,11 +137,12 @@ const TREE_RADIUS = 0.7;
  *
  * Four of them are broad canopies that sweep down past the rider, so a 0.7m collider sits
  * well inside the needles and reads as generous. Variant 3 is a stripped dead trunk with its
- * two remnant branches up at 2.7m and 3.6m, clean over the rider's head. At 0.7m it was
- * crashing people against 0.41m of visibly empty snow — the reach is the collider times the
- * forgiveness plus the rider's own radius, 1.23m between centres, against a trunk 0.22m wide.
+ * two remnant branches up at 2.7m and 3.6m, clean over the rider's head. At 0.7m it stopped
+ * the rider well clear of visibly empty snow.
  *
- * 0.3 is the trunk plus a little, so it still stops you, but only once you are on it.
+ * 0.3 is the trunk plus a little, so it still stops you, but only once you are on it. With the
+ * rider now a capsule 0.24m across rather than a 0.6m circle, the two fixes compound: sideways
+ * the reach against this trunk is 0.51m between centres, against a trunk 0.22m wide.
  */
 export const TREE_HIT_RADII = [TREE_RADIUS, TREE_RADIUS, TREE_RADIUS, 0.3, TREE_RADIUS];
 export const ROCK_RADIUS = 0.95;
@@ -304,23 +305,56 @@ export class ObstacleField {
    * Only the few slices around the rider are considered, so this is a handful of distance
    * checks per frame regardless of how long the run gets.
    *
-   * `riderY` is the height of the board. Without it this was a pure XZ circle test, which
-   * made every collider an infinitely tall cylinder: you could clear a tree by a wide margin
-   * and still be knocked off it, and no amount of air ever got you over anything.
+   * `riderY` is the height of the board. Without it this was a pure XZ test, which made every
+   * collider an infinitely tall cylinder: you could clear a tree by a wide margin and still be
+   * knocked off it, and no amount of air ever got you over anything.
+   *
+   * The rider is a **capsule lying along the board**, not a circle. A circle cannot describe a
+   * 1.6m board a quarter of a metre wide: the one that was here had to be a compromise between
+   * the two, so it was far too wide sideways — which is the axis you dodge on — while still
+   * falling short of the tips. A capsule is the board's actual shape, and the test against it
+   * is exact rather than an approximation: clamp the obstacle's offset to the segment and it
+   * is a point-to-point distance again.
+   *
+   * An ellipse would have been the other way to say "long and thin", and was rejected for
+   * being neither. Circle-against-ellipse has no closed form, so it needs an iterative solve
+   * or the usual offset-ellipse approximation — and that approximation is *generous* at the
+   * diagonals, which would crash the player early in exactly the direction this exists to fix.
    */
-  hitTest(x: number, z: number, riderRadius: number, riderY: number): Obstacle | null {
+  hitTest(
+    x: number,
+    z: number,
+    riderY: number,
+    heading: number,
+    halfWidth: number,
+    halfLength: number,
+  ): Obstacle | null {
     const first = Math.floor((z - 4) / SLICE_LENGTH);
     const last = Math.floor((z + 4) / SLICE_LENGTH);
+
+    // Heading 0 points down the mountain (+z), matching the rider controller.
+    const fx = Math.sin(heading);
+    const fz = Math.cos(heading);
+    // The capsule's rounded ends are what reach the tips, so the segment itself stops short
+    // of them by exactly the radius.
+    const halfSegment = Math.max(halfLength - halfWidth, 0);
 
     for (let i = first; i <= last; i++) {
       for (const o of this.slice(i)) {
         // Cleared the top, so it passes underneath
         if (riderY >= o.y + o.height) continue;
 
-        const dx = x - o.x;
-        const dz = z - o.z;
-        const reach = o.hitRadius * COLLIDER_FORGIVENESS + riderRadius;
-        if (dx * dx + dz * dz < reach * reach) return o;
+        const dx = o.x - x;
+        const dz = o.z - z;
+        // Split the offset into "along the board" and "across it"
+        const along = dx * fx + dz * fz;
+        const across = dx * fz - dz * fx;
+        // Off the end of the segment, the rounded cap takes over
+        const overhang = Math.abs(along) - halfSegment;
+        const beyond = overhang > 0 ? overhang : 0;
+
+        const reach = o.hitRadius * COLLIDER_FORGIVENESS + halfWidth;
+        if (beyond * beyond + across * across < reach * reach) return o;
       }
     }
     return null;

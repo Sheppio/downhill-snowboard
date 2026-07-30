@@ -45,8 +45,12 @@ export interface ScoreRecord {
  * set on an old build that had not been reloaded yet from one set on the new course, and
  * those are exactly the scores this is meant to clear. Generation 1 is everything written
  * before this existed, which is precisely the set to drop.
+ *
+ *   1  everything before the stamp existed
+ *   2  the mountain started escalating past 1300m, out to 5km
+ *   3  the rider stopped colliding as a 0.6m circle and became the shape of a board
  */
-export const COURSE_GENERATION = 2;
+export const COURSE_GENERATION = 3;
 
 const STORE_KEY = "downhill.scores.v1";
 

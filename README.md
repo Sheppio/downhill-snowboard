@@ -51,7 +51,28 @@ Speed and the weave compete for the same budget, and speed wins ties: it makes t
 lever that costs nothing against it — a tighter corridor does not bend the line at all.
 
 Past 5km the course is stationary. It is meant to be survivable there, not endless: the
-reference pilot used to reach 8km on 52 of 53 daily seeds and now manages it on 29.
+reference pilot used to reach 8km on 52 of 53 daily seeds and now manages it on 41.
+
+## What you collide with
+
+The rider is a **capsule lying along the board** — 0.24m across the direction of travel and
+0.81m along it, both measured off the mesh actually drawn. It was a 0.6m circle, which is not a
+shape a snowboard has: two and a half times too wide sideways, which is the axis you dodge on,
+and still short of the board's own tips. Crashing into a tree you had visibly passed was that,
+and it is fixed.
+
+Obstacles keep a circle each, and a separate one from the circle that spaces them out. A tree's
+placement radius is uniform, because changing it would move every tree in the game; what stops
+you is per shape, measured from the mesh below rider height. The stripped dead fir is a 0.22m
+trunk with its branches up over your head, so it collides like one.
+
+Collision is generous by a tenth on top of all that, deliberately: a hit the player did not
+believe in is worse than one they got away with, because the run ends on it.
+
+The hitbox does not grow when you lean. At full lock the rider's head swings the better part of
+a metre out over the snow, and a collider that tracked it would be unreadable — it also leans
+*into* the turn, away from whatever is being dodged. What threads a gap is the board and the
+legs.
 
 ## Seeds
 
@@ -88,7 +109,8 @@ Every score is stamped with which version of the course it was set on, and score
 older one are deleted the next time the game loads. A 9,000 set before the mountain kept
 getting harder past 1300m is not the same achievement as a 9,000 set after it, and leaving the
 two side by side makes the list meaningless. `COURSE_GENERATION` in `src/game/leaderboard.ts`
-is the stamp — bump it in the same commit as any change that makes scores incomparable.
+is the stamp — bump it in the same commit as any change that makes scores incomparable. It has
+moved twice: for the escalation past 1300m, and for the rider gaining the shape of a board.
 
 A generation rather than a cutoff date, deliberately: a date is only as good as the clock on
 the phone, and a device running a few days slow would stamp every *new* score before the

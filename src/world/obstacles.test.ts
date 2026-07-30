@@ -21,11 +21,22 @@ import {
   OUT_OF_BOUNDS_FRACTION,
 } from "./course";
 import { dailySeed, hashString } from "../core/rng";
-import { RiderController } from "../player/controller";
+import {
+  RiderController,
+  RIDER_HALF_LENGTH,
+  RIDER_HALF_WIDTH,
+} from "../player/controller";
 import { pilotSteer } from "../player/pilot";
 
-/** Collision radius of the rider, shared with the game loop. */
-const RIDER_RADIUS = 0.6;
+/**
+ * `hitTest` with the rider's real capsule, pointing straight down the fall line by default.
+ *
+ * The dimensions are imported rather than restated, so a change to the rider's size is felt
+ * here rather than quietly tested against the shape it used to be.
+ */
+function hitAt(field: ObstacleField, x: number, z: number, y: number, heading = 0) {
+  return field.hitTest(x, z, y, heading, RIDER_HALF_WIDTH, RIDER_HALF_LENGTH);
+}
 
 function makeField(phrase: string) {
   const terrain = new TerrainField(hashString(phrase));
@@ -96,8 +107,14 @@ describe("every course can be completed", () => {
     // it almost nothing. Only the line demanding more turn rate than it has really kills it.
     //
     // Measured across the 53 daily seeds with the escalation to 5km in place: the pilot dies
-    // before 8000m on 24 of them, worst at 3615m, against 1 of 53 before the escalation. So
-    // this 3000m bound is where the guarantee sits, and it clears the worst seed by 600m.
+    // before 8000m on 12 of them, worst at 3616m. So this 3000m bound is where the guarantee
+    // sits, and it clears the worst seed by 600m.
+    //
+    // That was 24 of 53 while the rider was a 0.6m circle. Giving it the board's real shape
+    // cost 12 seeds' worth of pilot deaths and moved the worst seed by a single metre, which
+    // says plainly what kills the pilot: the racing line asking for more turn rate than it
+    // has, not the trees. The seeds it now survives are the ones it was clipping a trunk on
+    // with a collider two and a half times wider than the rider.
     const seeds = [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"];
     const RUN_DISTANCE = 3000;
 
@@ -110,7 +127,7 @@ describe("every course can be completed", () => {
       let worstOff = 0;
       for (let i = 0; i < 60 * 300 && rider.distance < RUN_DISTANCE; i++) {
         rider.update(1 / 60, pilotSteer(terrain.params, rider));
-        hit = obstacles.hitTest(rider.x, rider.z, RIDER_RADIUS, rider.y);
+        hit = hitAt(obstacles, rider.x, rider.z, rider.y, rider.heading);
         if (hit) break;
         const off =
           Math.abs(rider.x - centreX(terrain.params, rider.z)) / halfWidth(terrain.params, rider.z);
@@ -187,9 +204,10 @@ describe("collision", () => {
     const [first] = obstacles.range(20, 600);
     expect(first).toBeDefined();
 
-    expect(obstacles.hitTest(first!.x, first!.z, 0.6, first!.y)).toBe(first);
-    // Just outside the combined radius, no hit
-    expect(obstacles.hitTest(first!.x + first!.radius + 0.75, first!.z, 0.6, first!.y)).toBeNull();
+    expect(hitAt(obstacles, first!.x, first!.z, first!.y)).toBe(first);
+    // Well outside the combined reach on either axis, no hit
+    expect(hitAt(obstacles, first!.x + first!.radius + 0.75, first!.z, first!.y)).toBeNull();
+    expect(hitAt(obstacles, first!.x, first!.z + first!.radius + 1.6, first!.y)).toBeNull();
   });
 
   it("is forgiving by a tenth at the edges", () => {
@@ -200,14 +218,50 @@ describe("collision", () => {
     const [o] = obstacles.range(20, 600);
     expect(o).toBeDefined();
 
-    const riderRadius = 0.6;
-    // Just inside the drawn footprint, but outside the collider
-    const graze = o!.radius * 0.95 + riderRadius;
-    expect(obstacles.hitTest(o!.x + graze, o!.z, riderRadius, o!.y)).toBeNull();
+    // Against hitRadius, which is what forgiveness shaves, rather than the placement radius —
+    // the two differ on the thin-trunked variants, and this has to hold for all of them.
+    // Sideways, so the capsule's width is what answers.
+    const graze = o!.hitRadius * 0.95 + RIDER_HALF_WIDTH;
+    expect(hitAt(obstacles, o!.x + graze, o!.z, o!.y)).toBeNull();
 
     // Well inside it, still a hit — the forgiveness is a sliver, not a hole
-    const solid = o!.radius * 0.8 + riderRadius;
-    expect(obstacles.hitTest(o!.x + solid, o!.z, riderRadius, o!.y)).toBe(o);
+    const solid = o!.hitRadius * 0.8 + RIDER_HALF_WIDTH;
+    expect(hitAt(obstacles, o!.x + solid, o!.z, o!.y)).toBe(o);
+  });
+
+  it("is a board, not a circle: narrow across, long along", () => {
+    // The fault this shape exists to fix. A 0.6m circle put a third of a metre of collider out
+    // to each side of a rider a quarter of a metre wide, so trees the player had visibly
+    // passed still ended the run — and it was simultaneously short of the board's own tips.
+    const obstacles = makeField("capsule");
+    const [o] = obstacles.range(20, 600);
+    expect(o).toBeDefined();
+
+    const reach = o!.hitRadius * 0.9;
+    // Level with the trunk, a hand's width clear of it. The old circle crashed here.
+    const beside = reach + RIDER_HALF_WIDTH + 0.1;
+    expect(beside, "the gap this is about is inside the old 0.6m radius").toBeLessThan(
+      reach + 0.6,
+    );
+    expect(hitAt(obstacles, o!.x + beside, o!.z, o!.y)).toBeNull();
+
+    // Directly ahead at the same separation, the board's tip is into it — and the old circle
+    // let this through.
+    expect(hitAt(obstacles, o!.x, o!.z + beside, o!.y)).toBe(o);
+  });
+
+  it("turns with the rider", () => {
+    // The capsule is useless if it does not rotate: sideways and ahead have to swap when the
+    // board does. Nothing else in the suite would notice a heading that was ignored.
+    const obstacles = makeField("capsule-turn");
+    const [o] = obstacles.range(20, 600);
+    expect(o).toBeDefined();
+
+    // Far enough ahead to be off the end of a straight board, well inside its length
+    const gap = o!.hitRadius * 0.9 + RIDER_HALF_WIDTH + 0.15;
+    expect(hitAt(obstacles, o!.x, o!.z + gap, o!.y, 0)).toBe(o);
+    // Turned across the hill, that same obstacle is now off to the side and clear
+    expect(hitAt(obstacles, o!.x, o!.z + gap, o!.y, Math.PI / 2)).toBeNull();
   });
 
   it("keeps the forgiveness out of course generation", () => {
@@ -235,16 +289,16 @@ describe("collision", () => {
     expect(tree).toBeDefined();
 
     // At board level, both still stop the run
-    expect(obstacles.hitTest(rock!.x, rock!.z, 0.6, rock!.y)).toBe(rock);
-    expect(obstacles.hitTest(tree!.x, tree!.z, 0.6, tree!.y)).toBe(tree);
+    expect(hitAt(obstacles, rock!.x, rock!.z, rock!.y)).toBe(rock);
+    expect(hitAt(obstacles, tree!.x, tree!.z, tree!.y)).toBe(tree);
 
     // Just over the top of each, they pass underneath
-    expect(obstacles.hitTest(rock!.x, rock!.z, 0.6, rock!.y + rock!.height + 0.01)).toBeNull();
-    expect(obstacles.hitTest(tree!.x, tree!.z, 0.6, tree!.y + tree!.height + 0.01)).toBeNull();
+    expect(hitAt(obstacles, rock!.x, rock!.z, rock!.y + rock!.height + 0.01)).toBeNull();
+    expect(hitAt(obstacles, tree!.x, tree!.z, tree!.y + tree!.height + 0.01)).toBeNull();
 
     // Just below the top, they still hit — the test is the real height, not a blanket pass
-    expect(obstacles.hitTest(rock!.x, rock!.z, 0.6, rock!.y + rock!.height - 0.05)).toBe(rock);
-    expect(obstacles.hitTest(tree!.x, tree!.z, 0.6, tree!.y + tree!.height - 0.05)).toBe(tree);
+    expect(hitAt(obstacles, rock!.x, rock!.z, rock!.y + rock!.height - 0.05)).toBe(rock);
+    expect(hitAt(obstacles, tree!.x, tree!.z, tree!.y + tree!.height - 0.05)).toBe(tree);
   });
 
   it("makes rocks jumpable and trees essentially not", () => {
@@ -304,7 +358,8 @@ describe("collision", () => {
     const terrain = new TerrainField(hashString("clear-line"));
     const obstacles = makeField("clear-line");
     for (let z = 20; z < 3000; z += 1.5) {
-      expect(obstacles.hitTest(gateX(terrain.params, z), z, 0.6, terrain.heightAt(gateX(terrain.params, z), z))).toBeNull();
+      const x = gateX(terrain.params, z);
+      expect(hitAt(obstacles, x, z, terrain.heightAt(x, z))).toBeNull();
     }
   });
 });

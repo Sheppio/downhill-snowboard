@@ -32,9 +32,6 @@ import {
 } from "./game/seed";
 import { Hud } from "./ui/hud";
 
-/** Collision radius of the rider on the XZ plane. */
-const RIDER_RADIUS = 0.6;
-
 /** Seconds off course before the run is ended. */
 const OUT_OF_BOUNDS_GRACE = 3;
 
@@ -335,7 +332,7 @@ class Game {
 
     // Obstacles
     // Physics position, not the interpolated render one, so collisions stay deterministic
-    const hit = this.obstacles.hitTest(c.x, c.z, RIDER_RADIUS, c.y);
+    const hit = this.obstacles.hitTest(c.x, c.z, c.y, c.heading, c.halfWidth, c.halfLength);
     if (hit) {
       this.beginCrash(hit.x, hit.z);
       return;
