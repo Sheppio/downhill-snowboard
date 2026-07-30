@@ -107,18 +107,26 @@ previews, and forward screenshots of screenshots; the text on the picture is wha
 of that. A daily run shows its date rather than the "Today" the end screen says, because by the
 time anyone reads the card, today is a different mountain.
 
+The message sent alongside the card is a challenge and nothing else — "Think you can beat
+that?". Everything about the run is already in the picture, and repeating it in words only makes
+the message long enough for a chat app to truncate, which costs the link at the end of it.
+
 Three routes out, in descending order of how much survives:
 
-| | When |
-| --- | --- |
-| The card, through the share sheet | Any phone, and desktop Safari |
-| Text and a link, no picture | A browser that shares but refuses files |
-| The link on the clipboard | No share sheet at all |
+| | When | Message |
+| --- | --- | --- |
+| The card, through the share sheet | Any phone, and desktop Safari | The challenge |
+| Text and a link, no picture | A browser that shares but refuses files | The run's numbers, since nothing else is carrying them |
+| The link on the clipboard | No share sheet at all | — |
 
 The card is rendered when the end screen appears, not when the button is pressed. That is not a
 performance nicety: `navigator.share` needs the user activation the press carries, and awaiting
 anything before calling it spends that activation on iOS — the one platform this feature is
 most for.
+
+Drawing 1080² takes a few hundred milliseconds, so a press in the first moment of the end screen
+finds no card yet and shares text and a link instead. That is the second row of the table doing
+its job rather than a failure, and it is why that row still carries the numbers.
 
 ## Your scores
 

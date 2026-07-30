@@ -17,7 +17,7 @@
  */
 
 import { copyLink } from "./seed";
-import { renderShareCard, shareText, type RunResult } from "./sharecard";
+import { challengeText, renderShareCard, runSummaryText, type RunResult } from "./sharecard";
 
 export type ShareOutcome =
   /** Handed to the system share sheet, with the card. */
@@ -63,11 +63,10 @@ export async function prepareShareCard(r: RunResult): Promise<File | null> {
  * called, so the caller's user gesture is still valid when it runs — see the note above.
  */
 export async function shareRun(r: RunResult, card: File | null): Promise<ShareOutcome> {
-  const text = shareText(r);
-
   if (card && navigator.share) {
     try {
-      await navigator.share({ files: [card], text, url: r.url });
+      // Just the challenge: everything else about the run is on the picture beside it
+      await navigator.share({ files: [card], text: challengeText(), url: r.url });
       return "shared";
     } catch (e) {
       if (isAbort(e)) return "cancelled";
@@ -77,7 +76,8 @@ export async function shareRun(r: RunResult, card: File | null): Promise<ShareOu
 
   if (navigator.share) {
     try {
-      await navigator.share({ title: "Downhill", text, url: r.url });
+      // No picture to carry them, so the numbers go in the words
+      await navigator.share({ title: "Downhill", text: runSummaryText(r), url: r.url });
       return "shared-link";
     } catch (e) {
       if (isAbort(e)) return "cancelled";

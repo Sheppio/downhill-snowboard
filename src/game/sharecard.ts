@@ -273,18 +273,29 @@ export function drawShareCard(ctx: CardContext, r: RunResult, size = CARD_SIZE):
 /**
  * The message that travels with the card.
  *
- * Kept short and with the seed in words, because this is what a chat app shows when it decides
- * not to render the image — and because a forwarded message often arrives with the picture
- * stripped and only this left.
+ * A challenge and nothing else. The score, the distance, the speed and the seed are all on the
+ * picture, and repeating them in the text just makes the message long enough that a chat app
+ * truncates it — with the link, the only part that is not on the card, at the end.
  */
-export function shareText(r: RunResult): string {
+export function challengeText(): string {
+  return "Think you can beat that?";
+}
+
+/**
+ * The message for when there is no card to send.
+ *
+ * Only reached where the browser shares but refuses files. Here the numbers have nowhere else
+ * to be, so they go in the words: a bare challenge with no run attached to it is not a boast,
+ * it is a link nobody opens.
+ */
+export function runSummaryText(r: RunResult): string {
   const where = isDaily(r.seed)
     ? `today's Downhill run (${cardSeedLabel(r.seed)})`
     : `Downhill seed "${r.seed}"`;
   return (
     `${r.score.toLocaleString()} on ${where} — ` +
     `${Math.floor(r.distance).toLocaleString()}m at up to ${toKmh(r.topSpeed)}km/h. ` +
-    `Same mountain, same trees. Beat it:`
+    `Think you can beat that?`
   );
 }
 

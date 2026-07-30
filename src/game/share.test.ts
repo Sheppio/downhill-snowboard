@@ -35,8 +35,23 @@ describe("sharing a run", () => {
       expect(sent.files, "the picture is the point").toHaveLength(1);
       expect(sent.files[0]!.type).toBe("image/png");
       expect(sent.url, "and the link goes with it").toBe(RESULT.url);
-      expect(sent.text).toContain("5,152");
+      // A challenge, not a second copy of the card. The run's numbers are all on the picture,
+      // and repeating them only pushes the link far enough down to be truncated.
+      expect(sent.text).not.toMatch(/\d/);
+      expect(sent.text).toMatch(/beat/i);
     });
+  });
+
+  it("puts the numbers back in the message when the picture cannot go", async () => {
+    // The stats live on the card. Where there is no card they have nowhere else to be, and a
+    // bare "think you can beat that?" with no run attached is just a link nobody opens.
+    const share = vi.fn().mockResolvedValue(undefined);
+    withNavigator({ share });
+
+    await shareRun(RESULT, null);
+    const sent = share.mock.calls[0]![0] as { text: string };
+    expect(sent.text).toContain("5,152");
+    expect(sent.text).toContain("powder-chute-42");
   });
 
   it("falls back to text and a link where files are refused", async () => {

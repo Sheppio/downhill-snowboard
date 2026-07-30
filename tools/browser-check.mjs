@@ -507,12 +507,15 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
   });
   await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
 
-  // The label changing is how the game says the card is drawn and the sheet will take it
-  await page
-    .waitForFunction(() => document.getElementById("btn-share").textContent === "Share result", {
-      timeout: 10000,
-    })
-    .catch(() => {});
+  // Wait for the card itself, not for the button to be renamed.
+  //
+  // The label was the obvious signal and is the wrong one: it is set when the render promise
+  // resolves, and the *previous* run's promise lands about 700ms late — after this block has
+  // installed the stub. `navigator.share` is then defined, so that stale promise renames the
+  // button while `shareCard` is still null, and the click that follows shares a link. That
+  // made this check pass or fail depending on when a promise from a different run happened to
+  // settle. Drawing 1080² really does take the better part of a second here.
+  await page.waitForFunction(() => window.__game.shareCard != null, { timeout: 15000 });
   const label = await page.textContent("#btn-share");
 
   await page.click("#btn-share");
@@ -561,10 +564,12 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
   if (shared.type !== "image/png") problems.push(`shared a ${shared.type ?? "nothing"}, not a PNG`);
   if (!shared.url?.includes("powder-chute-42"))
     problems.push(`the link does not name the seed: ${shared.url}`);
-  if (!shared.text?.includes(ended.score.toLocaleString()))
-    problems.push(`the message does not carry the score ${ended.score}: "${shared.text}"`);
-  if (!shared.text?.includes("powder-chute-42"))
-    problems.push(`the message does not name the seed: "${shared.text}"`);
+  // A challenge and nothing else. The run is on the picture beside it, and restating it only
+  // makes the message long enough to be truncated — taking the link, which is at the end.
+  if (!/beat/i.test(shared.text ?? ""))
+    problems.push(`the message is not a challenge: "${shared.text}"`);
+  if (/\d/.test(shared.text ?? ""))
+    problems.push(`the message repeats what is already on the card: "${shared.text}"`);
   if (!card) problems.push("no image was attached at all");
   else {
     if (card.width !== 1080 || card.height !== 1080)
@@ -577,8 +582,9 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
   if (problems.length) fail(`sharing a run — ${problems.join("; ")}`);
   else
     console.log(
-      `✓ shared a ${(shared.size / 1024).toFixed(0)}KB PNG card as "${shared.name}": ` +
-        `${card.width}px square, ${card.colours} colours, carrying the score and the seed`,
+      `✓ shared a ${(shared.size / 1024).toFixed(0)}KB PNG card as "${shared.name}" for a ` +
+        `${ended.score}-point run: ${card.width}px square, ${card.colours} colours, sent with ` +
+        `"${shared.text}" and a link to the seed`,
     );
 
   await page.click("#btn-menu");

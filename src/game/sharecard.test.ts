@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   cardSeedLabel,
+  challengeText,
   drawShareCard,
-  shareText,
+  runSummaryText,
   toKmh,
   type CardContext,
   type RunResult,
@@ -169,9 +170,21 @@ describe("the same seed always decorates its own card the same way", () => {
   });
 });
 
-describe("the message that travels with it", () => {
-  it("says the score and the seed, for when the picture does not arrive", () => {
-    const text = shareText(RESULT);
+describe("the message that travels with the card", () => {
+  it("is a challenge and nothing else", () => {
+    // Everything about the run is already on the picture. Saying it again only makes the
+    // message long enough for a chat app to truncate it — and what gets truncated is the end,
+    // which is where the link lives.
+    const text = challengeText();
+    expect(text).not.toMatch(/\d/);
+    expect(text.length).toBeLessThan(60);
+    expect(text).toMatch(/beat/i);
+  });
+});
+
+describe("the message for when there is no card", () => {
+  it("puts the numbers in the words, since nothing else is carrying them", () => {
+    const text = runSummaryText(RESULT);
     expect(text).toContain("5,152");
     expect(text).toContain("powder-chute-42");
     expect(text).toContain("4,139m");
@@ -179,7 +192,7 @@ describe("the message that travels with it", () => {
   });
 
   it("calls the daily run what a reader would call it", () => {
-    const text = shareText({ ...RESULT, seed: "daily-2026-01-15" });
+    const text = runSummaryText({ ...RESULT, seed: "daily-2026-01-15" });
     expect(text).not.toContain("daily-2026-01-15");
     expect(text).toMatch(/2026/);
   });
@@ -187,7 +200,8 @@ describe("the message that travels with it", () => {
   it("does not carry the URL itself — the share sheet adds it", () => {
     // Passed as `url` to navigator.share, which appends it. Including it here too gets it
     // pasted twice in WhatsApp.
-    expect(shareText(RESULT)).not.toContain("https://");
+    expect(runSummaryText(RESULT)).not.toContain("https://");
+    expect(challengeText()).not.toContain("https://");
   });
 });
 
