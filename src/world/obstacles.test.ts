@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { densityAt, ObstacleField, ObstacleKind, SLICE_LENGTH, VARIANTS } from "./obstacles";
+import {
+  densityAt,
+  ObstacleField,
+  ObstacleKind,
+  SLICE_LENGTH,
+  TREE_HIT_RADII,
+  TREE_SHAPES,
+  VARIANTS,
+} from "./obstacles";
 import { TerrainField } from "./terrain";
 import {
   GATE_CLEARANCE_MIN,
@@ -332,4 +340,62 @@ describe("the trees keep thickening out to 5km", () => {
       early * 1.3,
     );
   }, 30_000);
+});
+
+describe("a collider never claims more room than the tree occupies", () => {
+  /**
+   * The widest the shape gets below the rider's head, from the same tables the mesh is built
+   * from. A cone tier is at its widest at its base and tapers to nothing at its tip, so
+   * anything whose base is above the rider is passed under rather than through.
+   */
+  const RIDER_HEIGHT = 1.8;
+
+  const widestBelowRider = (variant: number): number => {
+    const shape = TREE_SHAPES[variant]!;
+    const [th, dTop, dBottom] = shape.trunk;
+    // The trunk spans 0..th, tapering from dBottom to dTop
+    let widest = dBottom / 2;
+    for (const [y, d, h] of shape.tiers) {
+      if (y - h / 2 < RIDER_HEIGHT) widest = Math.max(widest, d / 2);
+    }
+    void th;
+    void dTop;
+    return widest;
+  };
+
+  it("keeps every tree's collider inside its own silhouette", () => {
+    // The bug this exists for: all five firs shared one 0.7m collider, which is generous
+    // against a broad canopy sweeping down past the rider and absurd against the bare dead
+    // trunk, which is 0.22m wide down there. With the rider's own radius and the collider
+    // forgiveness that put the crash 0.41m out into visibly empty snow, and it was reported
+    // as crashing "when just being close to it".
+    for (let v = 0; v < VARIANTS; v++) {
+      const silhouette = widestBelowRider(v);
+      const collider = TREE_HIT_RADII[v]!;
+      expect(
+        collider,
+        `tree ${v} collides at ${collider.toFixed(2)}m but is only ${silhouette.toFixed(2)}m wide below ${RIDER_HEIGHT}m`,
+      ).toBeLessThanOrEqual(silhouette + 0.1);
+    }
+  });
+
+  it("still stops you when you actually reach the trunk", () => {
+    // The other direction: forgiving is not the same as passable. A collider small enough to
+    // ride through would turn the dead trees into scenery.
+    for (let v = 0; v < VARIANTS; v++) {
+      expect(TREE_HIT_RADII[v]!, `tree ${v} is barely there`).toBeGreaterThan(0.25);
+    }
+  });
+
+  it("leaves where the trees are placed exactly as it was", () => {
+    // The hit radius is deliberately separate from `radius`, which spaces obstacles apart and
+    // holds them off the racing line. Changing that would move every tree in the game and
+    // invalidate every score; this changes only what the rider collides with.
+    const field = makeField("alpine");
+    for (let i = 2; i < 60; i++) {
+      for (const o of field.slice(i)) {
+        expect(o.radius).toBe(o.kind === ObstacleKind.Tree ? 0.7 * o.scale : 0.95 * o.scale);
+      }
+    }
+  });
 });

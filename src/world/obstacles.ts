@@ -86,8 +86,10 @@ export interface Obstacle {
   x: number;
   z: number;
   y: number;
-  /** Collision radius on the XZ plane. */
+  /** Radius used to space obstacles apart and to hold them clear of the racing line. */
   radius: number;
+  /** Radius the rider actually collides against. See TREE_HIT_RADII. */
+  hitRadius: number;
   /** Height of the top above `y`. Clear this and you have jumped it. */
   height: number;
   kind: ObstacleKind;
@@ -118,6 +120,30 @@ export const VARIANTS = 5;
 const COLLIDER_FORGIVENESS = 0.9;
 
 const TREE_RADIUS = 0.7;
+
+/**
+ * What the rider actually collides with, per tree variant.
+ *
+ * Separate from TREE_RADIUS because the two answer different questions. TREE_RADIUS spaces
+ * obstacles apart and holds them off the racing line, where a uniform figure is right and
+ * where changing anything would move every tree in the game. This is about what the player
+ * can see, and the five firs do not look alike down where the rider is.
+ *
+ * Measured as the widest the mesh gets below 1.8m — roughly rider height — since foliage
+ * above that is passed under, not through:
+ *
+ *   variant 0  1.30m      variant 1  0.95m      variant 2  1.55m
+ *   variant 3  0.22m      variant 4  1.38m
+ *
+ * Four of them are broad canopies that sweep down past the rider, so a 0.7m collider sits
+ * well inside the needles and reads as generous. Variant 3 is a stripped dead trunk with its
+ * two remnant branches up at 2.7m and 3.6m, clean over the rider's head. At 0.7m it was
+ * crashing people against 0.41m of visibly empty snow — the reach is the collider times the
+ * forgiveness plus the rider's own radius, 1.23m between centres, against a trunk 0.22m wide.
+ *
+ * 0.3 is the trunk plus a little, so it still stops you, but only once you are on it.
+ */
+export const TREE_HIT_RADII = [TREE_RADIUS, TREE_RADIUS, TREE_RADIUS, 0.3, TREE_RADIUS];
 const ROCK_RADIUS = 0.95;
 
 /**
@@ -230,6 +256,8 @@ export class ObstacleField {
             z,
             y: this.field.heightAt(x, z),
             radius,
+            hitRadius:
+              kind === ObstacleKind.Tree ? TREE_HIT_RADII[variant]! * scale : ROCK_RADIUS * scale,
             height,
             kind,
             variant,
@@ -291,7 +319,7 @@ export class ObstacleField {
 
         const dx = x - o.x;
         const dz = z - o.z;
-        const reach = o.radius * COLLIDER_FORGIVENESS + riderRadius;
+        const reach = o.hitRadius * COLLIDER_FORGIVENESS + riderRadius;
         if (dx * dx + dz * dz < reach * reach) return o;
       }
     }
@@ -365,7 +393,7 @@ interface TreeShape {
  * the collider has always described the trunk rather than the branches — you brush through the
  * outer needles. That is what makes it safe to vary the canopy this freely.
  */
-const TREE_SHAPES: TreeShape[] = [
+export const TREE_SHAPES: TreeShape[] = [
   {
     // 0. The classic: three even tiers, snow-tipped
     trunk: [1.6, 0.26, 0.42],

@@ -615,6 +615,36 @@ const variants = await page.evaluate(() => {
     }
   }
 
+  // What the rider collides with, against how wide the mesh actually is down where the rider
+  // passes. Foliage above head height is passed under rather than through, so a collider is
+  // only fair if the tree is really there in that band — the bare dead fir carried the same
+  // 0.7m collider as the broad firs while being a 0.22m trunk, and crashed people against
+  // empty snow. Measured off the built mesh, since the unit test reads the same table the
+  // mesh is generated from and would not notice the two drifting apart.
+  const RIDER_HEIGHT = 1.8;
+  const colliders = [];
+  for (const v of Object.keys(declared.tree)) {
+    const mesh = g.scene.meshes.find((m) => m.name === `tree${v}`);
+    if (!mesh) continue;
+    const pos = mesh.getVerticesData("position");
+    let widest = 0;
+    for (let i = 0; i < pos.length; i += 3) {
+      if (pos[i + 1] > RIDER_HEIGHT) continue;
+      widest = Math.max(widest, Math.hypot(pos[i], pos[i + 2]));
+    }
+    // Recovered at scale 1 from any obstacle of this variant
+    let hit = null;
+    for (let i = 2; i < 400 && hit === null; i++) {
+      for (const o of g.obstacles.slice(i)) {
+        if (o.kind === 0 && String(o.variant) === v) {
+          hit = o.hitRadius / o.scale;
+          break;
+        }
+      }
+    }
+    colliders.push({ variant: v, hit, widest: +widest.toFixed(2) });
+  }
+
   const mismatches = [];
   for (const kind of ["tree", "rock"]) {
     for (const v of Object.keys(declared[kind])) {
@@ -631,7 +661,7 @@ const variants = await page.evaluate(() => {
       }
     }
   }
-  return { trees: [...seen.tree].sort(), rocks: [...seen.rock].sort(), mismatches };
+  return { trees: [...seen.tree].sort(), rocks: [...seen.rock].sort(), mismatches, colliders };
 });
 if (variants.trees.length < 5 || variants.rocks.length < 5)
   fail(
@@ -639,7 +669,21 @@ if (variants.trees.length < 5 || variants.rocks.length < 5)
   );
 else if (variants.mismatches.length)
   fail(`collider does not match the mesh — ${variants.mismatches.join("; ")}`);
-else console.log(`✓ 5 tree and 5 rock shapes, every collider matching its mesh`);
+else {
+  const wider = variants.colliders.filter((c) => c.hit === null || c.hit > c.widest + 0.1);
+  if (wider.length)
+    fail(
+      `collider claims room the tree does not occupy at rider height — ` +
+        wider
+          .map((c) => `tree${c.variant}: hits at ${c.hit}m, only ${c.widest}m wide`)
+          .join("; "),
+    );
+  else
+    console.log(
+      `✓ 5 tree and 5 rock shapes, every collider matching its mesh and inside its silhouette ` +
+        `(${variants.colliders.map((c) => `${c.hit}/${c.widest}`).join(" ")})`,
+    );
+}
 
 // --- Retry, and the same seed must rebuild the same course ---------------------------------
 const before = await page.evaluate(() => {
