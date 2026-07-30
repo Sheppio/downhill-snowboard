@@ -896,6 +896,48 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     );
 }
 
+// --- Typing a seed ------------------------------------------------------------------------------
+// `a` and `d` steer, from a handler on `window`, and it used to call preventDefault on every
+// match — which cancelled the character before the field could take it. So "alpine" arrived as
+// "lpine" and no seed containing an a or a d could be typed at all.
+//
+// Typed key by key rather than with `fill()`, which sets `value` directly and would sail past
+// the bug entirely. This is also why the fault was reported from iPhones and not Android: iOS
+// dispatches a real keydown carrying the key, so preventDefault suppresses the character, while
+// Android inserts text through composition with keydown as "Unidentified". Chromium here behaves
+// like iOS, which is what makes the reproduction possible at all.
+{
+  await page.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+  await page.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+
+  const wanted = "avalanche-42"; // three a's and a d, all of which used to be swallowed
+  await page.click("#seed-input");
+  await page.evaluate(() => {
+    const el = document.querySelector("#seed-input");
+    el.value = "";
+  });
+  await page.keyboard.type(wanted, { delay: 12 });
+  const typed = await page.inputValue("#seed-input");
+
+  // And the keystrokes must not have steered while they were being typed
+  const steered = await page.evaluate(() => ({
+    steer: window.__game.input.value,
+    engaged: window.__game.input.isEngaged,
+  }));
+
+  if (typed !== wanted) fail(`typed "${wanted}" into the seed box and got "${typed}"`);
+  else if (steered.steer !== 0 || steered.engaged)
+    fail(`typing a seed left the rider steering at ${steered.steer.toFixed(2)}`);
+  else {
+    // It must still ride the seed that was typed
+    await page.click("#btn-ride");
+    await page.waitForSelector("#hud:not([hidden])", { timeout: 10000 });
+    const seed = await page.evaluate(() => window.__game.seed);
+    if (seed !== wanted) fail(`typed "${wanted}" but rode "${seed}"`);
+    else console.log(`✓ a seed can be typed in full ("${typed}") without steering the rider`);
+  }
+}
+
 // --- Landscape ---------------------------------------------------------------------------------
 // The game used to call screen.orientation.lock("portrait-primary") on every run. Android
 // honours that while fullscreen and iOS ignores it, so turning the phone did nothing on exactly

@@ -257,7 +257,30 @@ export class SteerInput {
       this.recompute();
     };
 
+    /**
+     * True when a keystroke belongs to a text field rather than to the game.
+     *
+     * Without this, typing a seed was impossible: `a` and `d` steer, the handler is on `window`
+     * so a keystroke in the seed box reaches it, and it called preventDefault — which cancels
+     * the character before it is inserted. Arrow keys lost the caret the same way.
+     *
+     * It only showed up on iPhones because of how the two mobile keyboards work. iOS dispatches
+     * a real keydown carrying the actual key, so preventDefault suppresses the character.
+     * Android's inserts text through composition and beforeinput, sending keydown with a
+     * keyCode of 229 and a key of "Unidentified", so nothing here ever matched and nothing was
+     * cancelled. Desktop browsers behave like iOS, so it was broken there too and simply
+     * unreported.
+     */
+    const typingInAField = (target: EventTarget | null): boolean => {
+      const node = target as (Element & { isContentEditable?: boolean }) | null;
+      const tag = node?.tagName?.toLowerCase();
+      return tag === "input" || tag === "textarea" || tag === "select" || node?.isContentEditable === true;
+    };
+
     const onKey = (down: boolean) => (e: KeyboardEvent) => {
+      // Neither steers nor swallows the keystroke: the field gets it, whole.
+      if (typingInAField(e.target)) return;
+
       switch (e.key) {
         case "ArrowLeft":
         case "a":

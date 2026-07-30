@@ -301,3 +301,68 @@ describe("two-finger steering", () => {
     expect(steer.value).toBeGreaterThan(0.5);
   });
 });
+
+describe("the keyboard", () => {
+  /** Fires a key at the window handlers, and reports whether the keystroke was swallowed. */
+  const press = (type: "keydown" | "keyup", key: string, target: unknown = null): boolean => {
+    let prevented = false;
+    const event = {
+      key,
+      target,
+      preventDefault() {
+        prevented = true;
+      },
+    };
+    for (const fn of keyListeners.get(type) ?? []) fn(event);
+    return prevented;
+  };
+
+  it("steers, and keeps the keystroke to itself", () => {
+    expect(press("keydown", "a"), "the page must not also scroll or scrub").toBe(true);
+    expect(steer.value).toBe(-1);
+    expect(steer.isEngaged).toBe(true);
+
+    press("keyup", "a");
+    expect(steer.value).toBe(0);
+
+    press("keydown", "ArrowRight");
+    expect(steer.value).toBe(1);
+    press("keyup", "ArrowRight");
+
+    press("keydown", "D");
+    expect(steer.value, "shift or caps lock still steers").toBe(1);
+    press("keyup", "D");
+  });
+
+  it("leaves a keystroke aimed at a text field completely alone", () => {
+    // Typing a seed was impossible on any keyboard that sends a real keydown. `a` and `d` steer,
+    // this handler is on `window` so a keystroke in the seed box reaches it, and it called
+    // preventDefault — cancelling the character before it could be inserted. Reported from
+    // iPhones; Android escaped it only because its keyboard inserts text through composition and
+    // sends keydown as "Unidentified", so nothing ever matched.
+    for (const field of [
+      { tagName: "INPUT" },
+      { tagName: "TEXTAREA" },
+      { tagName: "DIV", isContentEditable: true },
+    ]) {
+      for (const key of ["a", "A", "d", "D", "ArrowLeft", "ArrowRight"]) {
+        expect(
+          press("keydown", key, field),
+          `"${key}" was swallowed inside a ${field.tagName}, so it never reaches the field`,
+        ).toBe(false);
+        expect(steer.value, `"${key}" steered while typing in a ${field.tagName}`).toBe(0);
+        expect(steer.isEngaged).toBe(false);
+        press("keyup", key, field);
+      }
+    }
+  });
+
+  it("still steers when the key comes from the page itself", () => {
+    // The guard has to key off what was focused, not merely the presence of a target: every
+    // real keydown has one, and on the canvas that target is the element the game steers from.
+    expect(press("keydown", "a", { tagName: "CANVAS" })).toBe(true);
+    expect(steer.value).toBe(-1);
+    press("keyup", "a", { tagName: "CANVAS" });
+    expect(steer.value).toBe(0);
+  });
+});
