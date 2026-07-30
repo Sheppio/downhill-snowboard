@@ -623,8 +623,11 @@ const variants = await page.evaluate(() => {
   // mesh is generated from and would not notice the two drifting apart.
   const RIDER_HEIGHT = 1.8;
   const colliders = [];
-  for (const v of Object.keys(declared.tree)) {
-    const mesh = g.scene.meshes.find((m) => m.name === `tree${v}`);
+  for (const [kind, v] of [
+    ...Object.keys(declared.tree).map((v) => ["tree", v]),
+    ...Object.keys(declared.rock).map((v) => ["rock", v]),
+  ]) {
+    const mesh = g.scene.meshes.find((m) => m.name === `${kind}${v}`);
     if (!mesh) continue;
     const pos = mesh.getVerticesData("position");
     let widest = 0;
@@ -633,16 +636,17 @@ const variants = await page.evaluate(() => {
       widest = Math.max(widest, Math.hypot(pos[i], pos[i + 2]));
     }
     // Recovered at scale 1 from any obstacle of this variant
+    const wantKind = kind === "tree" ? 0 : 1;
     let hit = null;
     for (let i = 2; i < 400 && hit === null; i++) {
       for (const o of g.obstacles.slice(i)) {
-        if (o.kind === 0 && String(o.variant) === v) {
-          hit = o.hitRadius / o.scale;
+        if (o.kind === wantKind && String(o.variant) === v) {
+          hit = +(o.hitRadius / o.scale).toFixed(2);
           break;
         }
       }
     }
-    colliders.push({ variant: v, hit, widest: +widest.toFixed(2) });
+    colliders.push({ variant: `${kind}${v}`, hit, widest: +widest.toFixed(2) });
   }
 
   const mismatches = [];
@@ -675,13 +679,13 @@ else {
     fail(
       `collider claims room the tree does not occupy at rider height — ` +
         wider
-          .map((c) => `tree${c.variant}: hits at ${c.hit}m, only ${c.widest}m wide`)
+          .map((c) => `${c.variant}: hits at ${c.hit}m, only ${c.widest}m wide`)
           .join("; "),
     );
   else
     console.log(
       `✓ 5 tree and 5 rock shapes, every collider matching its mesh and inside its silhouette ` +
-        `(${variants.colliders.map((c) => `${c.hit}/${c.widest}`).join(" ")})`,
+        `(${variants.colliders.map((c) => `${c.variant} ${c.hit}/${c.widest}`).join("  ")})`,
     );
 }
 

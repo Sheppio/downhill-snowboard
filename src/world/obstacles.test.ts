@@ -5,6 +5,8 @@ import {
   ObstacleField,
   ObstacleKind,
   SLICE_LENGTH,
+  ROCK_RADIUS,
+  ROCK_SHAPES,
   TREE_HIT_RADII,
   TREE_SHAPES,
   VARIANTS,
@@ -342,7 +344,7 @@ describe("the trees keep thickening out to 5km", () => {
   }, 30_000);
 });
 
-describe("a collider never claims more room than the tree occupies", () => {
+describe("a collider never claims more room than the obstacle occupies", () => {
   /**
    * The widest the shape gets below the rider's head, from the same tables the mesh is built
    * from. A cone tier is at its widest at its base and tapers to nothing at its tip, so
@@ -376,6 +378,32 @@ describe("a collider never claims more room than the tree occupies", () => {
         collider,
         `tree ${v} collides at ${collider.toFixed(2)}m but is only ${silhouette.toFixed(2)}m wide below ${RIDER_HEIGHT}m`,
       ).toBeLessThanOrEqual(silhouette + 0.1);
+    }
+  });
+
+  it("keeps every rock's collider inside its silhouette too", () => {
+    // Rocks all share ROCK_RADIUS, which is only safe while their footprints stay close to one
+    // another. They are lumps of scaled spheres, so the widest a lump reaches is half its
+    // diameter times the larger of its two horizontal scalings, plus however far it is offset
+    // from the centre. Sitting on the snow, the whole rock is inside the band the rider
+    // occupies, so there is no height to discount as there is with a canopy.
+    for (let v = 0; v < VARIANTS; v++) {
+      let widest = 0;
+      for (const lump of ROCK_SHAPES[v]!) {
+        const [sx, , sz] = lump.scaling;
+        const [ox, , oz] = lump.offset ?? [0, 0, 0];
+        widest = Math.max(
+          widest,
+          (lump.diameter / 2) * Math.max(sx, sz) + Math.hypot(ox, oz),
+        );
+      }
+      // Slightly generous against the mesh, which is faceted: a segments-3 sphere puts its
+      // vertices at or inside the ideal radius, so measured off the geometry rock 0 comes out
+      // at 1.09 against the 1.15 computed here. The browser check does it that stricter way.
+      expect(
+        ROCK_RADIUS,
+        `rock ${v} collides at ${ROCK_RADIUS}m but is only ${widest.toFixed(2)}m wide`,
+      ).toBeLessThanOrEqual(widest + 0.1);
     }
   });
 

@@ -144,7 +144,7 @@ const TREE_RADIUS = 0.7;
  * 0.3 is the trunk plus a little, so it still stops you, but only once you are on it.
  */
 export const TREE_HIT_RADII = [TREE_RADIUS, TREE_RADIUS, TREE_RADIUS, 0.3, TREE_RADIUS];
-const ROCK_RADIUS = 0.95;
+export const ROCK_RADIUS = 0.95;
 
 /**
  * Height of each built mesh at scale 1, measured from its geometry, so the collider matches
@@ -498,7 +498,7 @@ function createTreeMesh(scene: Scene, variant: number): Mesh {
 const DARK_ROCK_COLOUR = new Color3(0.4, 0.42, 0.5);
 const PALE_ROCK_COLOUR = new Color3(0.66, 0.69, 0.74);
 
-interface RockLump {
+export interface RockLump {
   /** Sphere diameter, and how many segments — 2 is angular, 4 is rounded. */
   diameter: number;
   segments: number;
@@ -517,7 +517,7 @@ interface RockLump {
  * close to one another or a hit stops matching what is drawn. So these vary mostly in *height* and
  * profile — which is the axis that matters anyway, because it decides what a launch can clear.
  */
-const ROCK_SHAPES: RockLump[][] = [
+export const ROCK_SHAPES: RockLump[][] = [
   // 0. The classic boulder with its hat of snow
   [
     { diameter: 2, segments: 3, scaling: [1.15, 0.74, 1], colour: ROCK_COLOUR },
