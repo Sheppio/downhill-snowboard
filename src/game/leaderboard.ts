@@ -57,8 +57,9 @@ export interface ScoreRecord {
  *   1  everything before the stamp existed
  *   2  the mountain started escalating past 1300m, out to 5km
  *   3  the rider stopped colliding as a 0.6m circle and became the shape of a board
+ *   4  speed ramps appeared on the racing line
  */
-export const COURSE_GENERATION = 3;
+export const COURSE_GENERATION = 4;
 
 const STORE_KEY = "downhill.scores.v1";
 

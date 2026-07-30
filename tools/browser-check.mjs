@@ -941,6 +941,93 @@ const shape = await page.evaluate(() => {
     );
 }
 
+// --- Speed ramps: drawn, and paying what they promise ---------------------------------------
+// The unit tests prove the arithmetic of the payout. What only a real run can show is that a
+// ramp is actually built into the scene, sits where the rider will meet it, and pays through
+// the live game loop rather than through a function the tests call themselves.
+{
+  await page.evaluate(() => window.__game.startRun("alpine"));
+  await page.waitForTimeout(500);
+
+  const found = await page.evaluate(() => {
+    const g = window.__game;
+    const meshes = g.scene.meshes.filter((m) => m.name.startsWith("ramp") && m.isEnabled());
+    if (!meshes.length) return null;
+    const m = meshes[0];
+    m.refreshBoundingInfo();
+    const b = m.getBoundingInfo().boundingBox;
+    const mat = m.material;
+    return {
+      count: meshes.length,
+      drawable: m.getTotalIndices() > 0 && m.isReady(),
+      width: +(b.maximumWorld.x - b.minimumWorld.x).toFixed(2),
+      length: +(b.maximumWorld.z - b.minimumWorld.z).toFixed(2),
+      x: b.centerWorld.x,
+      z: b.minimumWorld.z,
+      scroll: mat?.emissiveTexture?.vOffset ?? null,
+    };
+  });
+
+  if (!found) fail("no ramp was built into the scene");
+  else {
+    // The chevrons have to move, or they are a painted stripe rather than an invitation
+    await page.waitForTimeout(400);
+    const scrolled = await page.evaluate(() => {
+      const m = window.__game.scene.meshes.find((x) => x.name.startsWith("ramp"));
+      return m.material.emissiveTexture.vOffset;
+    });
+
+    // Put the rider on the line just short of the ramp and let the real loop ride it through,
+    // recording what the game actually handed the controller.
+    const paid = await page.evaluate(
+      ([x, z]) => {
+        const g = window.__game;
+        const c = g.controller;
+        c.x = x;
+        c.z = z - 1.5;
+        c.y = g.field.heightAt(c.x, c.z);
+        c.heading = 0;
+        let boost = 0;
+        let lift = 0;
+        const real = c.boost.bind(c);
+        c.boost = (b, l) => {
+          boost += b;
+          lift += l;
+          real(b, l);
+        };
+        return new Promise((resolve) =>
+          setTimeout(() => {
+            c.boost = real;
+            resolve({ boost, lift });
+          }, 700),
+        );
+      },
+      [found.x, found.z],
+    );
+
+    const problems = [];
+    if (!found.drawable) problems.push("the ramp mesh has nothing to draw");
+    if (!(found.length > 2.5 && found.length < 3.5))
+      problems.push(`the ramp is ${found.length}m long, not the 3m it should be`);
+    if (!(found.width > 0.8 && found.width < 1.6))
+      problems.push(`the ramp is ${found.width}m wide, not the 1m it should be`);
+    if (scrolled === found.scroll)
+      problems.push(`the chevrons are not moving (vOffset stuck at ${scrolled})`);
+    // 20 km/h for the length of it, and this rider covered all of it
+    if (!(paid.boost * 3.6 > 17 && paid.boost * 3.6 < 21))
+      problems.push(`riding it paid ${(paid.boost * 3.6).toFixed(1)} km/h, not 20`);
+    if (!(paid.lift > 0)) problems.push("the lip gave no kick at all");
+
+    if (problems.length) fail(`speed ramps — ${problems.join("; ")}`);
+    else
+      console.log(
+        `✓ speed ramps: ${found.count} drawn, ${found.length}×${found.width}m with the ` +
+          `chevrons scrolling, and riding one paid ${(paid.boost * 3.6).toFixed(1)}km/h ` +
+          `plus a ${paid.lift.toFixed(1)}m/s kick`,
+      );
+  }
+}
+
 // --- Retry, and the same seed must rebuild the same course ---------------------------------
 const before = await page.evaluate(() => {
   const g = window.__game;

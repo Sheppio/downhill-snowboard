@@ -179,6 +179,26 @@ export class RiderController {
   readonly halfWidth = RIDER_HALF_WIDTH;
   readonly halfLength = RIDER_HALF_LENGTH;
 
+  /**
+   * A kick from something the rider rode over — at present, a speed ramp.
+   *
+   * Applied here rather than by writing `speed` and `vy` from outside, because leaving the
+   * ground is not one field: `airborne` has to be set with the velocity or the next step
+   * treats the rider as still carving on snow it has already left.
+   *
+   * Speed is not capped. Terminal speed is where drag balances gravity, and drag is quadratic,
+   * so an over-speed rider is pulled back to it within a second or two on its own — which is
+   * exactly the shape a boost should have: a burst that fades, not a new ceiling.
+   */
+  boost(speedGain: number, lift: number): void {
+    this.speed += speedGain;
+    if (this.speed > this.topSpeed) this.topSpeed = this.speed;
+    if (lift > 0) {
+      this.vy += lift;
+      this.airborne = true;
+    }
+  }
+
   gradX = 0;
   gradZ = 0;
 

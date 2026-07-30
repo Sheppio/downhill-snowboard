@@ -27,6 +27,7 @@ import {
   RIDER_HALF_WIDTH,
 } from "../player/controller";
 import { pilotSteer } from "../player/pilot";
+import { applyRamps } from "./ramps";
 
 /**
  * `hitTest` with the rider's real capsule, pointing straight down the fall line by default.
@@ -115,6 +116,10 @@ describe("every course can be completed", () => {
     // says plainly what kills the pilot: the racing line asking for more turn rate than it
     // has, not the trees. The seeds it now survives are the ones it was clipping a trunk on
     // with a collider two and a half times wider than the rider.
+    //
+    // Speed ramps then took it to 21 of 53 dying before 8000m, worst 3273m. That margin over
+    // the 3000m bound is what sets RAMP_MAX_CURVATURE: ramps go on straights precisely so this
+    // stays true, and the threshold there is the loosest one that keeps it.
     const seeds = [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"];
     const RUN_DISTANCE = 3000;
 
@@ -126,7 +131,9 @@ describe("every course can be completed", () => {
       let hit = null;
       let worstOff = 0;
       for (let i = 0; i < 60 * 300 && rider.distance < RUN_DISTANCE; i++) {
+        const from = rider.z;
         rider.update(1 / 60, pilotSteer(terrain.params, rider));
+        applyRamps(rider, terrain, hashString(phrase), from);
         hit = hitAt(obstacles, rider.x, rider.z, rider.y, rider.heading);
         if (hit) break;
         const off =

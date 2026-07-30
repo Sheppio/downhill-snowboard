@@ -14,6 +14,7 @@ import { dailySeed, hashString } from "../core/rng";
 import { MAX_TURN_RATE, RiderController, turnAuthorityAt } from "../player/controller";
 import { pilotSteer } from "../player/pilot";
 import { TerrainField } from "./terrain";
+import { applyRamps } from "./ramps";
 
 /**
  * Top speed the game reaches *while following the racing line*, which is the speed that
@@ -35,7 +36,9 @@ function measureTopSpeed(): number {
     const field = new TerrainField(hashString(phrase));
     const rider = new RiderController(field);
     for (let i = 0; i < 60 * 400 && rider.distance < 6000; i++) {
+      const from = rider.z;
       rider.update(1 / 60, pilotSteer(field.params, rider));
+      applyRamps(rider, field, hashString(phrase), from);
       if (rider.speed > fastest) fastest = rider.speed;
     }
   }

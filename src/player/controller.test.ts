@@ -6,6 +6,7 @@ import { centreX, halfWidth, OUT_OF_BOUNDS_FRACTION, lateralFraction } from "../
 import { hashString } from "../core/rng";
 import { angleDelta, clamp } from "../core/math";
 import { pilotSteer } from "./pilot";
+import { applyRamps } from "../world/ramps";
 
 function ride(seed: string, steer: number | ((t: number) => number), seconds: number) {
   const field = new TerrainField(hashString(seed));
@@ -330,7 +331,9 @@ describe("the mountain keeps building speed", () => {
         const field = new TerrainField(hashString(phrase));
         const rider = new RiderController(field);
         for (let i = 0; i < 60 * 600 && rider.distance < to; i++) {
+          const wasAt = rider.z;
           rider.update(1 / 60, pilotSteer(field.params, rider));
+          applyRamps(rider, field, field.seed, wasAt);
           if (rider.distance >= from) {
             sum += rider.speed;
             n++;

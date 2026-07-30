@@ -11,6 +11,7 @@ import { hashString } from "./core/rng";
 import { clamp01 } from "./core/math";
 import { TerrainField, TerrainRenderer } from "./world/terrain";
 import { ObstacleField, ObstacleRenderer } from "./world/obstacles";
+import { applyRamps, RampRenderer } from "./world/ramps";
 import { createBackdrop, setupSky, SnowSpray } from "./world/scenery";
 import { SnowTracks } from "./world/tracks";
 import { OUT_OF_BOUNDS_FRACTION, lateralFraction } from "./world/course";
@@ -54,6 +55,10 @@ class Game {
   private terrain!: TerrainRenderer;
   private obstacles!: ObstacleField;
   private obstacleRenderer!: ObstacleRenderer;
+  private rampRenderer!: RampRenderer;
+  /** Where the rider was last frame, so a ramp pays out per metre rather than per frame. */
+  private lastRampZ = 0;
+  private seedHash = 0;
   private controller!: RiderController;
   private wipeout!: Wipeout;
   private tracks!: SnowTracks;
@@ -194,14 +199,17 @@ class Game {
   private buildWorld(seed: string): void {
     this.terrain?.dispose();
     this.obstacleRenderer?.dispose();
+    this.rampRenderer?.dispose();
     this.wipeout?.stop();
     this.backdrop?.dispose();
 
     const numeric = hashString(seed);
+    this.seedHash = numeric;
     this.field = new TerrainField(numeric);
     this.terrain = new TerrainRenderer(this.scene, this.field);
     this.obstacles = new ObstacleField(numeric, this.field.params, this.field);
     this.obstacleRenderer = new ObstacleRenderer(this.scene, this.obstacles);
+    this.rampRenderer = new RampRenderer(this.scene, this.field.params, numeric, this.field);
     this.controller = new RiderController(this.field);
     this.wipeout = new Wipeout(this.scene, this.field);
     // Rebuilt per seed: the trail is baked in world space against a specific height field
@@ -211,6 +219,7 @@ class Game {
 
     this.terrain.prime(0);
     this.obstacleRenderer.update(0);
+    this.rampRenderer.update(0, 0);
     this.camera.reset(this.controller);
     this.rider.sync(this.controller, this.field.heightAt(0, 0), 1 / 60);
   }
@@ -287,9 +296,13 @@ class Game {
       this.wipeout.stop();
       this.terrain.prime(0);
       this.obstacleRenderer.update(0);
+      this.rampRenderer.update(0, 0);
       this.camera.reset(this.controller);
     }
 
+    // Back to the top with the rider, or the first frame of a new run claims every ramp
+    // between where the last one ended and the start line.
+    this.lastRampZ = this.controller.z;
     this.tracks.clear();
     this.score.reset();
     this.input.reset();
@@ -356,10 +369,17 @@ class Game {
 
   private updatePlaying(dt: number): void {
     const c = this.controller;
+    const wasAt = this.lastRampZ;
     c.update(dt, this.input.value);
+    this.lastRampZ = c.z;
+
+    // Paid over the ground actually covered since the last frame, not per frame: a per-frame
+    // award would be worth twice as much at 120fps as at 60, and this leaderboard is shared.
+    applyRamps(c, this.field, this.seedHash, wasAt);
 
     this.terrain.update(c.z);
     this.obstacleRenderer.update(c.z);
+    this.rampRenderer.update(c.z, dt);
 
     const groundY = this.field.heightAt(c.renderX, c.renderZ);
     this.rider.sync(c, groundY, dt);

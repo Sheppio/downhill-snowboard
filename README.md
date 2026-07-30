@@ -36,6 +36,10 @@ The mountain keeps getting harder until 5km, and then stops. Five things escalat
 | Weave in the racing line | ×1, reaching ×1.36 by 4.2km | ×1.36 |
 | Top speed while holding the line | 34.7 m/s | 36.5 m/s |
 
+Speed ramps then raise the peak again, to 41.2 m/s, and cost the reference pilot nine more
+seeds: 8km on 32 of 53 rather than 41. The worst seed drops from 3615m to 3273m, so the 3km
+completability guarantee still holds, with 273m to spare.
+
 Nothing below 1300m changed when this was added, deliberately: that is the stretch nearly
 every attempt covers, and per-seed bests already recorded should still describe the same
 course.
@@ -51,7 +55,44 @@ Speed and the weave compete for the same budget, and speed wins ties: it makes t
 lever that costs nothing against it — a tighter corridor does not bend the line at all.
 
 Past 5km the course is stationary. It is meant to be survivable there, not endless: the
-reference pilot used to reach 8km on 52 of 53 daily seeds and now manages it on 41.
+reference pilot used to reach 8km on 52 of 53 daily seeds and now manages it on 32.
+
+## Speed ramps
+
+Every 250m or so there is a **3m by 1m chevroned pad laid along the racing line**. Ride the
+length of one and it pays **20 km/h**, plus a small kick off the lip.
+
+"Or so" is doing real work: **ramps only go on straights**, and a stretch that corners all the
+way through gets none. That is not a nicety. A rider in the air keeps only 35% of their turn
+authority, so a kicker in a corner does not reward the line, it takes the steering away exactly
+where the line needs it — and the ramp is *on* the racing line, so good riding is what meets it.
+Placing them anywhere, the reference pilot lost the line at 2012m on one daily seed against a
+3000m guarantee. The threshold is the loosest one that keeps every seed completable, which
+works out at one ramp every 310m on average.
+
+They are a reward for holding the line rather than something to dodge. The line is already the
+hardest thing to hold and the only guaranteed-clear path down the mountain, so this gives the
+skill the whole game is about something to buy.
+
+A ramp is *defined* as a stretch of the racing line rather than as a position of its own. That
+means it curves with the line, and it can never be generated where the obstacle field has put a
+tree — the clear channel is 2.5m at its narrowest against a 1m ramp, so it fits inside the
+existing guarantee with room either side. A tree growing out of a speed pad would be the
+cruellest thing in the game, and it is impossible by construction rather than by a check.
+
+The payout is proportional to how much of the ramp was covered, so clipping the last half metre
+is worth a sixth rather than nothing — an all-or-nothing edge is a cliff the player cannot see.
+It is measured over ground covered rather than awarded per frame, so a 120fps phone does not
+earn twice what a 60fps one does on a leaderboard everyone shares.
+
+The kick is deliberately small — about 0.25m of air. Airborne riders keep only 35% of their
+turn authority, so a generous ramp sitting on the racing line would be a trap rather than a
+reward.
+
+Ramps are not part of the height field, which is where this started. A ramp in `heightAt` would
+be ridden and launched off by the existing physics for free and would render itself — but the
+terrain is meshed at 2m per quad, so a 3m ramp would be sampled by one or two vertices and look
+like nothing at all. It is its own terrain-hugging ribbon instead.
 
 ## What you collide with
 
@@ -169,7 +210,8 @@ older one are deleted the next time the game loads. A 9,000 set before the mount
 getting harder past 1300m is not the same achievement as a 9,000 set after it, and leaving the
 two side by side makes the list meaningless. `COURSE_GENERATION` in `src/game/leaderboard.ts`
 is the stamp — bump it in the same commit as any change that makes scores incomparable. It has
-moved twice: for the escalation past 1300m, and for the rider gaining the shape of a board.
+moved three times: for the escalation past 1300m, for the rider gaining the shape of a board,
+and for speed ramps.
 
 A generation rather than a cutoff date, deliberately: a date is only as good as the clock on
 the phone, and a device running a few days slow would stamp every *new* score before the
@@ -238,7 +280,7 @@ on an uncommitted tree, which is how you tell a phone is showing a local build.
 ```
 src/
   core/       seeded RNG and noise — everything deterministic starts here
-  world/      the gulley, the terrain height field, obstacles, sky
+  world/      the gulley, the terrain height field, obstacles, speed ramps, sky
   player/     rider physics, the visual rider, camera, wipeout
   input/      touch and keyboard steering
   game/       scoring, seeds, the local leaderboard, the share card
