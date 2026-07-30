@@ -18,6 +18,10 @@ function must<T extends HTMLElement>(id: string): T {
 export interface HudCallbacks {
   onRideDaily(): void;
   onRideSeed(seed: string): void;
+  /** Share your best on a seed, from the scores list. */
+  onShareSeed(seed: string): void;
+  /** The press before that share: a chance to draw the card before it is needed. */
+  onPrepareShareSeed(seed: string): void;
   onShuffle(): void;
   onRetry(): void;
   onShare(): void;
@@ -165,8 +169,24 @@ export class Hud {
         );
         ride.addEventListener("click", () => this.callbacks.onRideSeed(r.seed));
 
+        // A sibling of the ride button rather than a child of it: a button inside a button is
+        // invalid, and browsers resolve it by making the inner one unclickable.
+        const share = document.createElement("button");
+        share.type = "button";
+        share.className = "score-share";
+        share.textContent = "↗";
+        share.setAttribute("aria-label", `Share your best on ${label}`);
+        share.dataset.shareSeed = r.seed;
+        // Drawing the card takes a moment, and `navigator.share` cannot be given that moment —
+        // it needs the activation the click carries, and awaiting spends it. So the render
+        // starts on the press and the click just sends whatever is ready. The gap between the
+        // two is most of a card.
+        share.addEventListener("pointerdown", () => this.callbacks.onPrepareShareSeed(r.seed));
+        share.addEventListener("click", () => this.callbacks.onShareSeed(r.seed));
+
         const row = document.createElement("li");
-        row.append(ride);
+        row.className = "score-item";
+        row.append(ride, share);
         return row;
       }),
     );
@@ -263,6 +283,24 @@ export class Hud {
   setShareLabel(canShare: boolean): void {
     this.shareLabel = canShare ? "Share result" : "Copy challenge link";
     this.shareBtn.textContent = this.shareLabel;
+  }
+
+  /**
+   * The same confirmation on a scores row, where there is no room for a word.
+   *
+   * A tick and a colour change, in place. The alternative — a toast — would cover the list the
+   * player is still reading, for a message that only means "that worked".
+   */
+  flashScoreShare(seed: string): void {
+    const button = [...this.scoresList.querySelectorAll<HTMLButtonElement>("[data-share-seed]")]
+      .find((el) => el.dataset.shareSeed === seed);
+    if (!button) return;
+    button.textContent = "✓";
+    button.classList.add("is-done");
+    window.setTimeout(() => {
+      button.textContent = "↗";
+      button.classList.remove("is-done");
+    }, 1600);
   }
 
   /** Momentary confirmation on the share button — cheaper than a toast, and clearer. */

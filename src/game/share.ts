@@ -17,7 +17,7 @@
  */
 
 import { copyLink } from "./seed";
-import { challengeText, renderShareCard, runSummaryText, type RunResult } from "./sharecard";
+import { challengeText, renderShareCard, runSummaryText, type CardResult } from "./sharecard";
 
 export type ShareOutcome =
   /** Handed to the system share sheet, with the card. */
@@ -32,7 +32,7 @@ export type ShareOutcome =
   | "cancelled";
 
 /** A file name someone might actually recognise in their downloads. */
-function fileName(r: RunResult): string {
+function fileName(r: CardResult): string {
   const seed = r.seed.replace(/[^a-z0-9-]+/gi, "-").replace(/^-+|-+$/g, "") || "run";
   return `downhill-${seed}-${r.score}.png`;
 }
@@ -43,7 +43,7 @@ function fileName(r: RunResult): string {
  * Null whenever the browser cannot render or cannot take files — the caller then simply shares
  * text and a link, which every path below still handles.
  */
-export async function prepareShareCard(r: RunResult): Promise<File | null> {
+export async function prepareShareCard(r: CardResult): Promise<File | null> {
   const blob = await renderShareCard(r);
   if (!blob) return null;
   try {
@@ -62,7 +62,7 @@ export async function prepareShareCard(r: RunResult): Promise<File | null> {
  * `card` is whatever `prepareShareCard` produced. Nothing is awaited before `share()` is
  * called, so the caller's user gesture is still valid when it runs — see the note above.
  */
-export async function shareRun(r: RunResult, card: File | null): Promise<ShareOutcome> {
+export async function shareRun(r: CardResult, card: File | null): Promise<ShareOutcome> {
   if (card && navigator.share) {
     try {
       // Just the challenge: everything else about the run is on the picture beside it

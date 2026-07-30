@@ -218,11 +218,16 @@ export function formatWhen(at: number, now: number = Date.now()): string {
 }
 
 /**
- * How far a recorded run got, for the leaderboard rows.
+ * How far a run got, wherever it is being shown.
  *
  * A best set before distances were kept shows a dash. There is no way to recover the number —
  * the run it belonged to is long over — and a zero would read as a run that went nowhere.
+ *
+ * Floored here rather than trusted to arrive whole. Records are stored floored, so for a long
+ * time every caller happened to pass an integer and this did not need to care; the share card
+ * then handed it a live `controller.distance` and put "4,139.7m" on a picture people send each
+ * other. Metres, to the metre, is what the HUD and the end screen have always shown.
  */
 export function formatDistance(distance: number | undefined): string {
-  return distance === undefined ? "—" : `${distance.toLocaleString()}m`;
+  return distance === undefined ? "—" : `${Math.floor(distance).toLocaleString()}m`;
 }

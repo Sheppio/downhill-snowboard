@@ -277,6 +277,12 @@ describe("how far", () => {
     // Not "0m": that reads as a run that went nowhere, which is a different claim entirely.
     expect(formatDistance(undefined)).toBe("—");
   });
+
+  it("rounds down to whole metres", () => {
+    // Stored records are already whole, so this only bites where a live distance is passed
+    // straight in — as the share card does. "4,139.7m" is not a thing to put on a picture.
+    expect(formatDistance(412.9)).toBe("412m");
+  });
 });
 
 describe("scores set on an earlier version of the course", () => {

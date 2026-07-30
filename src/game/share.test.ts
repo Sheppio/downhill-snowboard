@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { shareMessage, shareRun } from "./share";
-import type { RunResult } from "./sharecard";
+import type { CardResult } from "./sharecard";
 
-const RESULT: RunResult = {
+const RESULT: CardResult = {
   score: 5152,
   distance: 4139.7,
   topSpeed: 34.2,
   seed: "powder-chute-42",
-  best: 5152,
-  isRecord: true,
+  strap: "New personal best!",
   url: "https://example.test/?seed=powder-chute-42",
 };
 

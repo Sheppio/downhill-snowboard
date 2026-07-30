@@ -479,11 +479,25 @@ body {
   border-top: 3px dashed rgba(42, 111, 151, 0.3);
 }
 
+/* Two buttons to a row: the row itself rides the seed, and the one on the end shares it. Not
+   nested — a button inside a button is invalid, and browsers resolve it by making the inner
+   one unclickable. */
+.score-item {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-bottom: 2px solid rgba(42, 111, 151, 0.15);
+}
+
 /* Every row rides its seed, so every row is a button — including the past dailies, which
    nothing else in the game can reach once the date has moved on. Styled back down to a plain
    row: the panel would be unreadable as a stack of chunky buttons, so the affordance is the
    chevron and the press state rather than a border and a shadow. */
 .score-row {
+  flex: 1;
+  /* The row no longer owns the rule between rows; the flex wrapper does, so the share button
+     sits inside the same band rather than below it. */
+  min-width: 0;
   display: grid;
   /* The score is the fixed column: seeds are any length, and the ages are short. Giving the
      seed the flexible track keeps the numbers in a straight line down the panel. */
@@ -493,10 +507,10 @@ body {
     "when  dist  go";
   align-items: center;
   gap: 0 10px;
-  width: 100%;
+  /* No `width: 100%`: inside the flex row that would claim the whole track and then let the
+     share button add its 44px on top, pushing both off the edge of the panel. */
   padding: 9px 2px;
   border: 0;
-  border-bottom: 2px solid rgba(42, 111, 151, 0.15);
   border-radius: 12px;
   background: none;
   font-family: inherit;
@@ -513,6 +527,38 @@ body {
 .score-row:active {
   background: rgba(79, 195, 247, 0.18);
   transform: scale(0.985);
+}
+
+/* Deliberately its own target rather than a third thing inside the row. Sharing a seed and
+   riding it are both one tap from here, and a tap that lands on the wrong one is annoying in
+   both directions — so this gets its own 44px of width, hard against the edge where a thumb
+   reaching across the panel naturally lands. */
+.score-share {
+  flex: 0 0 auto;
+  width: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(79, 195, 247, 0.12);
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 0.08s ease,
+    transform 0.06s ease;
+}
+
+.score-share:active {
+  background: rgba(79, 195, 247, 0.32);
+  transform: scale(0.94);
+}
+
+/* Momentary confirmation in place, since the button is far too small for a word */
+.score-share.is-done {
+  background: rgba(6, 214, 160, 0.28);
+  color: var(--ink);
 }
 
 .score-go {

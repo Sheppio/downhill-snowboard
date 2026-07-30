@@ -96,6 +96,11 @@ mountain** — same terrain, same corners, same trees, on any device.
 distance, top speed, and the seed — with the challenge link attached. On a phone that is
 WhatsApp, Messages, or whatever else is installed.
 
+**Every row of Your scores has its own ↗**, so a best from last week can be sent as easily as
+the run you just finished. That card knows less, because the leaderboard has never stored a top
+speed: it shows when the score was set instead of inventing one, and a best from before
+distances were kept shows a dash rather than a zero.
+
 The card is drawn on a canvas rather than screenshotted from the end screen. A screenshot would
 mean `html2canvas`, which is a large dependency that re-implements CSS layout badly; drawing it
 means the card is *deterministic* and looks the same everywhere instead of inheriting whatever
@@ -128,6 +133,11 @@ Drawing 1080² takes a few hundred milliseconds, so a press in the first moment 
 finds no card yet and shares text and a link instead. That is the second row of the table doing
 its job rather than a failure, and it is why that row still carries the numbers.
 
+A scores row has no equivalent moment to render in — there is no telling which of them will be
+tapped, and drawing all of them would be absurd. So the render starts on `pointerdown` and the
+card is sent on the `click`, which buys it the length of a press. The same fallback covers a
+press too quick for it.
+
 ## Your scores
 
 **Your scores** on the start screen lists your best on every seed you have ridden, one row per
@@ -141,8 +151,8 @@ A custom seed appears exactly as you typed it, since that is the only way back t
 Daily runs are shown as their date and tagged as dailies, so a date is never mistaken for a
 seed somebody chose.
 
-**Tap any row to ride that seed again.** For past dailies this is the only route back — once
-the date moves on, nothing else in the game can reach them.
+**Tap any row to ride that seed again**, or its ↗ to share it. For past dailies the row is the
+only route back — once the date moves on, nothing else in the game can reach them.
 
 A run counts however it ends. Crashing, going off course, pausing and changing seed, restarting
 from the pause panel, switching apps and never coming back, closing the tab — all of them bank

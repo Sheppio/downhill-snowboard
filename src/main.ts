@@ -21,10 +21,10 @@ import { Wipeout, initPhysics } from "./player/wipeout";
 import { SteerInput } from "./input/steer";
 import { TouchMarkers } from "./ui/touchmarkers";
 import { Score } from "./game/score";
-import { readBest, recordBest } from "./game/leaderboard";
+import { readBest, readRecord, recordBest } from "./game/leaderboard";
 import { initialSeed, normaliseSeed, randomSeed, shareUrl, syncUrl, todaysSeed } from "./game/seed";
 import { prepareShareCard, shareMessage, shareRun } from "./game/share";
-import type { RunResult } from "./game/sharecard";
+import type { CardResult } from "./game/sharecard";
 import { Hud } from "./ui/hud";
 
 /** Seconds off course before the run is ended. */
@@ -67,8 +67,10 @@ class Game {
   private crashTimer = 0;
   private endReason: "crash" | "outOfBounds" = "crash";
   /** The finished run the end screen is showing, and the card drawn from it. */
-  private lastResult: RunResult | null = null;
+  private lastResult: CardResult | null = null;
   private shareCard: File | null = null;
+  /** The most recent scores-list card, kept so a second tap on the same row is instant. */
+  private listCard: { seed: string; file: File | null } | null = null;
 
   // Adaptive resolution
   private fpsSamples: number[] = [];
@@ -124,6 +126,18 @@ class Game {
         void shareRun(result, this.shareCard).then((outcome) => {
           const message = shareMessage(outcome);
           if (message) this.hud.flashShare(message);
+        });
+      },
+      // The press before the tap, so the card has the length of a press to draw itself in.
+      // Nothing else can buy it that time: `navigator.share` needs the tap's own activation,
+      // and awaiting a render inside the handler spends it.
+      onPrepareShareSeed: (seed) => this.prepareListCard(seed),
+      onShareSeed: (seed) => {
+        const result = this.listResult(seed);
+        if (!result) return;
+        const card = this.listCard?.seed === seed ? this.listCard.file : null;
+        void shareRun(result, card).then((outcome) => {
+          if (shareMessage(outcome)) this.hud.flashScoreShare(seed);
         });
       },
       onBackToMenu: () => this.showMenu(),
@@ -215,6 +229,39 @@ class Game {
   private bankScore(): void {
     if (this.state !== "playing" && this.state !== "paused" && this.state !== "crashing") return;
     recordBest(this.seed, this.score.value, this.controller.distance);
+  }
+
+  /**
+   * A card's worth of detail from a stored best.
+   *
+   * Less than a finished run has: no top speed, because the leaderboard has never kept one and
+   * inventing a plausible number would be a lie on a picture people send each other. The card
+   * shows when the score was set in its place, which the row does know.
+   */
+  private listResult(seed: string): CardResult | null {
+    const record = readRecord(seed);
+    if (!record) return null;
+    return {
+      score: record.score,
+      distance: record.distance,
+      seed,
+      strap: "My best on this seed",
+      at: record.at,
+      url: shareUrl(seed),
+    };
+  }
+
+  /** Start drawing a scores-row card, unless the one in hand is already for this seed. */
+  private prepareListCard(seed: string): void {
+    if (this.listCard?.seed === seed) return;
+    const result = this.listResult(seed);
+    if (!result) return;
+    // Claimed before the render finishes, so a second press while it is drawing does not start
+    // a second one. The file lands here when it is ready; a share before then goes without it.
+    this.listCard = { seed, file: null };
+    void prepareShareCard(result).then((file) => {
+      if (this.listCard?.seed === seed) this.listCard = { seed, file };
+    });
   }
 
   private showMenu(): void {
@@ -434,18 +481,27 @@ class Game {
     const isRecord = score > this.bestAtStart;
     recordBest(this.seed, score, this.controller.distance);
 
-    const result: RunResult = {
+    const best = readBest(this.seed);
+    const result: CardResult = {
       score,
       distance: this.controller.distance,
       topSpeed: this.controller.topSpeed,
       seed: this.seed,
-      best: readBest(this.seed),
-      isRecord,
+      strap: isRecord ? "New personal best!" : `Best on this seed: ${best.toLocaleString()}`,
+      at: Date.now(),
       url: shareUrl(this.seed),
     };
     this.lastResult = result;
 
-    this.hud.showEnd({ reason: this.endReason, ...result });
+    this.hud.showEnd({
+      reason: this.endReason,
+      score,
+      distance: this.controller.distance,
+      topSpeed: this.controller.topSpeed,
+      seed: this.seed,
+      best,
+      isRecord,
+    });
 
     // Drawn now, not when the button is pressed. `navigator.share` needs the activation from
     // that press, and awaiting a canvas render inside the handler spends it on iOS — the one

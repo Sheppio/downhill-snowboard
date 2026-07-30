@@ -17,6 +17,7 @@
  */
 
 import { hashString, makeRng } from "../core/rng";
+import { formatDistance, formatWhen } from "./leaderboard";
 import { isDaily, seedLabel } from "./seed";
 
 /**
@@ -28,16 +29,31 @@ import { isDaily, seedLabel } from "./seed";
  */
 export const CARD_SIZE = 1080;
 
-export interface RunResult {
+/**
+ * Everything the card needs, from wherever it is being shared.
+ *
+ * Two places produce one: a run that has just ended, which knows all of it, and a row on the
+ * scores list, which knows what was stored — a score, how far it got, and when. The optional
+ * fields are the difference between the two, and the card fills the gap rather than pretending:
+ * where there is no top speed there is a date instead, and a record kept before distances were
+ * shows a dash.
+ */
+export interface CardResult {
   score: number;
-  /** Metres. */
-  distance: number;
-  /** Metres per second, as the controller keeps it. */
-  topSpeed: number;
+  /** Metres. Absent on a best recorded before distances were kept. */
+  distance?: number;
+  /** Metres per second, as the controller keeps it. Absent when sharing from the scores list. */
+  topSpeed?: number;
   seed: string;
-  /** Best on this seed, for the line under the score when the run did not beat it. */
-  best: number;
-  isRecord: boolean;
+  /**
+   * The line under the score.
+   *
+   * The caller's, because only the caller knows what this is: a run that just beat your best
+   * says one thing, a row on the list says another, and the card should not be guessing.
+   */
+  strap: string;
+  /** When the score was set, epoch ms. Shown where the top speed would be, when there is none. */
+  at?: number;
   /** A link that drops the recipient straight onto this course. */
   url: string;
 }
@@ -167,7 +183,12 @@ function tree(ctx: CardContext, x: number, base: number, height: number): void {
  * Split from the canvas plumbing below so the layout can be exercised without one, and kept
  * pure: given the same result it draws the same card, on any device.
  */
-export function drawShareCard(ctx: CardContext, r: RunResult, size = CARD_SIZE): void {
+export function drawShareCard(
+  ctx: CardContext,
+  r: CardResult,
+  size = CARD_SIZE,
+  now = Date.now(),
+): void {
   const mid = size / 2;
   /**
    * Where the scenery starts and the words stop.
@@ -229,10 +250,9 @@ export function drawShareCard(ctx: CardContext, r: RunResult, size = CARD_SIZE):
   // --- The number the game is about
   outlined(ctx, r.score.toLocaleString(), mid, size * 0.225, size * 0.17, SUN, 900);
 
-  const strap = r.isRecord ? "New personal best!" : `Best on this seed: ${r.best.toLocaleString()}`;
   ctx.fillStyle = INK;
   ctx.font = font(size * 0.038, 800);
-  ctx.fillText(strap, mid, size * 0.325);
+  ctx.fillText(r.strap, mid, size * 0.325);
 
   // A dashed rule, as on the end screen. Drawn as ticks rather than with a line dash, which
   // would be one more method the recording context in the tests has to pretend to have.
@@ -249,8 +269,12 @@ export function drawShareCard(ctx: CardContext, r: RunResult, size = CARD_SIZE):
     ctx.font = font(size * 0.026, 800);
     ctx.fillText(label, x, size * 0.5);
   };
-  stat("DISTANCE", `${Math.floor(r.distance).toLocaleString()}m`, size * 0.28);
-  stat("TOP SPEED", `${toKmh(r.topSpeed)}km/h`, size * 0.72);
+  stat("DISTANCE", formatDistance(r.distance), size * 0.28);
+  // A run that just ended knows its top speed; a row on the scores list does not, and putting
+  // a dash there would waste the best half of the card. When it was set is the fact that row
+  // actually has, and it is worth reading — "3d ago" on a score says something about it.
+  if (r.topSpeed != null) stat("TOP SPEED", `${toKmh(r.topSpeed)}km/h`, size * 0.72);
+  else stat("SET", r.at != null ? formatWhen(r.at, now) : "—", size * 0.72);
 
   // --- The seed, full width: it is the whole reason this is worth sending
   const label = cardSeedLabel(r.seed);
@@ -288,15 +312,18 @@ export function challengeText(): string {
  * to be, so they go in the words: a bare challenge with no run attached to it is not a boast,
  * it is a link nobody opens.
  */
-export function runSummaryText(r: RunResult): string {
+export function runSummaryText(r: CardResult): string {
   const where = isDaily(r.seed)
-    ? `today's Downhill run (${cardSeedLabel(r.seed)})`
+    ? `the Downhill run for ${cardSeedLabel(r.seed)}`
     : `Downhill seed "${r.seed}"`;
-  return (
-    `${r.score.toLocaleString()} on ${where} — ` +
-    `${Math.floor(r.distance).toLocaleString()}m at up to ${toKmh(r.topSpeed)}km/h. ` +
-    `Think you can beat that?`
-  );
+  // Only what this particular share actually knows. A scores-list row has no top speed, and
+  // "at up to undefined km/h" is worse than saying nothing.
+  const detail = [
+    r.distance != null ? formatDistance(r.distance) : null,
+    r.topSpeed != null ? `up to ${toKmh(r.topSpeed)}km/h` : null,
+  ].filter(Boolean);
+  const run = detail.length ? ` — ${detail.join(", ")}` : "";
+  return `${r.score.toLocaleString()} on ${where}${run}. Think you can beat that?`;
 }
 
 /**
@@ -305,7 +332,7 @@ export function runSummaryText(r: RunResult): string {
  * Returns null rather than throwing if the browser has no usable 2D canvas — sharing is a
  * nicety and must never be able to take the end screen down with it.
  */
-export async function renderShareCard(r: RunResult): Promise<Blob | null> {
+export async function renderShareCard(r: CardResult): Promise<Blob | null> {
   try {
     const canvas = document.createElement("canvas");
     canvas.width = CARD_SIZE;

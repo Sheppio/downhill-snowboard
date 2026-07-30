@@ -7,7 +7,7 @@ import {
   runSummaryText,
   toKmh,
   type CardContext,
-  type RunResult,
+  type CardResult,
 } from "./sharecard";
 
 /**
@@ -79,19 +79,22 @@ class RecordingContext implements CardContext {
   }
 }
 
-const RESULT: RunResult = {
+/** A fixed "now", so a card that shows an age draws the same one every run. */
+const NOW = Date.UTC(2026, 6, 20, 9, 0, 0);
+
+const RESULT: CardResult = {
   score: 5152,
   distance: 4139.7,
   topSpeed: 34.2,
   seed: "powder-chute-42",
-  best: 5152,
-  isRecord: true,
+  strap: "New personal best!",
+  at: NOW,
   url: "https://example.test/?seed=powder-chute-42",
 };
 
-function draw(overrides: Partial<RunResult> = {}): RecordingContext {
+function draw(overrides: Partial<CardResult> = {}): RecordingContext {
   const ctx = new RecordingContext();
-  drawShareCard(ctx, { ...RESULT, ...overrides });
+  drawShareCard(ctx, { ...RESULT, ...overrides }, undefined, NOW);
   return ctx;
 }
 
@@ -125,16 +128,45 @@ describe("what the card says", () => {
     expect(draw().said()).toContain("https://example.test/?seed=powder-chute-42");
   });
 
-  it("celebrates a record, and reports the best when it is not one", () => {
-    expect(draw({ isRecord: true }).said()).toContain("New personal best!");
-
-    const beaten = draw({ isRecord: false, score: 900, best: 5152 }).said();
-    expect(beaten).not.toContain("New personal best!");
-    expect(beaten).toContain("5,152");
+  it("prints whatever line the caller gave it", () => {
+    // The caller knows what this share is; the card does not, and should not guess. A run that
+    // just beat your best says one thing, a row on the scores list says another.
+    expect(draw().said()).toContain("New personal best!");
+    expect(draw({ strap: "My best on this seed" }).said()).toContain("My best on this seed");
   });
 
   it("draws a scene, not just words on nothing", () => {
     expect(draw().shapes).toBeGreaterThan(20);
+  });
+});
+
+describe("a card made from a scores-list row", () => {
+  // That row knows a score, how far it got and when — never a top speed, because the
+  // leaderboard has never stored one.
+  const fromList = (over: Partial<CardResult> = {}) =>
+    draw({ topSpeed: undefined, strap: "My best on this seed", ...over });
+
+  it("shows when the score was set where the top speed would go", () => {
+    // Rather than a dash in the best half of the card. "3d ago" on a score says something.
+    const said = fromList({ at: NOW - 3 * 86_400_000 }).said();
+    expect(said).toContain("SET");
+    expect(said).toContain("3d ago");
+    expect(said).not.toContain("TOP SPEED");
+    expect(said).not.toMatch(/km\/h/);
+  });
+
+  it("still shows the score, the distance and the seed", () => {
+    const said = fromList().said();
+    expect(said).toContain("5,152");
+    expect(said).toContain("4,139m");
+    expect(said).toContain("powder-chute-42");
+  });
+
+  it("shows a dash for a record kept before distances were", () => {
+    // Not "0m", which reads as a run that went nowhere — a different claim entirely.
+    const said = fromList({ distance: undefined }).said();
+    expect(said).toContain("—");
+    expect(said).not.toContain("0m");
   });
 });
 

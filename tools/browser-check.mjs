@@ -1087,6 +1087,62 @@ else console.log("✓ a different seed builds a different mountain");
     fail("a score from the earlier course was hidden from the list but left on the device");
   else console.log(`✓ leaderboard, newest first: ${shown}`);
 
+  // --- Every row can be shared, not just the run you have only just finished
+  // Checked on the row for a *stored* best, which knows less than a finished run does: there
+  // is no top speed on it, and the third row has no distance either. Both gaps have to show
+  // as something a recipient can read rather than as "undefined" or "0m".
+  {
+    await page.evaluate(() => {
+      window.__shared = null;
+      Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+      Object.defineProperty(navigator, "share", {
+        configurable: true,
+        value: (data) => {
+          const file = data.files?.[0];
+          window.__shared = {
+            text: data.text ?? null,
+            url: data.url ?? null,
+            type: file?.type ?? null,
+            size: file?.size ?? 0,
+          };
+          return Promise.resolve();
+        },
+      });
+    });
+
+    // The press starts the card; the tap sends it. Driven as two events rather than one click
+    // because that split is the whole mechanism — `navigator.share` needs the tap's own
+    // activation, so the render has to have started before it.
+    const shareButton = await page.$("#scores-list li:nth-child(3) .score-share");
+    if (!shareButton) fail("no share button on the scores rows");
+    else {
+      await shareButton.dispatchEvent("pointerdown");
+      const ready = await page
+        .waitForFunction(() => window.__game.listCard?.file != null, { timeout: 15000 })
+        .then(() => true)
+        .catch(() => false);
+      await shareButton.click();
+      await page.waitForFunction(() => window.__shared != null, { timeout: 10000 });
+      const sent = await page.evaluate(() => window.__shared);
+      const tick = await page.textContent("#scores-list li:nth-child(3) .score-share");
+
+      const problems = [];
+      if (!ready) problems.push("pressing a row never started drawing its card");
+      if (sent.type !== "image/png") problems.push(`shared a ${sent.type ?? "nothing"}`);
+      if (!sent.url?.includes("before-distances"))
+        problems.push(`the link does not name the row's seed: ${sent.url}`);
+      if (/\d/.test(sent.text ?? "")) problems.push(`the message restates the card: "${sent.text}"`);
+      if (tick !== "✓") problems.push(`the row gave no confirmation, it still says "${tick}"`);
+
+      if (problems.length) fail(`sharing a scores row — ${problems.join("; ")}`);
+      else
+        console.log(
+          `✓ every scores row shares its own seed (${(sent.size / 1024).toFixed(0)}KB card for ` +
+            `"before-distances", a stored best with no top speed and no distance)`,
+        );
+    }
+  }
+
   // Every row rides its seed. Checked on the *daily* row, which is the only one that can tell
   // the difference: its label is a formatted date, so a row riding what it displays rather
   // than what it stored would start a course seeded "Jan 15, 2026". On a custom row the label
