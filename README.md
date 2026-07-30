@@ -90,6 +90,36 @@ mountain** — same terrain, same corners, same trees, on any device.
 - Type any seed you like, or hit the dice for a random one.
 - The end screen gives you a link that drops someone straight onto the course you just rode.
 
+## Sharing a run
+
+**Share result** on the end screen hands the system share sheet a picture of the run — score,
+distance, top speed, and the seed — with the challenge link attached. On a phone that is
+WhatsApp, Messages, or whatever else is installed.
+
+The card is drawn on a canvas rather than screenshotted from the end screen. A screenshot would
+mean `html2canvas`, which is a large dependency that re-implements CSS layout badly; drawing it
+means the card is *deterministic* and looks the same everywhere instead of inheriting whatever
+that particular phone did with the layout. The trees on it are placed from the seed, so a
+course always decorates its own card the same way.
+
+**The seed is printed on the image, not only in the link.** Chat apps rewrite URLs, crop
+previews, and forward screenshots of screenshots; the text on the picture is what survives all
+of that. A daily run shows its date rather than the "Today" the end screen says, because by the
+time anyone reads the card, today is a different mountain.
+
+Three routes out, in descending order of how much survives:
+
+| | When |
+| --- | --- |
+| The card, through the share sheet | Any phone, and desktop Safari |
+| Text and a link, no picture | A browser that shares but refuses files |
+| The link on the clipboard | No share sheet at all |
+
+The card is rendered when the end screen appears, not when the button is pressed. That is not a
+performance nicety: `navigator.share` needs the user activation the press carries, and awaiting
+anything before calling it spends that activation on iOS — the one platform this feature is
+most for.
+
 ## Your scores
 
 **Your scores** on the start screen lists your best on every seed you have ridden, one row per
@@ -188,7 +218,7 @@ src/
   world/      the gulley, the terrain height field, obstacles, sky
   player/     rider physics, the visual rider, camera, wipeout
   input/      touch and keyboard steering
-  game/       scoring, seeds, sharing
+  game/       scoring, seeds, the local leaderboard, the share card
   ui/         DOM overlay
 ```
 

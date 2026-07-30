@@ -96,9 +96,13 @@ export function syncUrl(seed: string): void {
   }
 }
 
-/** Copy a challenge link, falling back to a prompt where the clipboard API is blocked. */
-export async function copyShareLink(seed: string): Promise<boolean> {
-  const url = shareUrl(seed);
+/**
+ * Copy a challenge link, falling back to a prompt where the clipboard API is blocked.
+ *
+ * Takes the link rather than the seed. The caller already has one — it is on the card and it
+ * went to the share sheet — and deriving a second one here could disagree with it.
+ */
+export async function copyLink(url: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(url);
     return true;

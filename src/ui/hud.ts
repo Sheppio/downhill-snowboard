@@ -61,6 +61,8 @@ export class Hud {
 
   private readonly loading = must("loading");
   private readonly shareBtn = must<HTMLButtonElement>("btn-share");
+  /** What the share button says when it is not flashing a confirmation. */
+  private shareLabel = "Copy challenge link";
 
   /** Kept because the leaderboard rows are built later and each one starts a run. */
   private readonly callbacks: HudCallbacks;
@@ -251,12 +253,23 @@ export class Hud {
     this.seedInput.value = seed;
   }
 
+  /**
+   * Name the button after what pressing it will actually do.
+   *
+   * "Share result" where a share sheet exists, which on a phone is the whole point — the card
+   * goes to WhatsApp and the link goes with it. On a desktop browser with no sheet the honest
+   * label is still the old one, because copying a link is all that will happen.
+   */
+  setShareLabel(canShare: boolean): void {
+    this.shareLabel = canShare ? "Share result" : "Copy challenge link";
+    this.shareBtn.textContent = this.shareLabel;
+  }
+
   /** Momentary confirmation on the share button — cheaper than a toast, and clearer. */
   flashShare(message: string): void {
-    const original = "Copy challenge link";
     this.shareBtn.textContent = message;
     window.setTimeout(() => {
-      this.shareBtn.textContent = original;
+      this.shareBtn.textContent = this.shareLabel;
     }, 1600);
   }
 }

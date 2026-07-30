@@ -11,7 +11,7 @@
  */
 
 import { chromium } from "playwright";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 const OUT = process.argv[2] ?? "./.screenshots";
 const BASE = process.env.GAME_URL ?? "http://127.0.0.1:4173/";
@@ -455,6 +455,134 @@ const end = {
 };
 console.log("✓ end screen:", JSON.stringify(end));
 if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
+
+// --- Sharing the run -------------------------------------------------------------------------
+// The card only exists as pixels, so this is the only place it can be checked at all: the unit
+// tests drive a recording context and can prove what the card *says*, never that a canvas came
+// back with anything on it. Here the real PNG is produced, handed to a stubbed share sheet,
+// decoded again and inspected — and saved next to the screenshots to be looked at.
+//
+// The stub goes in before the run ends, because the card is drawn then rather than on the
+// click. That ordering is the point: `navigator.share` needs the click's user activation, and
+// awaiting a render inside the handler spends it on iOS.
+{
+  await page.evaluate(() => {
+    window.__shared = null;
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: (data) => {
+        const file = data.files?.[0];
+        const keep = (dataUrl) => {
+          window.__shared = {
+            text: data.text ?? null,
+            url: data.url ?? null,
+            name: file?.name ?? null,
+            type: file?.type ?? null,
+            size: file?.size ?? 0,
+            dataUrl,
+          };
+        };
+        if (!file) {
+          keep(null);
+          return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            keep(reader.result);
+            resolve();
+          };
+          reader.readAsDataURL(file);
+        });
+      },
+    });
+  });
+
+  await page.evaluate(() => window.__game.startRun("powder-chute-42"));
+  await page.waitForTimeout(1500);
+  const ended = await page.evaluate(() => {
+    window.__game.endRun("crash");
+    return { score: window.__game.score.value, dist: window.__game.controller.distance };
+  });
+  await page.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+
+  // The label changing is how the game says the card is drawn and the sheet will take it
+  await page
+    .waitForFunction(() => document.getElementById("btn-share").textContent === "Share result", {
+      timeout: 10000,
+    })
+    .catch(() => {});
+  const label = await page.textContent("#btn-share");
+
+  await page.click("#btn-share");
+  await page.waitForFunction(() => window.__shared != null, { timeout: 10000 });
+  const shared = await page.evaluate(() => window.__shared);
+
+  // Decode the PNG the share sheet was handed, and look at it
+  const card = shared.dataUrl
+    ? await page.evaluate(async (dataUrl) => {
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error("the shared PNG would not decode"));
+          img.src = dataUrl;
+        });
+        const c = document.createElement("canvas");
+        c.width = img.width;
+        c.height = img.height;
+        c.getContext("2d").drawImage(img, 0, 0);
+        const px = c.getContext("2d").getImageData(0, 0, img.width, img.height).data;
+        const at = (x, y) => {
+          const i = (y * img.width + x) * 4;
+          return [px[i], px[i + 1], px[i + 2]];
+        };
+        const colours = new Set();
+        let sun = 0;
+        for (let y = 4; y < img.height; y += 12) {
+          for (let x = 4; x < img.width; x += 12) {
+            const [r, g, b] = at(x, y);
+            colours.add(`${r >> 3},${g >> 3},${b >> 3}`);
+            // #ffd166, the colour the score is drawn in — proof the text landed, not just a
+            // background. Loose enough for the PNG round trip, tight enough to mean it.
+            if (Math.abs(r - 255) < 12 && Math.abs(g - 209) < 12 && Math.abs(b - 102) < 12) sun++;
+          }
+        }
+        return { width: img.width, height: img.height, colours: colours.size, sun };
+      }, shared.dataUrl)
+    : null;
+
+  if (shared.dataUrl) {
+    writeFileSync(`${OUT}/08-share-card.png`, Buffer.from(shared.dataUrl.split(",")[1], "base64"));
+  }
+
+  const problems = [];
+  if (label !== "Share result") problems.push(`the button still says "${label}"`);
+  if (shared.type !== "image/png") problems.push(`shared a ${shared.type ?? "nothing"}, not a PNG`);
+  if (!shared.url?.includes("powder-chute-42"))
+    problems.push(`the link does not name the seed: ${shared.url}`);
+  if (!shared.text?.includes(ended.score.toLocaleString()))
+    problems.push(`the message does not carry the score ${ended.score}: "${shared.text}"`);
+  if (!shared.text?.includes("powder-chute-42"))
+    problems.push(`the message does not name the seed: "${shared.text}"`);
+  if (!card) problems.push("no image was attached at all");
+  else {
+    if (card.width !== 1080 || card.height !== 1080)
+      problems.push(`the card is ${card.width}x${card.height}, not 1080 square`);
+    // A card that failed to draw is a flat fill, or a gradient and nothing else
+    if (card.colours < 12) problems.push(`the card is nearly blank — ${card.colours} colours`);
+    if (card.sun < 20) problems.push(`the score is not on the card — ${card.sun} pixels of it`);
+  }
+
+  if (problems.length) fail(`sharing a run — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ shared a ${(shared.size / 1024).toFixed(0)}KB PNG card as "${shared.name}": ` +
+        `${card.width}px square, ${card.colours} colours, carrying the score and the seed`,
+    );
+
+  await page.click("#btn-menu");
+}
 
 // --- Snow spray must survive a crash --------------------------------------------------------
 // Regression: a burst leaves Babylon's manualEmitCount at 0, which silently switches the

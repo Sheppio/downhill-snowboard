@@ -22,14 +22,9 @@ import { SteerInput } from "./input/steer";
 import { TouchMarkers } from "./ui/touchmarkers";
 import { Score } from "./game/score";
 import { readBest, recordBest } from "./game/leaderboard";
-import {
-  copyShareLink,
-  initialSeed,
-  normaliseSeed,
-  randomSeed,
-  syncUrl,
-  todaysSeed,
-} from "./game/seed";
+import { initialSeed, normaliseSeed, randomSeed, shareUrl, syncUrl, todaysSeed } from "./game/seed";
+import { prepareShareCard, shareMessage, shareRun } from "./game/share";
+import type { RunResult } from "./game/sharecard";
 import { Hud } from "./ui/hud";
 
 /** Seconds off course before the run is ended. */
@@ -71,6 +66,9 @@ class Game {
   private oobTimer = 0;
   private crashTimer = 0;
   private endReason: "crash" | "outOfBounds" = "crash";
+  /** The finished run the end screen is showing, and the card drawn from it. */
+  private lastResult: RunResult | null = null;
+  private shareCard: File | null = null;
 
   // Adaptive resolution
   private fpsSamples: number[] = [];
@@ -117,10 +115,16 @@ class Game {
       onRideSeed: (raw) => this.startRun(normaliseSeed(raw) || randomSeed()),
       onShuffle: () => this.hud.setSeedInput(randomSeed()),
       onRetry: () => this.startRun(this.seed),
+      // Nothing is awaited before shareRun runs, because `navigator.share` needs the user
+      // activation this click carries and awaiting spends it on iOS. The card was drawn when
+      // the end screen appeared, precisely so there is nothing left to wait for here.
       onShare: () => {
-        void copyShareLink(this.seed).then((ok) =>
-          this.hud.flashShare(ok ? "Link copied!" : "Link ready"),
-        );
+        const result = this.lastResult;
+        if (!result) return;
+        void shareRun(result, this.shareCard).then((outcome) => {
+          const message = shareMessage(outcome);
+          if (message) this.hud.flashShare(message);
+        });
       },
       onBackToMenu: () => this.showMenu(),
       onPause: () => this.pause(),
@@ -430,14 +434,29 @@ class Game {
     const isRecord = score > this.bestAtStart;
     recordBest(this.seed, score, this.controller.distance);
 
-    this.hud.showEnd({
-      reason: this.endReason,
+    const result: RunResult = {
       score,
       distance: this.controller.distance,
       topSpeed: this.controller.topSpeed,
       seed: this.seed,
       best: readBest(this.seed),
       isRecord,
+      url: shareUrl(this.seed),
+    };
+    this.lastResult = result;
+
+    this.hud.showEnd({ reason: this.endReason, ...result });
+
+    // Drawn now, not when the button is pressed. `navigator.share` needs the activation from
+    // that press, and awaiting a canvas render inside the handler spends it on iOS — the one
+    // platform where a share sheet is the whole point.
+    this.shareCard = null;
+    void prepareShareCard(result).then((card) => {
+      // A newer run may have ended while this was drawing; only the current card is any use.
+      if (this.lastResult === result) {
+        this.shareCard = card;
+        this.hud.setShareLabel(card != null || navigator.share != null);
+      }
     });
   }
 
