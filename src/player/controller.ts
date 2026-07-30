@@ -30,21 +30,27 @@ const GRAVITY = 9.81;
 /**
  * The rider's collision shape: a capsule lying along the board, in metres.
  *
- * Both figures are the rider mesh's own silhouette, measured in its local frame with the rig
- * flattened. This used to be a single 0.6m circle, which was wrong in both directions at once
- * — 2.4× too wide across the direction of travel, and 0.2m short at each tip. Sideways is the
- * axis you dodge on, so what players saw was crashing into trees they had visibly passed.
+ * Both figures come from the rider mesh's own silhouette, measured in its local frame with the
+ * rig flattened. This used to be a single 0.6m circle, which was wrong in both directions at
+ * once — nearly 2.7× too wide across the direction of travel, and 0.2m short at each tip.
+ * Sideways is the axis you dodge on, so what players saw was crashing into trees they had
+ * visibly passed.
  *
- * The widest part across is the goggles, not the board; the board itself is only 0.16m. Taken
- * at rest, deliberately: at full lean the rider's head swings the better part of a metre out
- * over the snow, and a hitbox that grew every time you turned hard would be unreadable — and
- * it leans to the *inside* of the turn, away from whatever is being dodged. What threads a
+ * Across, the mesh reaches 0.240m one way and 0.225m the other, and the difference is entirely
+ * the goggles sticking out past the face. 0.225 takes the body's own half-width and lets the
+ * goggles overhang it: they are a 15mm detail on the front of a helmet, and nobody reads a
+ * near miss as a hit because a strap clipped a trunk. The board is narrower still, 0.16m —
+ * which is why "how wide is a snowboard" is the wrong question to size this from.
+ *
+ * Taken at rest, deliberately: at full lean the rider's head swings the better part of a metre
+ * out over the snow, and a hitbox that grew every time you turned hard would be unreadable —
+ * and it leans to the *inside* of the turn, away from whatever is being dodged. What threads a
  * gap is the board and the legs, and this is their width.
  *
  * They live here rather than next to the game loop so the collision tests can import the same
  * numbers the game plays with, instead of restating them and drifting.
  */
-export const RIDER_HALF_WIDTH = 0.24;
+export const RIDER_HALF_WIDTH = 0.225;
 export const RIDER_HALF_LENGTH = 0.81;
 
 // --- Tuning ------------------------------------------------------------------------------

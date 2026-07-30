@@ -141,8 +141,8 @@ const TREE_RADIUS = 0.7;
  * the rider well clear of visibly empty snow.
  *
  * 0.3 is the trunk plus a little, so it still stops you, but only once you are on it. With the
- * rider now a capsule 0.24m across rather than a 0.6m circle, the two fixes compound: sideways
- * the reach against this trunk is 0.51m between centres, against a trunk 0.22m wide.
+ * rider now a capsule 0.225m across rather than a 0.6m circle, the two fixes compound:
+ * sideways the reach against this trunk is 0.50m between centres, against a trunk 0.22m wide.
  */
 export const TREE_HIT_RADII = [TREE_RADIUS, TREE_RADIUS, TREE_RADIUS, 0.3, TREE_RADIUS];
 export const ROCK_RADIUS = 0.95;

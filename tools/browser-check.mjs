@@ -691,9 +691,9 @@ else {
 
 // --- The rider's collider has to be the shape of the rider ---------------------------------
 // The other half of the same fault. The obstacle colliders above were only one side of "you
-// crashed into empty snow": the rider itself was a 0.6m circle, against a mesh 0.24m across
-// and 0.81m long. Sideways is the axis you dodge on, so the error a player felt was two and a
-// half times too much collider exactly where it hurt.
+// crashed into empty snow": the rider itself was a 0.6m circle, against a mesh under a quarter
+// of a metre across and 0.81m long. Sideways is the axis you dodge on, so the error a player
+// felt was nearly three times too much collider exactly where it hurt.
 //
 // Measured off the built mesh, like the obstacle silhouettes, because the unit tests read the
 // same constants the game does and cannot see the two drifting apart from the model.
@@ -705,16 +705,23 @@ const shape = await page.evaluate(() => {
   root.position.set(0, 0, 0);
   for (const child of root.getChildren()) child.rotation?.set(0, 0, 0);
 
-  let across = 0;
+  // Each side separately across the board, because the rider is not symmetric about its own
+  // axis — the goggles reach past the face on one side only, and the collider is deliberately
+  // sized to the body rather than to them.
+  let left = 0;
+  let right = 0;
   let along = 0;
   for (const m of root.getChildMeshes()) {
     if (m.name.includes("shadow")) continue; // a mark on the snow, not part of the rider
     m.computeWorldMatrix(true);
     m.refreshBoundingInfo();
     const b = m.getBoundingInfo().boundingBox;
-    across = Math.max(across, Math.abs(b.minimumWorld.x), Math.abs(b.maximumWorld.x));
+    left = Math.max(left, -b.minimumWorld.x);
+    right = Math.max(right, b.maximumWorld.x);
     along = Math.max(along, Math.abs(b.minimumWorld.z), Math.abs(b.maximumWorld.z));
   }
+  const across = Math.max(left, right);
+  const narrower = Math.min(left, right);
 
   // Where the game's own collision actually starts, found by bisection against a real tree.
   // The rider's dimensions come off the controller, so this is the collider the game plays
@@ -740,7 +747,11 @@ const shape = await page.evaluate(() => {
   const RIGHT = [1, 0];
   const AHEAD = [0, 1];
   return {
-    mesh: { across: +across.toFixed(3), along: +along.toFixed(3) },
+    mesh: {
+      across: +across.toFixed(3),
+      narrower: +narrower.toFixed(3),
+      along: +along.toFixed(3),
+    },
     used: { across: c.halfWidth, along: c.halfLength },
     side: +edge(RIGHT, 0).toFixed(3),
     nose: +edge(AHEAD, 0).toFixed(3),
@@ -750,10 +761,18 @@ const shape = await page.evaluate(() => {
 });
 {
   const problems = [];
-  // The constants have to describe the model, not a shape it used to be
-  if (Math.abs(shape.used.across - shape.mesh.across) > 0.06)
+  // The constants have to describe the model, not a shape it used to be. Across, the collider
+  // is allowed to sit anywhere between the rider's two sides: it is sized to the body, and the
+  // goggles are permitted to overhang it by the centimetre and a half they stick out. What it
+  // must never do is claim room outside the silhouette altogether — that is the whole fault.
+  const SLACK = 0.02; // rounding, and the difference between a bounding box and a curve
+  if (
+    shape.used.across > shape.mesh.across + SLACK ||
+    shape.used.across < shape.mesh.narrower - SLACK
+  )
     problems.push(
-      `collides ${shape.used.across}m across a rider ${shape.mesh.across}m across`,
+      `collides ${shape.used.across}m across a rider that reaches ${shape.mesh.narrower}m one ` +
+        `way and ${shape.mesh.across}m the other`,
     );
   if (Math.abs(shape.used.along - shape.mesh.along) > 0.06)
     problems.push(`collides ${shape.used.along}m along a rider ${shape.mesh.along}m long`);
@@ -781,9 +800,10 @@ const shape = await page.evaluate(() => {
   if (problems.length) fail(`the rider's collider is not the rider's shape — ${problems.join("; ")}`);
   else
     console.log(
-      `✓ rider collides as a board: ${shape.mesh.across}m across and ${shape.mesh.along}m long, ` +
-        `stopping at ${shape.side}m beside a tree and ${shape.nose}m ahead of one, and swapping ` +
-        `the two when turned across the hill`,
+      `✓ rider collides as a board: ${shape.used.across}m across a body reaching ` +
+        `${shape.mesh.narrower}–${shape.mesh.across}m, ${shape.used.along}m along a ` +
+        `${shape.mesh.along}m one, stopping at ${shape.side}m beside a tree and ${shape.nose}m ` +
+        `ahead of one, and swapping the two when turned across the hill`,
     );
 }
 

@@ -55,11 +55,17 @@ reference pilot used to reach 8km on 52 of 53 daily seeds and now manages it on 
 
 ## What you collide with
 
-The rider is a **capsule lying along the board** — 0.24m across the direction of travel and
-0.81m along it, both measured off the mesh actually drawn. It was a 0.6m circle, which is not a
-shape a snowboard has: two and a half times too wide sideways, which is the axis you dodge on,
+The rider is a **capsule lying along the board** — 0.225m across the direction of travel and
+0.81m along it, both taken from the mesh actually drawn. It was a 0.6m circle, which is not a
+shape a snowboard has: nearly three times too wide sideways, which is the axis you dodge on,
 and still short of the board's own tips. Crashing into a tree you had visibly passed was that,
 and it is fixed.
+
+Across, the mesh reaches 0.240m one way and 0.225m the other, all of the difference being the
+goggles standing out past the face. The collider takes the body's half-width and lets the
+goggles overhang it — nobody reads a near miss as a hit because a strap clipped a trunk. The
+board is narrower still at 0.16m, which is why "how wide is a snowboard" is the wrong question
+to size this from.
 
 Obstacles keep a circle each, and a separate one from the circle that spaces them out. A tree's
 placement radius is uniform, because changing it would move every tree in the game; what stops
