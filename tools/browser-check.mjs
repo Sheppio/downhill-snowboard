@@ -1332,9 +1332,27 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     const pitch = (x, y, z) => Math.atan2(y, Math.hypot(x, z));
     const below = pitch(t.x - p.x, t.y - p.y, t.z - p.z) - pitch(c.renderX - p.x, ry - p.y, c.renderZ - p.z);
     const dist = document.querySelector(".stat-dist").getBoundingClientRect();
+
+    // Does the framing move with the frame rate? Driven by calling the camera directly with
+    // different frame times rather than by watching a real run, because this machine renders
+    // at about five frames a second and could not see a shimmer if it tried. The camera is
+    // deterministic, so two frame times against a frozen world is the whole question.
+    //
+    // What this catches: the FOV was damped from `camera.fov`, which landscape had already
+    // clipped to the 80° cap, so the ratio the look angle is scaled by moved with `dt` and the
+    // picture rode up and down about a quarter of a metre. Portrait never clips and never saw it.
+    for (let i = 0; i < 30; i++) g.camera.update(g.controller, g.field, 1 / 60);
+    const steady = g.camera.lookAt.y;
+    g.camera.update(g.controller, g.field, 1 / 30);
+    const slowFrame = g.camera.lookAt.y;
+    g.camera.update(g.controller, g.field, 1 / 60);
+    g.camera.update(g.controller, g.field, 1 / 200);
+    const fastFrame = g.camera.lookAt.y;
+
     return {
       locks: window.__lockCalls,
       state: g.state,
+      frameRateShift: Math.max(Math.abs(slowFrame - steady), Math.abs(fastFrame - steady)),
       horizFov: (2 * Math.atan(Math.tan(cam.fov / 2) * ar) * 180) / Math.PI,
       // 0 is the centre of the frame, 1 the bottom edge
       riderDownFrame: 0.5 + 0.5 * (Math.tan(below) / Math.tan(cam.fov / 2)),
@@ -1354,8 +1372,15 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   // low" was satisfied by both.
   else if (!(view.horizFov > 20 && view.horizFov < 84))
     fail(`landscape shows a ${view.horizFov.toFixed(0)}° view, against portrait's 31°`);
-  else if (!(view.riderDownFrame > 0.4 && view.riderDownFrame < 0.92))
+  // Was 0.4–0.92, which the uncapped-ratio bug sat inside at 0.92 exactly. Landscape is meant
+  // to frame the rider where portrait does, and portrait puts it at 0.78.
+  else if (!(view.riderDownFrame > 0.6 && view.riderDownFrame < 0.86))
     fail(`the rider sits ${(view.riderDownFrame * 100).toFixed(0)}% down the frame`);
+  else if (!(view.frameRateShift < 0.002))
+    fail(
+      `the framing moves with the frame rate: ${(view.frameRateShift * 1000).toFixed(0)}mm ` +
+        `between a 30fps frame and a 200fps one, which is the landscape shimmer`,
+    );
   else if (!view.distClearOfCentre)
     fail("the distance readout sits over the rider, who is centred in landscape");
   else if (menu.panel > menu.view)
@@ -1364,7 +1389,8 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   else
     console.log(
       `✓ landscape plays: no orientation lock, ${view.horizFov.toFixed(0)}° wide, rider ` +
-        `${(view.riderDownFrame * 100).toFixed(0)}% down the frame, menu ${menu.panel}/${menu.view}px`,
+        `${(view.riderDownFrame * 100).toFixed(0)}% down the frame and steady across frame ` +
+        `times (${(view.frameRateShift * 1000).toFixed(2)}mm), menu ${menu.panel}/${menu.view}px`,
     );
 }
 

@@ -60,8 +60,35 @@ const POS_SMOOTHING = 0.0000005;
 
 export class ChaseCamera {
   readonly camera: UniversalCamera;
+  /**
+   * The point the camera is aimed at.
+   *
+   * Readable because it is what the camera actually decided. Babylon's `getTarget()` is
+   * reconstructed from the view matrix and only becomes meaningful once a frame has been
+   * rendered, so anything checking the framing without rendering — the tests — reads zero
+   * from it and silently measures nothing.
+   */
+  readonly lookAt = new Vector3();
   private yaw = 0;
-  private readonly target = new Vector3();
+  /**
+   * The vertical FOV the camera wants, before the landscape cap is applied to it.
+   *
+   * Held separately, and that is the whole point. This used to be damped from `camera.fov` —
+   * the value that had *already* been clipped — so in landscape it came out as the cap plus a
+   * sliver whose size depended on how long the last frame took. Two things went wrong with
+   * that, both landscape-only, because portrait never clips and the sliver is never there:
+   *
+   *  - The ratio between capped and wanted moved with the frame rate, so the look target rode
+   *    up and down by a quarter of a metre between a 30fps frame and a 200fps one. That is the
+   *    small vertical shimmer.
+   *  - That ratio was ~0.97 instead of the ~0.67 it should have been, so the correction it
+   *    exists to apply was barely applied at all, and the rider sat much lower in landscape
+   *    than in portrait.
+   *
+   * Damped from its own previous value, it is a fixed point once the speed settles: the same
+   * whatever the frame rate, and a true statement of what the cap is being measured against.
+   */
+  private desiredFov = BASE_FOV;
   private initialised = false;
 
   constructor(scene: Scene, canvas: HTMLCanvasElement) {
@@ -76,6 +103,7 @@ export class ChaseCamera {
 
   reset(rider: RiderController): void {
     this.yaw = rider.heading;
+    this.desiredFov = BASE_FOV;
     this.initialised = false;
   }
 
@@ -123,16 +151,20 @@ export class ChaseCamera {
     }
 
     // Widening the FOV with speed is the cheapest possible sense of rush
-    const wanted = lerp(this.camera.fov, lerp(BASE_FOV, FOV_AT_SPEED, speedT), 1 - Math.pow(0.02, dt));
-    const fov = fitToScreen(wanted, this.aspect());
+    this.desiredFov = lerp(
+      this.desiredFov,
+      lerp(BASE_FOV, FOV_AT_SPEED, speedT),
+      1 - Math.pow(0.02, dt),
+    );
+    const fov = fitToScreen(this.desiredFov, this.aspect());
     this.camera.fov = fov;
 
-    this.target.set(
+    this.lookAt.set(
       rx + sin * LOOK_AHEAD,
-      this.lookHeight(rx, ry, rz, wanted, fov),
+      this.lookHeight(rx, ry, rz, this.desiredFov, fov),
       rz + cos * LOOK_AHEAD,
     );
-    this.camera.setTarget(this.target);
+    this.camera.setTarget(this.lookAt);
   }
 
   /**
@@ -170,9 +202,12 @@ export class ChaseCamera {
     p.x = expDamp(p.x, wantX, 0.0001, dt);
     p.z = expDamp(p.z, wantZ, 0.0001, dt);
     p.y = expDamp(p.y, y + 5, 0.0001, dt);
-    this.target.set(x, y + 0.6, z);
-    this.camera.setTarget(this.target);
-    this.camera.fov = fitToScreen(expDamp(this.camera.fov, BASE_FOV, 0.02, dt), this.aspect());
+    this.lookAt.set(x, y + 0.6, z);
+    this.camera.setTarget(this.lookAt);
+    // Damped from the uncapped value here too, or landscape settles against the cap instead of
+    // against BASE_FOV and the pull-back never happens.
+    this.desiredFov = expDamp(this.desiredFov, BASE_FOV, 0.02, dt);
+    this.camera.fov = fitToScreen(this.desiredFov, this.aspect());
   }
 
   /** Width over height of what is being rendered. */
