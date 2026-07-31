@@ -29,8 +29,63 @@ jobs:
           npx tsc --noEmit
           npm test
 
-  deploy:
+  # The unit tests can all pass while the screen shows nothing at all, and this check is what
+  # catches that. It used to run only by hand, which meant it caught things *after* they
+  # shipped: a ramp kicking at a twentieth of its intended force, a camera drifting with the
+  # frame rate, a share card that rendered completely blank. Each was invisible to `npm test`.
+  browser:
     needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          # Installed explicitly below instead, so the download is cached between runs
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+      - name: Cache the browser
+        uses: actions/cache@v4
+        id: browser-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install the browser's system libraries
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - run: npm run build
+
+      - name: Serve and check
+        run: |
+          npx vite preview --port 4173 &
+          # Polled rather than slept, so a slow runner does not fail on a fixed guess
+          for i in $(seq 1 60); do
+            curl -sfo /dev/null http://127.0.0.1:4173/ && break
+            sleep 1
+          done
+          node tools/browser-check.mjs ./.screenshots
+
+      # The screenshots are most of the value when this fails: "the rider is 92% down the
+      # frame" is a number, and the picture is what says whether that is wrong.
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-check-screenshots
+          path: .screenshots/
+          retention-days: 7
+
+  deploy:
+    needs: [test, browser]
     runs-on: ubuntu-latest
     permissions:
       contents: read

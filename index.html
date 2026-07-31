@@ -138,6 +138,17 @@
           <p>Grooming the mountain…</p>
         </div>
       </div>
+
+      <!-- Shown only if the render loop throws. Without it the game simply freezes, which
+           tells the player nothing and tells us less. -->
+      <div id="broken" class="panel-wrap" hidden>
+        <div class="panel">
+          <h2 id="broken-title">AVALANCHE</h2>
+          <p class="best">Something went wrong and the run had to stop. Your score was saved.</p>
+          <button id="btn-reload" class="btn btn-primary">Reload</button>
+          <p class="version" id="broken-detail"></p>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

@@ -34,18 +34,31 @@ export function speedMultiplier(speed: number): number {
 
 export class Score {
   private total = 0;
-  private lastDistance = 0;
+  /**
+   * The furthest down the mountain the run has ever been — a high-water mark, not the last
+   * position, and the difference matters.
+   *
+   * Tracking the last position paid for ground *twice* when the rider went backwards and came
+   * forward again over the same metres. That is not a corner case: a full-lock turn held for a
+   * few seconds carries the rider past 90° off the fall line, at which point `z` decreases.
+   * Measured, holding full lock for twenty seconds retreated 9.1m and scored 91 points for 82m
+   * of ground — 11% free, compounding for as long as the player kept circling.
+   *
+   * As a high-water mark, a metre is paid for once and losing ground is simply worth nothing
+   * until it has been won back, which is what the run is.
+   */
+  private furthest = 0;
 
   reset(): void {
     this.total = 0;
-    this.lastDistance = 0;
+    this.furthest = 0;
   }
 
-  /** Accrue score for the ground covered since the last call. */
+  /** Accrue score for any new ground covered since the last call. */
   update(distance: number, speed: number): void {
-    const delta = distance - this.lastDistance;
-    this.lastDistance = distance;
-    if (delta <= 0) return; // riding back uphill earns nothing
+    if (distance <= this.furthest) return; // no new ground; riding back uphill earns nothing
+    const delta = distance - this.furthest;
+    this.furthest = distance;
     this.total += delta * speedMultiplier(speed);
   }
 

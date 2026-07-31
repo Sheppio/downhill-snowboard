@@ -11,15 +11,26 @@
  */
 
 import { chromium } from "playwright";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 const OUT = process.argv[2] ?? "./.screenshots";
 const BASE = process.env.GAME_URL ?? "http://127.0.0.1:4173/";
 mkdirSync(OUT, { recursive: true });
 
+/**
+ * Where Chromium is, if it is somewhere Playwright would not look.
+ *
+ * The dev container ships a browser at a fixed path and no Playwright download; CI installs
+ * one the normal way and Playwright finds it itself. Naming the container's path
+ * unconditionally worked in exactly one of those places, which is how this check came to be
+ * something only ever run by hand.
+ */
+const chromiumPath =
+  process.env.CHROMIUM_PATH ??
+  ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome"].find((p) => existsSync(p));
+
 const browser = await chromium.launch({
-  executablePath:
-    process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+  ...(chromiumPath ? { executablePath: chromiumPath } : {}),
   args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--no-sandbox"],
 });
 
@@ -1515,6 +1526,62 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
         `${released.contacts} contact(s)`,
     );
   else console.log(`✓ the mouse steers on desktop, and releasing it lets go`);
+}
+
+// --- A crash says so, instead of freezing --------------------------------------------------
+// Last, because it deliberately breaks the page. Anything that throws inside the render loop
+// used to leave the player looking at a frozen mountain: Babylon keeps calling the loop, so it
+// throws again every frame, and nothing on screen changes or explains itself. `scene.render` is
+// made to throw here because it is the real thing the loop calls, rather than a test hook the
+// game would have to carry.
+{
+  const dying = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+  });
+  const dp = await dying.newPage();
+  await dp.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+  await dp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+  await dp.evaluate(() => window.__game.startRun("alpine"));
+  await dp.waitForTimeout(900);
+
+  const state = await dp.evaluate(() => {
+    localStorage.clear();
+    const g = window.__game;
+    const earned = g.score.value;
+    g.scene.render = () => {
+      throw new Error("simulated render failure");
+    };
+    return { earned, seed: g.seed };
+  });
+
+  await dp.waitForSelector("#broken:not([hidden])", { timeout: 10000 }).catch(() => {});
+  const after = await dp.evaluate(() => ({
+    brokenShown: !document.querySelector("#broken").hidden,
+    hudShown: !document.querySelector("#hud").hidden,
+    detail: document.querySelector("#broken-detail").textContent,
+    canReload: document.querySelector("#btn-reload") != null,
+    stored: JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]"),
+  }));
+  await dying.close();
+
+  const problems = [];
+  if (!after.brokenShown) problems.push("the game froze without saying anything");
+  if (after.hudShown) problems.push("the HUD stayed up over a dead game");
+  if (!after.canReload) problems.push("there is no way back except closing the tab");
+  if (!/simulated render failure/.test(after.detail ?? ""))
+    problems.push(`the panel does not say what happened: "${after.detail}"`);
+  // A crash should cost the picture, not the run
+  const kept = after.stored.find((r) => r.seed === state.seed);
+  if (!(kept?.score > 0)) problems.push(`the run's ${state.earned} points were lost with it`);
+
+  if (problems.length) fail(`a crash mid-run — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ a crash stops the game and says so, keeping the ${kept.score} points the run had earned`,
+    );
 }
 
 if (errors.length) process.exitCode = 1;

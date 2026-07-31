@@ -192,7 +192,26 @@ class Game {
     this.hud.hideLoading();
     this.showMenu();
 
-    this.engine.runRenderLoop(() => this.frame());
+    // Guarded, because an unguarded throw in here is the worst failure the game has: Babylon
+    // keeps calling the loop, so it throws again every frame, and the player is left looking
+    // at a frozen picture with nothing to tell them what happened or what to do. Banking the
+    // run first means a crash costs the picture, not the score.
+    this.engine.runRenderLoop(() => {
+      try {
+        this.frame();
+      } catch (err) {
+        this.engine.stopRenderLoop();
+        console.error("render loop stopped", err);
+        // In its own guard: whatever broke the frame may well break this too, and the panel
+        // is what the player is waiting for.
+        try {
+          this.bankScore();
+        } catch {
+          /* the score is lost, which is the lesser of the two failures here */
+        }
+        this.hud.showBroken(err);
+      }
+    });
   }
 
   /** Tear down and rebuild everything that depends on the seed. */

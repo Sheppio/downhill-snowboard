@@ -20,6 +20,11 @@ Follow the gulley down the mountain, dodge the trees and rocks, and go as far as
 is the distance you cover, with a small multiplier for speed — so a fast clean line beats a
 cautious one, but not by enough to make straight-lining into a tree a good idea.
 
+Ground is paid for once. Hold full lock long enough and the board comes round past ninety
+degrees and starts climbing back up the mountain; those metres then arrive a second time. The
+score keeps a high-water mark rather than a last position, so re-covering them is worth
+nothing — before that it was worth 11% extra for twenty seconds of circling, and it compounded.
+
 The gulley walls are just steep snow, not invisible walls. Riding up one costs speed and
 gravity brings you back down, so you can bank off them deliberately. Stay out of the course
 for more than three seconds and the run ends.
@@ -319,4 +324,12 @@ from play alone:
   for everyone racing that day.
 
 `tools/browser-check.mjs` exists because the unit tests can all pass while the screen shows
-nothing at all — during development, three separate rendering bugs did exactly that.
+nothing at all — during development, three separate rendering bugs did exactly that. **It runs
+in CI**, between the unit tests and the deploy, and its screenshots are kept as an artifact for
+seven days: when it fails, "the rider is 92% down the frame" is a number, and the picture is
+what says whether that is wrong.
+
+It earns its place. Running only by hand, it caught a ramp kicking at a twentieth of its
+intended force, a camera drifting a quarter of a metre with the frame rate, and a share card
+that rendered completely blank — each of them invisible to `npm test`, and each caught after it
+had already shipped.

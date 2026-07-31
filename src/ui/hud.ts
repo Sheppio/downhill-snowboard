@@ -64,6 +64,8 @@ export class Hud {
   private readonly pauseScore = must("pause-score");
 
   private readonly loading = must("loading");
+  private readonly broken = must("broken");
+  private readonly brokenDetail = must("broken-detail");
   private readonly shareBtn = must<HTMLButtonElement>("btn-share");
   /** What the share button says when it is not flashing a confirmation. */
   private shareLabel = "Copy challenge link";
@@ -84,6 +86,7 @@ export class Hud {
     must<HTMLButtonElement>("btn-scores").addEventListener("click", () => this.showScores());
     must<HTMLButtonElement>("btn-scores-back").addEventListener("click", () => this.hideScores());
 
+    must<HTMLButtonElement>("btn-reload").addEventListener("click", () => location.reload());
     must<HTMLButtonElement>("btn-retry").addEventListener("click", () => callbacks.onRetry());
     this.shareBtn.addEventListener("click", () => callbacks.onShare());
     must<HTMLButtonElement>("btn-menu").addEventListener("click", () => callbacks.onBackToMenu());
@@ -113,6 +116,24 @@ export class Hud {
 
   hideLoading(): void {
     this.loading.hidden = true;
+  }
+
+  /**
+   * The game has stopped and is not coming back.
+   *
+   * Everything else is hidden, because a dead HUD over a frozen mountain reads as the game
+   * still running and the player still riding. The message says the score was kept, since
+   * that is the first thing anyone would want to know.
+   */
+  showBroken(err: unknown): void {
+    for (const panel of [this.hud, this.oob, this.start, this.end, this.paused, this.scores]) {
+      panel.hidden = true;
+    }
+    this.broken.hidden = false;
+    // Enough to identify the fault in a screenshot someone sends, and no more — a stack trace
+    // on a phone is unreadable and looks like the game has fallen apart completely.
+    const message = err instanceof Error ? err.message : String(err);
+    this.brokenDetail.textContent = `${__APP_VERSION__} · ${message}`.slice(0, 120);
   }
 
   showStart(seed: string, best: number): void {
