@@ -83,6 +83,10 @@ jobs:
           name: browser-check-screenshots
           path: .screenshots/
           retention-days: 7
+          # `.screenshots` is a dotted directory and this action skips those by default, so the
+          # first two runs uploaded nothing at all — on the two failures the pictures existed
+          # for.
+          include-hidden-files: true
 
   deploy:
     needs: [test, browser]

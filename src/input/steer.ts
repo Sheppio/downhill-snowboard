@@ -218,7 +218,11 @@ export class SteerInput {
         this.touchPts.push({ x: t.clientX, y: t.clientY });
       }
       this.recompute();
-      e.preventDefault();
+      // Guarded, because a browser marks a touchstart non-cancelable when a scroll is already
+      // under way — the scores list is the one thing in the game that scrolls. Calling
+      // preventDefault on one of those does nothing except log an error, and this game logs
+      // its console errors into a check that fails the build on them.
+      if (e.cancelable) e.preventDefault();
     };
 
     /**

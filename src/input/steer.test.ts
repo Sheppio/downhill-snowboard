@@ -39,16 +39,29 @@ class FakeElement {
     }
   }
 
+  /** How many times a handler called preventDefault on the last event dispatched. */
+  prevented = 0;
+
   /**
    * A touch event.
    *
    * `xs` is every finger on the glass *after* whatever just happened, which is exactly what
    * TouchEvent.touches means — an ended touch is simply absent from the list.
+   *
+   * `cancelable` defaults to true, as a real touch is. A browser sets it false when a scroll
+   * is already under way, and that case is what this fake exists to be able to reproduce.
    */
-  touch(type: string, xs: number[]): void {
+  touch(type: string, xs: number[], cancelable = true): void {
     const touches = xs.map((clientX) => ({ clientX, target: this }));
+    this.prevented = 0;
     for (const fn of this.listeners.get(type) ?? []) {
-      fn({ touches, preventDefault() {} });
+      fn({
+        touches,
+        cancelable,
+        preventDefault: () => {
+          this.prevented++;
+        },
+      });
     }
   }
 }
@@ -299,6 +312,40 @@ describe("two-finger steering", () => {
     send(hiddenButton);
     expect(steer.touchCount, "the menu has gone; this is just a finger now").toBe(1);
     expect(steer.value).toBeGreaterThan(0.5);
+  });
+});
+
+describe("a touch the browser will not let us cancel", () => {
+  /**
+   * Chromium marks a touchstart non-cancelable when a scroll is already under way — the scores
+   * list is the one thing in this game that scrolls. Calling preventDefault on such an event
+   * does nothing at all except log an error, and the browser check fails the build on console
+   * errors, so an unguarded call meant a deploy that could not go out.
+   *
+   * It is a no-op either way, which is what makes the guard safe. It is also why nothing else
+   * in the suite would ever have noticed.
+   */
+  it("does not try to cancel it", () => {
+    const el = new FakeElement();
+    const steer = new SteerInput(el as unknown as HTMLElement);
+
+    el.touch("touchstart", [WIDTH * 0.9], false);
+    expect(el.prevented, "preventDefault on a non-cancelable event only logs an error").toBe(0);
+
+    // ...and still steers, because the finger is on the glass whatever the browser says about
+    // its own scrolling
+    expect(steer.value).toBeGreaterThan(0.5);
+    expect(steer.touchCount).toBe(1);
+  });
+
+  it("still cancels an ordinary one, or the page scrolls under the rider", () => {
+    // The other half. Suppressing scroll and pull-to-refresh is the entire reason the touch
+    // listeners are registered non-passive.
+    const el = new FakeElement();
+    new SteerInput(el as unknown as HTMLElement);
+
+    el.touch("touchstart", [WIDTH * 0.9]);
+    expect(el.prevented).toBeGreaterThan(0);
   });
 });
 
