@@ -1007,10 +1007,11 @@ const shape = await page.evaluate(() => {
 
     const problems = [];
     if (!found.drawable) problems.push("the ramp mesh has nothing to draw");
-    if (!(found.length > 2.5 && found.length < 3.5))
-      problems.push(`the ramp is ${found.length}m long, not the 3m it should be`);
-    if (!(found.width > 0.8 && found.width < 1.6))
-      problems.push(`the ramp is ${found.width}m wide, not the 1m it should be`);
+    if (!(found.length > 3.5 && found.length < 4.5))
+      problems.push(`the ramp is ${found.length}m long, not the 4m it should be`);
+    // The bounding box runs a little wide of 2m because the ribbon curves with the racing line
+    if (!(found.width > 1.8 && found.width < 2.8))
+      problems.push(`the ramp is ${found.width}m wide, not the 2m it should be`);
     if (scrolled === found.scroll)
       problems.push(`the chevrons are not moving (vOffset stuck at ${scrolled})`);
     // 20 km/h for the length of it, and this rider covered all of it

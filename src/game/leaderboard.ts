@@ -58,8 +58,9 @@ export interface ScoreRecord {
  *   2  the mountain started escalating past 1300m, out to 5km
  *   3  the rider stopped colliding as a 0.6m circle and became the shape of a board
  *   4  speed ramps appeared on the racing line
+ *   5  those ramps grew from 3x1m to 4x2m, so far more runs collect them
  */
-export const COURSE_GENERATION = 4;
+export const COURSE_GENERATION = 5;
 
 const STORE_KEY = "downhill.scores.v1";
 

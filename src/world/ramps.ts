@@ -7,14 +7,15 @@
  *
  * **They sit on the racing line by construction, not by luck.** A ramp is defined as a stretch
  * of `gateX` rather than as a position of its own, so it curves with the line and can never be
- * generated somewhere the obstacle field has put a tree — the clear channel is 2.5m at its
- * narrowest and the ramp is 1m wide, so it fits inside the guarantee with room either side.
+ * generated somewhere the obstacle field has put a tree — the clear channel is 2.5m either
+ * side at its narrowest and the ramp reaches 1m either side, so it fits inside the guarantee
+ * with room to spare.
  *
  * **Not part of the height field**, which is where this started. A ramp in `heightAt` would be
  * ridden and launched off by the existing physics for free, and would render itself — but the
- * terrain is meshed at 2m per quad, so a 3m ramp would be sampled by one or two vertices and
- * look like nothing at all. Raising the resolution enough to show it is not worth doing for a
- * feature that occupies three metres in every two hundred and fifty. So the ramp is its own
+ * terrain is meshed at 2m per quad, so a ramp would be sampled by one or two vertices and look
+ * like nothing at all. Raising the resolution enough to show it is not worth doing for a
+ * feature that occupies four metres in every two hundred and fifty. So the ramp is its own
  * terrain-hugging ribbon, and what it does to the rider is applied directly.
  */
 
@@ -31,9 +32,15 @@ import { gateX, type CourseParams } from "./course";
 import type { TerrainField } from "./terrain";
 
 /** How long a ramp is, in metres down the mountain. */
-export const RAMP_LENGTH = 3;
-/** How wide, in metres. Narrow enough that hitting one is a line you chose to hold. */
-export const RAMP_WIDTH = 1;
+export const RAMP_LENGTH = 4;
+/**
+ * How wide, in metres.
+ *
+ * Still narrower than the clear channel it lives inside — that is 2.5m either side of the
+ * racing line at its very narrowest, against 1m of ramp either side — so a ramp can no more
+ * collide with a tree at this width than at the last one.
+ */
+export const RAMP_WIDTH = 2;
 
 /**
  * Speed handed out for riding the full length, in m/s. 20 km/h.
@@ -274,7 +281,14 @@ function createChevronTexture(scene: Scene): DynamicTexture {
   const tex = new DynamicTexture("rampChevrons", { width: W, height: H }, scene, false);
   const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
 
-  ctx.fillStyle = "#06d6a0"; // mint, the one colour on the palette nothing else on the snow uses
+  // Red against yellow, the loudest pair there is. Mint was the first choice and reads too
+  // softly against bright snow at the distance a rider first sees a ramp from — which is the
+  // one moment the marking has to work at all.
+  //
+  // A deeper red than the palette's berry, which is within a few percent of the rider's
+  // jacket. Two saturated pinks a few metres apart on screen is one thing too many to parse
+  // at speed, and the ramp is the one that has to be recognised instantly.
+  ctx.fillStyle = "#e63946";
   ctx.fillRect(0, 0, W, H);
 
   // Two chevrons per tile, so the seam between repeats lands mid-gap rather than mid-arrow
