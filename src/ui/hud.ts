@@ -6,7 +6,6 @@
  */
 
 import { formatDistance, formatWhen, readScores } from "../game/leaderboard";
-import { speedMultiplier } from "../game/score";
 import { dailyLabel, isDaily, seedLabel } from "../game/seed";
 
 function must<T extends HTMLElement>(id: string): T {
@@ -36,6 +35,8 @@ export class Hud {
   private readonly speed = must("hud-speed");
   private readonly score = must("hud-score");
   private readonly mult = must("hud-mult");
+  private readonly boostBar = must("hud-boost");
+  private readonly boostFill = must("hud-boost-fill");
   private readonly dist = must("hud-dist");
   private readonly fps = must("hud-fps");
 
@@ -244,19 +245,38 @@ export class Hud {
   }
 
   /** Called every frame while riding. Kept to plain text writes — no layout thrash. */
-  updateHud(speedMs: number, distance: number, score: number, fps: number): void {
+  /**
+   * `multiplier` and `boost` come from the score rather than being recomputed here.
+   *
+   * The HUD used to derive the multiplier from speed on its own, which was fine while speed
+   * was the only thing feeding it. A ramp bonus is not a function of speed, so a readout that
+   * works it out from speed would show the wrong number at the one moment anybody is looking.
+   */
+  updateHud(
+    speedMs: number,
+    distance: number,
+    score: number,
+    fps: number,
+    multiplier: number,
+    boost: number,
+  ): void {
     this.fps.textContent = String(Math.round(fps));
     this.speed.textContent = String(Math.round(speedMs * 3.6));
     this.dist.textContent = String(Math.floor(distance));
     this.score.textContent = score.toLocaleString();
 
-    const mult = speedMultiplier(speedMs);
-    if (mult > 1.02) {
+    if (multiplier > 1.02) {
       this.mult.hidden = false;
-      this.mult.textContent = `×${mult.toFixed(2)}`;
+      this.mult.textContent = `×${multiplier.toFixed(2)}`;
     } else {
       this.mult.hidden = true;
     }
+
+    // The bar is the ramp bonus draining, so the player can see what they bought and how long
+    // it lasts. Scaled rather than resized, which the compositor can do without a reflow.
+    this.boostBar.hidden = boost <= 0;
+    this.mult.classList.toggle("is-boosted", boost > 0);
+    if (boost > 0) this.boostFill.style.transform = `scaleX(${boost})`;
   }
 
   /** `remaining` is 1 when the player has just left the course, 0 when the run ends. */

@@ -59,8 +59,9 @@ export interface ScoreRecord {
  *   3  the rider stopped colliding as a 0.6m circle and became the shape of a board
  *   4  speed ramps appeared on the racing line
  *   5  those ramps grew from 3x1m to 4x2m, so far more runs collect them
+ *   6  the speed bonus stopped capping below normal riding, and ramps pay a bonus of their own
  */
-export const COURSE_GENERATION = 5;
+export const COURSE_GENERATION = 6;
 
 const STORE_KEY = "downhill.scores.v1";
 

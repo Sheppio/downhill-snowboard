@@ -394,7 +394,10 @@ class Game {
 
     // Paid over the ground actually covered since the last frame, not per frame: a per-frame
     // award would be worth twice as much at 120fps as at 60, and this leaderboard is shared.
-    applyRamps(c, this.field, this.seedHash, wasAt);
+    // A ramp is worth a burst of multiplier as well as the speed, because the speed alone was
+    // overshooting the bonus ceiling and buying almost nothing.
+    const earned = applyRamps(c, this.field, this.seedHash, wasAt);
+    if (earned.boost > 0) this.score.awardBoost();
 
     this.terrain.update(c.z);
     this.obstacleRenderer.update(c.z);
@@ -417,8 +420,15 @@ class Game {
       c.lastLandingImpact = 0;
     }
 
-    this.score.update(c.distance, c.speed);
-    this.hud.updateHud(c.speed, c.distance, this.score.value, this.engine.getFps());
+    this.score.update(c.distance, c.speed, dt);
+    this.hud.updateHud(
+      c.speed,
+      c.distance,
+      this.score.value,
+      this.engine.getFps(),
+      this.score.multiplierAt(c.speed),
+      this.score.boost,
+    );
 
     // Obstacles
     // Physics position, not the interpolated render one, so collisions stay deterministic

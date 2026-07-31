@@ -20,6 +20,9 @@ Follow the gulley down the mountain, dodge the trees and rocks, and go as far as
 is the distance you cover, with a small multiplier for speed — so a fast clean line beats a
 cautious one, but not by enough to make straight-lining into a tree a good idea.
 
+Riding a speed ramp roughly doubles the multiplier for three seconds, so the racing line pays
+for itself. See below.
+
 Ground is paid for once. Hold full lock long enough and the board comes round past ninety
 degrees and starts climbing back up the mountain; those metres then arrive a second time. The
 score keeps a high-water mark rather than a last position, so re-covering them is worth
@@ -65,7 +68,18 @@ reference pilot used to reach 8km on 52 of 53 daily seeds and now manages it on 
 ## Speed ramps
 
 Every 250m or so there is a **4m by 2m chevroned pad laid along the racing line**, red and
-yellow. Ride the length of one and it pays **20 km/h**, plus a small kick off the lip.
+yellow. Ride the length of one and it pays **20 km/h**, a small kick off the lip, and a score
+multiplier that roughly doubles for three seconds — normal riding reads about ×1.3, a ramp
+takes it to ×2.0 and drains back down, with a bar under the score showing what is left.
+
+The multiplier bonus is separate from the speed bonus on purpose. For a while a ramp was worth
+almost nothing on the score: the speed bonus capped at 34 m/s while riders sit at 31, so a
+ramp's 5.6 m/s overshot into a dead zone and moved the multiplier by 0.08 before stopping. The
+ceiling is 42 m/s now, above anything a boosted rider reaches, so speed registers properly —
+but making the *speed* curve steep enough to carry a ramp on its own would have turned a
+distance game into a speed game. So the ramp pays for itself, and the speed curve keeps its own
+job. Carrying the speed away from a ramp is worth something; crashing two metres past it is
+not.
 
 "Or so" is doing real work: **ramps only go on straights**, and a stretch that corners all the
 way through gets none. That is not a nicety. A rider in the air keeps only 35% of their turn
@@ -216,8 +230,9 @@ older one are deleted the next time the game loads. A 9,000 set before the mount
 getting harder past 1300m is not the same achievement as a 9,000 set after it, and leaving the
 two side by side makes the list meaningless. `COURSE_GENERATION` in `src/game/leaderboard.ts`
 is the stamp — bump it in the same commit as any change that makes scores incomparable. It has
-moved four times: for the escalation past 1300m, for the rider gaining the shape of a board,
-for speed ramps, and for those ramps growing.
+moved five times: for the escalation past 1300m, for the rider gaining the shape of a board,
+for speed ramps, for those ramps growing, and for the scoring multiplier being rebalanced
+around them.
 
 A generation rather than a cutoff date, deliberately: a date is only as good as the clock on
 the phone, and a device running a few days slow would stamp every *new* score before the

@@ -247,10 +247,14 @@ export function applyRamps(
   field: TerrainField,
   seed: number,
   fromZ: number,
-): void {
-  if (rider.y - field.heightAt(rider.x, rider.z) > RAMP_REACH) return;
+): RampReward {
+  if (rider.y - field.heightAt(rider.x, rider.z) > RAMP_REACH) return NOTHING;
   const earned = rampReward(field.params, seed, rider.x, fromZ, rider.z);
   if (earned.boost > 0 || earned.lift > 0) rider.boost(earned.boost, earned.lift);
+  // Returned rather than left to the caller to infer from the rider's speed going up: the
+  // rider accelerates downhill anyway, by more in a single 120Hz step than a threshold could
+  // reliably tell from a ramp, so "did the speed rise" answers yes almost every frame.
+  return earned;
 }
 
 // --- Rendering ------------------------------------------------------------------------------

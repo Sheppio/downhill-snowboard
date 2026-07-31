@@ -11,35 +11,47 @@ describe("the speed bonus", () => {
   it("pays nothing below a cruise, and maxes out at a genuinely quick pace", () => {
     expect(speedMultiplier(0)).toBe(1);
     expect(speedMultiplier(18), "65 km/h is the floor").toBe(1);
-    expect(speedMultiplier(34), "122 km/h is the ceiling").toBeCloseTo(1.35, 6);
-    expect(speedMultiplier(60), "and it does not keep climbing past it").toBeCloseTo(1.35, 6);
+    expect(speedMultiplier(42), "151 km/h is the ceiling").toBeCloseTo(1.55, 6);
+    expect(speedMultiplier(60), "and it does not keep climbing past it").toBeCloseTo(1.55, 6);
   });
 
   it("rises smoothly in between rather than stepping", () => {
-    const half = speedMultiplier(26);
+    const half = speedMultiplier(30);
     expect(half).toBeGreaterThan(1);
-    expect(half).toBeLessThan(1.35);
-    expect(half).toBeCloseTo(1.175, 3);
+    expect(half).toBeLessThan(1.55);
+    expect(half).toBeCloseTo(1.275, 3);
+  });
+
+  it("has headroom above the speed people actually ride at", () => {
+    // The bug this range exists to fix. The ceiling used to be 34 m/s while the rider sits at
+    // about 31 for most of a run and a ramp adds 5.6 — so the boost overshot into a dead zone
+    // and a ramp moved the multiplier by 0.08 before stopping dead.
+    const cruising = speedMultiplier(31);
+    const boosted = speedMultiplier(31 + 20 / 3.6);
+
+    expect(cruising, "normal riding is left where it was").toBeCloseTo(1.3, 2);
+    expect(boosted, "and a ramp's speed is still on the scale").toBeGreaterThan(cruising + 0.1);
+    expect(boosted, "with room left above it").toBeLessThan(speedMultiplier(42));
   });
 });
 
 describe("accruing score", () => {
   it("counts ground covered, not ground stood on", () => {
     const s = new Score();
-    s.update(100, 40);
-    s.update(100, 40);
-    expect(s.value, "the second call covered no new ground").toBe(135);
+    s.update(100, 40, 0);
+    s.update(100, 40, 0);
+    expect(s.value, "the second call covered no new ground").toBe(150);
   });
 
   it("earns nothing for going backwards", () => {
     // The rider can be pushed back up a bank. Losing ground should not pay, and must not be
     // able to pay *again* on the way back down over the same metres.
     const s = new Score();
-    s.update(100, 40);
-    s.update(80, 40);
-    expect(s.value).toBe(135);
-    s.update(100, 40);
-    expect(s.value, "the same 20m must not be sold twice").toBe(135);
+    s.update(100, 40, 0);
+    s.update(80, 40, 0);
+    expect(s.value).toBe(150);
+    s.update(100, 40, 0);
+    expect(s.value, "the same 20m must not be sold twice").toBe(150);
   });
 
   it("cannot be farmed by circling, with a real rider", () => {
@@ -56,7 +68,7 @@ describe("accruing score", () => {
       let retreat = 0;
       for (let i = 0; i < 120 * 25; i++) {
         rider.update(1 / 120, 1); // full lock, held, which is what a panicking player does
-        score.update(rider.distance, rider.speed);
+        score.update(rider.distance, rider.speed, 0);
         furthest = Math.max(furthest, rider.distance);
         retreat = Math.max(retreat, furthest - rider.distance);
       }
@@ -76,9 +88,59 @@ describe("accruing score", () => {
     // Slow for the first half, fast for the second. Scoring the whole run at the speed it
     // happened to finish at would be both wrong and trivial to game — coast to the line.
     const perMetre = new Score();
-    perMetre.update(1000, 10); // no bonus
-    perMetre.update(2000, 40); // full bonus
-    expect(perMetre.value).toBe(1000 + 1350);
+    perMetre.update(1000, 10, 0); // no bonus
+    perMetre.update(2000, 40, 0); // full bonus
+    expect(perMetre.value).toBe(1000 + 1504);
+  });
+});
+
+describe("the ramp bonus", () => {
+  it("is worth about as much again as riding fast", () => {
+    // The point of it. The speed curve alone could not make a ramp feel like anything without
+    // turning this into a speed game, so the ramp pays for itself on top.
+    const s = new Score();
+    const cruising = s.multiplierAt(31);
+    s.awardBoost();
+    expect(s.multiplierAt(31 + 20 / 3.6), "a ramp roughly doubles the bonus").toBeGreaterThan(1.9);
+    expect(cruising).toBeCloseTo(1.3, 2);
+  });
+
+  it("drains away over a few seconds rather than dropping", () => {
+    // Carrying the speed away from a ramp should be worth something; crashing two metres past
+    // it should not pay the same as riding the next hundred.
+    const s = new Score();
+    s.awardBoost();
+    expect(s.boost).toBe(1);
+
+    s.update(0, 30, 1.5);
+    expect(s.boost, "half gone at half the duration").toBeCloseTo(0.5, 6);
+
+    s.update(0, 30, 5);
+    expect(s.boost, "and it does not go negative").toBe(0);
+    expect(s.multiplierAt(30)).toBeCloseTo(speedMultiplier(30), 6);
+  });
+
+  it("refreshes rather than stacking", () => {
+    // Two ramps close together should not compound into a multiplier nothing else can reach.
+    const s = new Score();
+    s.awardBoost();
+    const one = s.multiplierAt(30);
+    s.awardBoost();
+    s.awardBoost();
+    expect(s.multiplierAt(30)).toBe(one);
+  });
+
+  it("pays the frame it is collected on", () => {
+    // Draining before paying would lose the first frame of every boost, which is the one the
+    // player actually connects with the ramp.
+    const boosted = new Score();
+    boosted.awardBoost();
+    boosted.update(100, 30, 1 / 60);
+
+    const plain = new Score();
+    plain.update(100, 30, 1 / 60);
+
+    expect(boosted.value).toBeGreaterThan(plain.value);
   });
 });
 
@@ -115,7 +177,7 @@ describe("the score does not depend on the frame rate", () => {
       /** Score the trace as a game running at `120 / stride` frames per second would. */
       const scoreAt = (stride: number): number => {
         const s = new Score();
-        for (let i = stride - 1; i < trace.length; i += stride) s.update(trace[i]!.d, trace[i]!.v);
+        for (let i = stride - 1; i < trace.length; i += stride) s.update(trace[i]!.d, trace[i]!.v, 0);
         return s.value;
       };
 

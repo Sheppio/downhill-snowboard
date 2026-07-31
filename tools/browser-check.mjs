@@ -1006,10 +1006,27 @@ const shape = await page.evaluate(() => {
           lift += l;
           real(b, l);
         };
+
+        // What the player sees while it happens. The multiplier is the readout the whole
+        // reward is expressed through, so a ramp that pays into the score without moving this
+        // is a ramp nobody can tell they took.
+        const readMult = () => {
+          const el = document.getElementById("hud-mult");
+          return el.hidden ? 1 : Number(el.textContent.replace("×", "")) || 1;
+        };
+        let multBefore = readMult();
+        let multPeak = multBefore;
+        let barSeen = false;
+        const watching = setInterval(() => {
+          multPeak = Math.max(multPeak, readMult());
+          if (!document.getElementById("hud-boost").hidden) barSeen = true;
+        }, 16);
+
         return new Promise((resolve) =>
           setTimeout(() => {
             c.boost = real;
-            resolve({ boost, lift });
+            clearInterval(watching);
+            resolve({ boost, lift, multBefore, multPeak, barSeen });
           }, 700),
         );
       },
@@ -1029,13 +1046,24 @@ const shape = await page.evaluate(() => {
     if (!(paid.boost * 3.6 > 17 && paid.boost * 3.6 < 21))
       problems.push(`riding it paid ${(paid.boost * 3.6).toFixed(1)} km/h, not 20`);
     if (!(paid.lift > 0)) problems.push("the lip gave no kick at all");
+    // The reward has to be visible, not just banked. Asserted as the *jump* rather than an
+    // absolute: the rider is still winding up this early in a run, so the speed half of the
+    // multiplier is near 1 and an absolute threshold would be measuring the wrong thing. The
+    // ramp bonus is 0.6, and before it existed a ramp moved this by 0.08.
+    if (!(paid.multPeak - paid.multBefore > 0.4))
+      problems.push(
+        `the multiplier went x${paid.multBefore} → x${paid.multPeak} — the ramp pays into the ` +
+          `score without showing it`,
+      );
+    if (!paid.barSeen) problems.push("the boost bar never appeared");
 
     if (problems.length) fail(`speed ramps — ${problems.join("; ")}`);
     else
       console.log(
         `✓ speed ramps: ${found.count} drawn, ${found.length}×${found.width}m with the ` +
           `chevrons scrolling, and riding one paid ${(paid.boost * 3.6).toFixed(1)}km/h ` +
-          `plus a ${paid.lift.toFixed(1)}m/s kick`,
+          `plus a ${paid.lift.toFixed(1)}m/s kick, taking the multiplier ×${paid.multBefore} ` +
+          `→ ×${paid.multPeak} with the bar draining`,
       );
   }
 }

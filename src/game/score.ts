@@ -15,10 +15,43 @@ import { clamp01 } from "../core/math";
 
 /** Below this speed there is no bonus at all. About 65 km/h. */
 const CRUISE_SPEED = 18;
-/** Speed at which the bonus is maxed out. About 122 km/h — a genuinely quick run. */
-const FAST_SPEED = 34;
-/** Maximum bonus. Deliberately small — this is a distance game with a speed kicker. */
-const MAX_BONUS = 0.35;
+/**
+ * Speed at which the speed bonus is maxed out. About 151 km/h.
+ *
+ * This was 34 m/s, and had been since before the mountain learned to keep getting faster.
+ * Measured after speed ramps, the rider sits at 31 m/s for most of a run and peaks at 41 — so
+ * the ceiling sat three metres a second above normal riding, and a ramp's 5.6 m/s boost
+ * overshot it into a dead zone where the extra speed counted for nothing. A ramp moved the
+ * multiplier from ×1.27 to ×1.35 and stopped, which is what "no real benefit" felt like.
+ *
+ * 42 is just above what a boosted rider actually reaches, so the whole range of speeds the
+ * game produces now maps onto the bonus instead of piling up against its top.
+ */
+const FAST_SPEED = 42;
+/**
+ * Maximum speed bonus.
+ *
+ * Raised with the ceiling rather than instead of it, and by exactly enough to leave normal
+ * riding where it was: at 31 m/s this still reads ×1.30, as it did with the old 0.35 over the
+ * old narrower range. What changed is the headroom above that — a ramp now reaches ×1.42 on
+ * speed alone instead of hitting a wall at ×1.35.
+ */
+const MAX_BONUS = 0.55;
+
+/**
+ * Extra multiplier for having just ridden a ramp, on top of whatever the speed is worth.
+ *
+ * The speed bonus alone could not make a ramp feel like something without turning this into a
+ * speed game: to move the multiplier by half you would need a slope that also pays hugely for
+ * simply pointing downhill, and distance has to stay the thing players chase. So the ramp pays
+ * for *itself*, directly, and the speed curve keeps its own job.
+ *
+ * Drains rather than dropping, so carrying the speed away from the ramp is worth something and
+ * crashing two metres past it is not.
+ */
+const BOOST_BONUS = 0.6;
+/** How long the ramp bonus takes to drain away, in seconds. */
+const BOOST_DURATION = 3;
 
 export interface ScoreSummary {
   score: number;
@@ -48,18 +81,44 @@ export class Score {
    * until it has been won back, which is what the run is.
    */
   private furthest = 0;
+  /** Seconds of ramp bonus left to drain. */
+  private boostLeft = 0;
 
   reset(): void {
     this.total = 0;
     this.furthest = 0;
+    this.boostLeft = 0;
   }
 
-  /** Accrue score for any new ground covered since the last call. */
-  update(distance: number, speed: number): void {
-    if (distance <= this.furthest) return; // no new ground; riding back uphill earns nothing
-    const delta = distance - this.furthest;
-    this.furthest = distance;
-    this.total += delta * speedMultiplier(speed);
+  /** A ramp was ridden. Refreshes the bonus rather than stacking it. */
+  awardBoost(): void {
+    this.boostLeft = BOOST_DURATION;
+  }
+
+  /** What the next metre is worth: the speed bonus plus whatever the ramp bonus has left. */
+  multiplierAt(speed: number): number {
+    return speedMultiplier(speed) + BOOST_BONUS * (this.boostLeft / BOOST_DURATION);
+  }
+
+  /** How much of the ramp bonus is left, in [0, 1]. Drives the HUD's boost bar. */
+  get boost(): number {
+    return this.boostLeft / BOOST_DURATION;
+  }
+
+  /**
+   * Accrue score for any new ground covered since the last call, and drain the ramp bonus.
+   *
+   * `dt` is real time, and only the bonus uses it — the score itself is paid per metre, so a
+   * slow frame earns exactly as much as the fast frames it replaces.
+   */
+  update(distance: number, speed: number, dt: number): void {
+    if (distance > this.furthest) {
+      const delta = distance - this.furthest;
+      this.furthest = distance;
+      this.total += delta * this.multiplierAt(speed);
+    }
+    // Drained after paying, so the frame a ramp is collected on is worth the full bonus
+    this.boostLeft = Math.max(0, this.boostLeft - dt);
   }
 
   get value(): number {
