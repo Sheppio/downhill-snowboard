@@ -22,7 +22,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { fbm2 } from "../core/noise";
 import { clamp01, lerp } from "../core/math";
 import {
-  SLOPE,
+  dropTo,
   bankProfile,
   centreX,
   halfWidth,
@@ -37,8 +37,10 @@ import {
 // with gain 0.5 and lacunarity 2, every octave contributes about equally to the gradient, so
 // the worst-case along-track slope is roughly `UNDULATION_AMP * 2*PI * octaves / scaleZ`.
 // Stretching the features along z (scaleZ > scaleX) buys visible rolling terrain while
-// keeping that number under SLOPE. `terrain.test.ts` asserts the invariant numerically across
-// many seeds — if you raise these, that test is what will catch you.
+// keeping that number under the fall-line gradient. The binding case is the *opening* gradient,
+// SLOPE_START, since the mountain only steepens from there — the headroom deep in a run is far
+// larger than it is in the first kilometre. `terrain.test.ts` asserts the invariant numerically
+// across many seeds — if you raise these, that test is what will catch you.
 
 // These also decide how much *air* the rider gets, which pulls the opposite way: launching
 // needs curvature, and curvature and gradient are set by the same two numbers. A roller
@@ -101,8 +103,9 @@ export class TerrainField {
     const ripple =
       fbm2(this.rippleSeed, x, z, { octaves: 2, gain: 0.5, scale: RIPPLE_SCALE }) * RIPPLE_AMP;
 
-    // The rider descends toward +z, so height falls as z rises.
-    return -z * SLOPE + bank + undulation + ripple;
+    // The rider descends toward +z, so height falls as z rises. `dropTo` rather than a constant
+    // times z, because the fall line steepens with distance — see course.ts.
+    return -dropTo(z) + bank + undulation + ripple;
   }
 
   /**

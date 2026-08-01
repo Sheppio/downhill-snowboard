@@ -120,6 +120,24 @@ describe("every course can be completed", () => {
     // Speed ramps then took it to 21 of 53 dying before 8000m, worst 3273m. That margin over
     // the 3000m bound is what sets RAMP_MAX_CURVATURE: ramps go on straights precisely so this
     // stays true, and the threshold there is the loosest one that keeps it.
+    //
+    // Tipping the fall line toward 45° (see slopeAt) is the last thing to move this, and it is
+    // worth recording what it took, because the first cut broke the guarantee outright — the
+    // worst seed fell to 2518m. Three things bought it back, in descending order of how much
+    // each was worth:
+    //
+    //   - Fixing the launch test, which had been treating the rider's own turning and
+    //     acceleration as the ground falling away. Spurious on any gradient, but it scales with
+    //     gradient, so a steeper mountain made a long-standing bug into a fatal one: air time
+    //     went to 55% of a run. Worth ~300m.       (controller.ts, "leaving the ground")
+    //   - Retiring `dragScaleAt`, which was faking the same speed increase the mountain now
+    //     supplies for real. Worth ~470m.
+    //   - Widening GATE_CLEARANCE_DEEP from 2.5 to 2.8, since a gap is only as tight as the
+    //     speed you arrive at it. Worth the last ~290m.
+    //
+    // Net result, measured the same way: 27 of 57 dying before 8000m, worst 3274m — the same
+    // margin as before the mountain tipped, on a course that now peaks at 173 km/h instead of
+    // 148. If that worst figure starts sliding toward 3000 again, those are the three levers.
     const seeds = [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"];
     const RUN_DISTANCE = 3000;
 

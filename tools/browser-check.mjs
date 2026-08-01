@@ -1612,6 +1612,206 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     );
 }
 
+
+// The mountain tips from 0.40 to a 45° face by 10km, and nothing had ever rendered that ground
+// — every check above rides the first few hundred metres, where the gradient is still the
+// opening one. What makes this worth a section rather than a unit test: the chase camera sits
+// *behind* the rider, which on a steep face means uphill, and the ground behind rises to meet
+// it. `heightAt` being right says nothing about whether the picture is still a rideable view
+// down a mountain or the inside of a snowdrift.
+{
+  await page.evaluate(() => window.__game.startRun("alpine"));
+  await page.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+
+  const depths = [];
+  for (const z of [500, 3000, 6000, 9500]) {
+    const at = await page.evaluate((target) => {
+      const g = window.__game;
+      const c = g.controller;
+      // Teleport rather than ride: 9.5km at 45 m/s is three and a half minutes of real time,
+      // and the question here is about the geometry at a depth, not about getting there.
+      c.z = target;
+      // Drop into the gulley floor as well as down the mountain. The corridor snakes, so
+      // holding x while moving z a kilometre leaves the rider partway up a bank and out of
+      // bounds — the screenshots came back captioned RETURN TO COURSE, and the framing was
+      // being measured from somewhere no run ever is. The floor is the lowest snow across the
+      // corridor, which is inside it by construction.
+      {
+        // ...and into a gap in the trees, without leaving the gulley to find one.
+        //
+        // Both halves are needed and each broke the picture on its own. Dropping to the lowest
+        // snow put the rider under a spruce and the chase camera inside its foliage — a solid
+        // wall of green, twice. Hunting for the widest clearing instead walked out of the
+        // corridor entirely and filed a screenshot captioned RETURN TO COURSE.
+        //
+        // So: stay on the floor, which is the flat band the banks rise from and therefore
+        // everything within about a metre of the lowest point across the corridor, and pick
+        // the roomiest spot *inside* it. The margin ladder matters because a trunk's collider
+        // is 0.7m — that is what you crash into — while the canopy the camera flies through is
+        // metres across, and deep in the run the trees are dense enough that a wide gap may
+        // simply not exist.
+        const clearAt = (x, z, margin) =>
+          !g.obstacles.hitTest(x, z, g.field.heightAt(x, z), 0, margin, margin);
+
+        let floorH = Infinity;
+        for (let x = c.x - 70; x <= c.x + 70; x += 0.5)
+          floorH = Math.min(floorH, g.field.heightAt(x, c.z));
+
+        let bestX = c.x;
+        for (const margin of [6, 4, 2.5, c.halfWidth]) {
+          const spots = [];
+          for (let x = c.x - 70; x <= c.x + 70; x += 0.5) {
+            if (g.field.heightAt(x, c.z) > floorH + 1.2) continue; // off the floor, up a bank
+            // Behind as well as at the rider — that is where the camera actually sits
+            if (![0, -5, -10, -15].every((dz) => clearAt(x, c.z + dz, margin))) continue;
+            spots.push(x);
+          }
+          if (spots.length) {
+            bestX = spots[Math.floor(spots.length / 2)]; // middle of the widest run of gaps
+            break;
+          }
+        }
+        c.x = bestX;
+      }
+      c.y = g.field.heightAt(c.x, c.z);
+      c.vy = 0;
+      c.airborne = false;
+      // The interpolation state has to move with it. What gets drawn is a lerp between the two
+      // most recent physics steps, so teleporting `z` alone leaves `renderZ` smeared between
+      // here and wherever the rider was, and every framing number below would describe a rider
+      // that is not on the screen.
+      c.prevX = c.x;
+      c.prevY = c.y;
+      c.prevZ = c.z;
+      c.prevHeading = c.heading;
+      c.accumulator = 0;
+      g.terrain.prime(c.z);
+      g.camera.reset(c); // snap rather than damp in from a kilometre away
+      for (let i = 0; i < 120; i++) g.camera.update(c, g.field, 1 / 60);
+      g.scene.render();
+
+      const cam = g.camera.camera;
+      const e = g.engine;
+      const ar = e.getRenderWidth() / e.getRenderHeight();
+      const p = cam.position;
+      const t = cam.getTarget();
+      const ry = g.field.heightAt(c.renderX, c.renderZ) + 0.9; // mid-torso
+      const pitch = (x, y, z) => Math.atan2(y, Math.hypot(x, z));
+      const below =
+        pitch(t.x - p.x, t.y - p.y, t.z - p.z) -
+        pitch(c.renderX - p.x, ry - p.y, c.renderZ - p.z);
+
+      // The gradient the ground actually has here, straight off the rendered height field.
+      //
+      // Two corrections, both of which the naive version got wrong by more than the thing it
+      // is trying to measure:
+      //
+      //  - Follow the *floor* of the gulley, taken as the lowest snow across the corridor at
+      //    each z, rather than a fixed x. The centreline snakes, so a fixed x slides up onto a
+      //    bank and back off it, and the bank is 9m tall — that read 0.42 at 3000m where the
+      //    fall line is 0.52, and 0.84 at 6000m where it is 0.72. Bias in both directions,
+      //    larger than the whole escalation being checked.
+      //  - Regress over ±120m instead of differencing over 2m. The undulation is 4.5m over a
+      //    ~48m wavelength, so a short baseline measures whichever roller the rider is sitting
+      //    on: that read 0.48 at 500m and 0.34 at 3000m on ground that is flat 0.40 at both.
+      const floorAt = (z) => {
+        let lowest = Infinity;
+        for (let x = c.x - 70; x <= c.x + 70; x += 1) {
+          const h = g.field.heightAt(x, z);
+          if (h < lowest) lowest = h;
+        }
+        return lowest;
+      };
+
+      // Least squares on height against z: gradient is -slope, undulation falls out as residual
+      let sZ = 0, sH = 0, sZZ = 0, sZH = 0, n = 0;
+      for (let dz = -120; dz <= 120; dz += 4) {
+        const h = floorAt(c.z + dz);
+        sZ += dz; sH += h; sZZ += dz * dz; sZH += dz * h; n++;
+      }
+      const gradient = -(n * sZH - sZ * sH) / (n * sZZ - sZ * sZ);
+
+      // Is the camera above the snow it is flying over, or buried in it?
+      const clearance = p.y - g.field.heightAt(p.x, p.z);
+
+      // Take the speed off on the way out, so the run cannot ride away between here and the
+      // shutter. The render loop keeps going after `evaluate` returns: at 45 m/s down a 45°
+      // face the first version of this filed a picture of the rider cartwheeling through the
+      // sky, half a bank from anywhere it had measured. Pausing instead is worse — the rider
+      // mesh only follows the controller while playing, so a paused teleport photographs an
+      // empty mountain with the rider left a kilometre uphill. Everything returned below was
+      // measured above, at the real speed, before this line.
+      c.speed = 0;
+
+      return {
+        z: target,
+        gradient,
+        clearance,
+        riderDownFrame: 0.5 + 0.5 * (Math.tan(below) / Math.tan(cam.fov / 2)),
+        // Terrain actually built here, rather than the rider hanging over a hole
+        chunks: g.scene.meshes.filter((m) => m.name.startsWith("chunk") && m.isEnabled()).length,
+        ar,
+      };
+    }, z);
+    await shot(`09-deep-${z}m`);
+    depths.push(at);
+  }
+
+  const problems = [];
+
+  // What the fall line is supposed to be at each depth: flat 0.40 to 1300m, then straight to
+  // 1.0 at 10km. Restated here as plain numbers rather than imported, deliberately — this check
+  // runs against the built bundle and cannot see the source, so an independent statement of the
+  // intended mountain is exactly what is wanted. If `slopeAt` is ever reshaped, these are meant
+  // to be edited by hand, having first been looked at.
+  const intended = { 500: 0.4, 3000: 0.52, 6000: 0.72, 9500: 0.97 };
+  // Measured against the floor of the gulley this comes out on the nose at every depth, so the
+  // tolerance is only absorbing the undulation residual left by the regression rather than any
+  // systematic bias. Well inside the 0.6 the gradient travels over a run.
+  const TOLERANCE = 0.05;
+
+  for (const d of depths) {
+    if (!(Math.abs(d.gradient - intended[d.z]) < TOLERANCE))
+      problems.push(
+        `at ${d.z}m the ground falls at ${d.gradient.toFixed(2)}, not the ${intended[d.z]} intended`,
+      );
+  }
+  for (let i = 1; i < depths.length; i++) {
+    if (!(depths[i].gradient > depths[i - 1].gradient + 0.05))
+      problems.push(
+        `the mountain stops steepening between ${depths[i - 1].z}m and ${depths[i].z}m ` +
+          `(${depths[i - 1].gradient.toFixed(2)} then ${depths[i].gradient.toFixed(2)})`,
+      );
+  }
+
+  for (const d of depths) {
+    if (!(d.chunks > 0)) problems.push(`no terrain built at ${d.z}m`);
+    // Bounded both ways: buried in the snow, or so far above it the run is a map view
+    if (!(d.clearance > 0.5 && d.clearance < 40))
+      problems.push(`the camera is ${d.clearance.toFixed(1)}m above the ground at ${d.z}m`);
+    // The same window the landscape check holds portrait to. A steeper mountain must not
+    // quietly push the rider out of frame, which is exactly what a camera clamped to the
+    // ground behind it would do as that ground rises.
+    if (!(d.riderDownFrame > 0.55 && d.riderDownFrame < 0.95))
+      problems.push(
+        `at ${d.z}m the rider sits ${(d.riderDownFrame * 100).toFixed(0)}% down the frame`,
+      );
+  }
+
+  if (problems.length) fail(`the deep mountain — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ the mountain steepens and stays rideable: ` +
+        depths
+          .map(
+            (d) =>
+              `${d.z}m grad ${d.gradient.toFixed(2)} (rider ${(d.riderDownFrame * 100).toFixed(0)}% down, ` +
+              `cam +${d.clearance.toFixed(1)}m)`,
+          )
+          .join(", "),
+    );
+}
+
 if (errors.length) process.exitCode = 1;
 
 await browser.close();

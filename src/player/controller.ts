@@ -61,37 +61,27 @@ export const RIDER_HALF_LENGTH = 0.81;
 const SLOPE_ACCEL_SCALE = 1.75;
 /** Constant board-on-snow friction, m/s². */
 const FRICTION = 0.6;
-/** Quadratic air resistance. Tuned with the above for a ~120 km/h top speed in real play. */
+/**
+ * Quadratic air resistance. Tuned with the above for a ~112 km/h top speed on the opening
+ * gradient, rising to about 164 km/h deep in a run as the fall line tips toward 45°.
+ */
 const AIR_DRAG = 0.0050;
 
 // --- The speed the mountain builds to ----------------------------------------------------
-// Terminal speed is where gravity along the slope balances air drag, so it is reached within
-// a few hundred metres and then never changes. That is why a long run used to feel the same
-// at 7km as at 1.5km: the rider was already going as fast as they ever would.
+// Terminal speed is where gravity along the slope balances air drag, so it is reached within a
+// few hundred metres and then never changes for a given gradient. That is why a long run used
+// to feel the same at 7km as at 1.5km: the rider was already going as fast as they ever would.
 //
-// Easing the drag with distance raises that ceiling. Speed is the lever worth reaching for
-// first because it makes everything harder at once — the same corner demands proportionally
-// more turn rate, and every gap between two trees arrives sooner — and it is felt rather
-// than read. Terminal speed goes as 1/sqrt(drag), so the relief below buys about +18%.
+// There used to be a `dragScaleAt` here that eased the drag with distance to raise that
+// ceiling, and it carried the note "it is the rider getting faster, not the mountain getting
+// steeper: the height field is untouched". The height field is no longer untouched — the fall
+// line now steepens from 0.40 toward 1.0 (see course.ts), which raises the ceiling for real,
+// since terminal speed goes as sqrt(gradient).
 //
-// It is the rider getting faster, not the mountain getting steeper: the height field is
-// untouched, so a seed builds the identical course it always did.
-
-/** Distance at which the drag starts easing. Matches where every other ramp used to stop. */
-const DRAG_RELIEF_START = 1300;
-/** Distance at which it is fully eased — where the course is meant to be brutal. */
-const DRAG_RELIEF_END = 5000;
-/** Drag remaining at the end of the ramp. 0.72 gives 1/sqrt(0.72) ≈ 1.18x the top speed. */
-const DRAG_RELIEF_MIN = 0.80;
-
-/** Air drag multiplier at a given distance down the mountain. */
-export function dragScaleAt(distance: number): number {
-  return lerp(
-    1,
-    DRAG_RELIEF_MIN,
-    clamp01((distance - DRAG_RELIEF_START) / (DRAG_RELIEF_END - DRAG_RELIEF_START)),
-  );
-}
+// Running both was doubling up, and measurement said the fake lever was the worse one: over 57
+// seeds ridden with the pilot it bought only +1.6% mean speed on the racing line while adding
+// +10% to the *peak*, and the peaks are what cost seeds. Retiring it moved the worst daily seed
+// from 2518m back to 2986m on its own. What it was for is now done by the mountain.
 
 /** Speed lost to carving, at full lock, as a fraction of current speed per second. */
 const CARVE_DRAG = 0.33;
@@ -331,7 +321,7 @@ export class RiderController {
       this.speed -= carve * this.speed * dt;
       this.speed -= FRICTION * dt;
     }
-    this.speed -= AIR_DRAG * dragScaleAt(this.distance) * this.speed * this.speed * dt;
+    this.speed -= AIR_DRAG * this.speed * this.speed * dt;
     if (this.speed < 0) this.speed = 0;
     if (this.speed > this.topSpeed) this.topSpeed = this.speed;
 
@@ -390,7 +380,17 @@ export class RiderController {
         this.airborne = false;
       }
     } else {
-      const demandedAccel = (surfaceVy - this.lastSurfaceVy) / dt;
+      // What the *ground* demands, with the heading held fixed across the difference.
+      //
+      // The obvious form — how much `surfaceVy` changed since last step — silently includes
+      // the rider's own turning, because `grad · forward` moves when `forward` does. On a
+      // smooth plane of gradient s, turning at θ̇ contributes `speed·s·sinθ·θ̇`, which at
+      // 33 m/s on a 0.6 gradient is 9.5 m/s²: a rider carving on flawlessly smooth snow was
+      // being thrown into the air by the act of turning, and the harder the mountain tipped
+      // the worse it got. Differencing the gradient alone leaves only the curvature of the
+      // terrain along the path actually travelled, which is the thing that really does
+      // launch you.
+      const demandedAccel = (this.speed * ((ngx - gx) * fx + (ngz - gz) * fz)) / dt;
       if (demandedAccel < -GRAVITY * LAUNCH_TOLERANCE) {
         // The crest has outrun gravity — go ballistic from the velocity we already had
         this.airborne = true;

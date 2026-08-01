@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { dragScaleAt, RiderController } from "./controller";
+import { RiderController } from "./controller";
 import { TerrainField } from "../world/terrain";
-import { centreX, halfWidth, OUT_OF_BOUNDS_FRACTION, lateralFraction } from "../world/course";
+import {
+  centreX,
+  halfWidth,
+  OUT_OF_BOUNDS_FRACTION,
+  lateralFraction,
+  slopeAt,
+  SLOPE_START,
+} from "../world/course";
 import { hashString } from "../core/rng";
 import { angleDelta, clamp } from "../core/math";
 import { pilotSteer } from "./pilot";
@@ -96,6 +103,61 @@ describe("carving costs speed", () => {
     expect(Math.abs(ride("dir-test", 0.6, 3).heading + ride("dir-test", -0.6, 3).heading)).toBeLessThan(
       0.3,
     );
+  });
+});
+
+/**
+ * A perfectly smooth inclined plane: no undulation, no ripple, no banks.
+ *
+ * The point is that it has *no curvature anywhere*, so nothing about it can legitimately throw
+ * the rider into the air. Anything that launches here is the model doing it to itself.
+ */
+function plane(gradient: number): TerrainField {
+  const field = new TerrainField(hashString("plane"));
+  // `gradientAt` central-differences `heightAt`, so overriding the one gives a consistent pair
+  Object.defineProperty(field, "heightAt", { value: (_x: number, z: number) => -z * gradient });
+  return field;
+}
+
+describe("leaving the ground", () => {
+  it("does not launch the rider off perfectly smooth ground, however steep", () => {
+    // The regression this exists for. Leaving the ground was decided by how fast `surfaceVy`
+    // — the vertical speed needed to follow the ground — was changing, and `surfaceVy` is
+    // `speed * (gradient · forward)`. That product moves when the rider *turns* or *speeds up*,
+    // neither of which is the ground falling away: on a 0.8 gradient at 30 m/s, swinging the
+    // board across the fall line contributed about 45 m/s² and simply accelerating contributed
+    // 11 m/s², against a 10.3 m/s² launch threshold. So the rider took off from flawlessly
+    // smooth snow, and because the artifact scales with gradient it got dramatically worse as
+    // the mountain tipped over — time in the air went from 19% of a run to 55%, which is most
+    // of a run spent with no edge to steer on.
+    //
+    // Checked on a steep plane precisely because that is where the old form was worst.
+    for (const gradient of [0.4, 0.7, 1.0]) {
+      const field = plane(gradient);
+      const rider = new RiderController(field);
+      rider.speed = 30;
+
+      let inAir = 0;
+      for (let i = 0; i < 60 * 20; i++) {
+        // Swing across the fall line and back, which is the motion that used to do it
+        rider.update(1 / 60, Math.sin(i / 40));
+        if (rider.airborne) inAir++;
+      }
+      expect(inAir, `gradient ${gradient} threw the rider off smooth ground`).toBe(0);
+    }
+  });
+
+  it("still launches off a real crest", () => {
+    // The other half: the fix must not simply weld the rider to the ground. Real terrain has
+    // rollers, and getting air off them is the game.
+    const field = new TerrainField(hashString("air-time"));
+    const rider = new RiderController(field);
+    let inAir = 0;
+    for (let i = 0; i < 60 * 90; i++) {
+      rider.update(1 / 60, pilotSteer(field.params, rider));
+      if (rider.airborne) inAir++;
+    }
+    expect(inAir, "the rider never left the ground at all").toBeGreaterThan(60);
   });
 });
 
@@ -297,15 +359,20 @@ describe("course geometry sanity", () => {
 });
 
 describe("the mountain keeps building speed", () => {
-  it("eases the drag from 1300m out to 5km, then holds", () => {
+  it("raises the ceiling by tipping the mountain, not by faking the drag", () => {
     // Terminal speed is where slope acceleration balances drag, so it arrives within a few
-    // hundred metres and never moves again. That is why a long run used to feel identical at
-    // 7km and at 1.5km. Easing the drag raises the ceiling instead of leaving it flat.
-    expect(dragScaleAt(0)).toBe(1);
-    expect(dragScaleAt(1300)).toBe(1);
-    expect(dragScaleAt(3000)).toBeLessThan(1);
-    expect(dragScaleAt(5000)).toBeLessThan(dragScaleAt(3000));
-    expect(dragScaleAt(20_000), "the ceiling stops rising at 5km").toBe(dragScaleAt(5000));
+    // hundred metres and never moves again *for a fixed gradient*. That is why a long run used
+    // to feel identical at 7km and at 1.5km.
+    //
+    // This was once solved with a `dragScaleAt` that thinned the air with distance. The fall
+    // line steepening does it honestly, so that is gone — and this asserts the replacement is
+    // real: balancing GRAVITY * SLOPE_ACCEL_SCALE * s against AIR_DRAG * v² gives a ceiling
+    // going as sqrt(s), so a gradient rising 0.40 → 1.0 is a ceiling rising by sqrt(2.5).
+    const ceiling = (s: number) => Math.sqrt((9.81 * 1.75 * s) / 0.005);
+
+    expect(slopeAt(1300)).toBe(SLOPE_START);
+    expect(ceiling(slopeAt(5000))).toBeGreaterThan(ceiling(slopeAt(1300)) * 1.25);
+    expect(ceiling(slopeAt(10_000)) / ceiling(slopeAt(0))).toBeCloseTo(Math.sqrt(2.5), 2);
   });
 
   it("actually gets the rider going faster deep in the run", () => {

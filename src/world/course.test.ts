@@ -16,36 +16,67 @@ import { pilotSteer } from "../player/pilot";
 import { TerrainField } from "./terrain";
 import { applyRamps } from "./ramps";
 
+/** Width of each band in the speed profile below, in metres. */
+const SPEED_BAND = 250;
+
 /**
- * Top speed the game reaches *while following the racing line*, which is the speed that
- * decides whether a corner can be held.
+ * Top speed the game reaches *while following the racing line*, as a function of how far down
+ * the mountain you are. That is the speed which decides whether a corner can be held.
  *
  * Measured rather than written down. Both checks below compare geometry against speed, so a
  * hand-maintained figure lets the two drift apart silently: with 37 written here, the course
  * as it stood before the escalation — 20% easier geometry — still cleared the "must stay
  * hard" bound, because it was being credited with a speed it never reached.
  *
- * Not the absolute top speed, which is around 46 m/s straight-lining. You cannot be at that
+ * A *profile* rather than one figure, because the fall line now steepens from 0.40 to 1.0 and
+ * speed rises about 40% with it: a rider does 36 m/s in the first band and 46 m/s past 7km.
+ * A single global number is wrong at both ends, and wrong in the dangerous direction at one of
+ * them. It understated the deep course, which is exactly where the geometry is least forgiving
+ * — the corner at 7595m on daily-2026-09-17 was being credited with 44 m/s when the mountain
+ * there delivers 46. It also overstated the run-in absurdly, charging a corner 95m in at a
+ * speed the rider cannot reach until half a kilometre later, which is a false failure waiting
+ * to happen (and did happen, at 95m on powder-chute-42).
+ *
+ * Not the absolute top speed, which is higher still straight-lining. You cannot be at that
  * speed *and* in a corner: entering one costs steering, and the carve tax is superlinear in
- * lock, so a rider arriving at 46 is down to line-following speed within a second. Bounding
+ * lock, so a rider arriving flat out is down to line-following speed within a second. Bounding
  * against the straight-line figure would be bounding a state the corner itself prevents.
+ *
+ * Bands carry their running maximum forward, so a band no seed rode far enough to sample is
+ * charged the fastest speed seen anywhere above it rather than zero.
  */
-function measureTopSpeed(): number {
-  let fastest = 0;
-  for (const phrase of ["alpine", "daily-2026-03-04", "daily-2026-09-17", "zzz"]) {
+function measureSpeedProfile(maxZ: number): number[] {
+  const bands: number[] = new Array(Math.ceil(maxZ / SPEED_BAND)).fill(0);
+  for (const phrase of ["alpine", "daily-2026-03-04", "daily-2026-09-17", "zzz", "powder-chute-42"]) {
     const field = new TerrainField(hashString(phrase));
     const rider = new RiderController(field);
-    for (let i = 0; i < 60 * 400 && rider.distance < 6000; i++) {
+    for (let i = 0; i < 60 * 600 && rider.distance < maxZ; i++) {
       const from = rider.z;
       rider.update(1 / 60, pilotSteer(field.params, rider));
       applyRamps(rider, field, hashString(phrase), from);
-      if (rider.speed > fastest) fastest = rider.speed;
+      const b = Math.floor(rider.distance / SPEED_BAND);
+      if (b < bands.length) bands[b] = Math.max(bands[b]!, rider.speed);
     }
   }
-  return fastest;
+
+  let carry = 0;
+  for (let b = 0; b < bands.length; b++) {
+    carry = Math.max(carry, bands[b]!);
+    bands[b] = carry;
+  }
+  return bands;
 }
 
-const V_TOP = measureTopSpeed();
+const MAX_Z = 8000;
+const SPEED_AT = measureSpeedProfile(MAX_Z);
+
+/** Line-following top speed at a given distance down the mountain. */
+function speedAt(z: number): number {
+  return SPEED_AT[Math.min(SPEED_AT.length - 1, Math.max(0, Math.floor(z / SPEED_BAND)))]!;
+}
+
+/** The fastest the rider ever goes on the line, anywhere. */
+const V_TOP = Math.max(...SPEED_AT);
 
 /** A year of daily seeds, so the competition mode is checked over its real input space. */
 function yearOfDailySeeds(): string[] {
@@ -81,23 +112,25 @@ function lineDerivatives(p: CourseParams, z: number): { slope: number; curvature
  * any distance rather than up to one.
  */
 describe("the racing line is physically rideable", () => {
-  const MAX_Z = 8000;
-
   it("never demands more turn rate than the rider has", () => {
     // Following x = g(z) at speed v needs a yaw rate of curvature * v. If that ever exceeds
     // what the rider can produce at full lock, the line is not merely hard, it is impossible
     // — no input holds it. Everyone on that seed would meet the same wall.
-    const budget = MAX_TURN_RATE * turnAuthorityAt(V_TOP);
-
+    //
+    // Both sides are taken at the local speed. Authority falls off with speed, so charging the
+    // deep course its real 46 m/s tightens the budget as well as raising the demand — which is
+    // the point: that is the state the rider is genuinely in down there.
     for (const phrase of [...yearOfDailySeeds(), "alpine", "powder-chute-42", "a", "zzz"]) {
       const p = params(phrase);
       for (let z = 0; z < MAX_Z; z += 1) {
+        const v = speedAt(z);
+        const budget = MAX_TURN_RATE * turnAuthorityAt(v);
         const { curvature } = lineDerivatives(p, z);
-        const demand = curvature * V_TOP;
+        const demand = curvature * v;
         expect(
           demand,
           `seed "${phrase}" at ${z}m demands ${demand.toFixed(2)} rad/s of ` +
-            `${budget.toFixed(2)} available`,
+            `${budget.toFixed(2)} available, at ${v.toFixed(1)} m/s`,
         ).toBeLessThan(budget);
       }
     }

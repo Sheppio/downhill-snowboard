@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import { TerrainField } from "./terrain";
-import { SLOPE, centreX, halfWidth, makeCourseParams, bankProfile } from "./course";
+import {
+  SLOPE_START,
+  SLOPE_DEEP,
+  slopeAt,
+  dropTo,
+  centreX,
+  halfWidth,
+  makeCourseParams,
+  bankProfile,
+} from "./course";
 import { dailySeed, hashString, makeChunkRng, makeRng } from "../core/rng";
 
 const SEEDS = ["powder-chute-42", "alpine", "daily-2026-07-28", "a", "", "🏂-emoji-seed"];
@@ -114,13 +123,91 @@ describe("the mountain always descends", () => {
 
   it("keeps a usable average pitch", () => {
     // Guard the other direction: terrain so flat the rider never builds speed is just as bad.
-    // Measured along the centreline, since anywhere else is partway up a bank.
+    // Measured along the centreline, since anywhere else is partway up a bank. The opening
+    // kilometre is below where the mountain starts steepening, so it is still flat SLOPE_START.
     const field = new TerrainField(hashString("pitch-check"));
     const start = field.heightAt(centreX(field.params, 0), 0);
     const end = field.heightAt(centreX(field.params, 1000), 1000);
     const drop = start - end;
-    expect(drop).toBeGreaterThan(1000 * SLOPE * 0.9);
-    expect(drop).toBeLessThan(1000 * SLOPE * 1.1);
+    expect(drop).toBeGreaterThan(1000 * SLOPE_START * 0.9);
+    expect(drop).toBeLessThan(1000 * SLOPE_START * 1.1);
+  });
+});
+
+describe("the mountain steepens as you descend", () => {
+  it("has a height field whose gradient is the gradient it claims", () => {
+    // The one that would fail silently and look fine. `heightAt` uses `dropTo`, and `dropTo`
+    // has to be the *integral* of `slopeAt` — write the obvious `z * slopeAt(z)` instead and
+    // the ground the rider actually meets is `s(z) + z·s'(z)`, roughly twice as steep through
+    // the ramp and well past 45° by the end. Nothing else in the game would notice: the
+    // terrain still descends, still renders, still streams. It would just be a different
+    // mountain from the one every comment and constant here describes.
+    for (let z = -300; z < 12_000; z += 7) {
+      const h = 0.5;
+      const measured = (dropTo(z + h) - dropTo(z - h)) / (2 * h);
+      expect(measured, `gradient at ${z}m`).toBeCloseTo(slopeAt(z), 3);
+    }
+  });
+
+  it("reaches 1m down per metre along by 10km, and stops there", () => {
+    expect(slopeAt(10_000)).toBeCloseTo(SLOPE_DEEP, 6);
+    expect(slopeAt(10_000)).toBe(1);
+    // Held beyond, rather than tipping past vertical on a long enough run
+    expect(slopeAt(20_000)).toBe(slopeAt(10_000));
+    expect(slopeAt(1e6)).toBe(slopeAt(10_000));
+  });
+
+  it("leaves the opening exactly as it was, then only ever steepens", () => {
+    // Same contract as every other escalation: nothing below 1300m moves. See weaveGain.
+    expect(slopeAt(0)).toBe(SLOPE_START);
+    expect(slopeAt(600)).toBe(SLOPE_START);
+    expect(slopeAt(1300)).toBe(SLOPE_START);
+    expect(slopeAt(1301)).toBeGreaterThan(SLOPE_START);
+    // And the drop over that stretch is the flat-slope drop, to the millimetre
+    expect(dropTo(1300)).toBeCloseTo(1300 * SLOPE_START, 9);
+
+    let prev = -Infinity;
+    for (let z = 0; z < 12_000; z += 25) {
+      expect(slopeAt(z), `gradient went backwards at ${z}m`).toBeGreaterThanOrEqual(prev);
+      prev = slopeAt(z);
+    }
+  });
+
+  it("descends monotonically, including behind the start line", () => {
+    // Negative z is meshed — the renderer keeps chunks behind the rider — so the extension
+    // backwards has to be a real descent rather than a fold.
+    let prev = -Infinity;
+    for (let z = -300; z < 12_000; z += 3) {
+      const drop = dropTo(z);
+      expect(drop, `the fall line stopped descending at ${z}m`).toBeGreaterThan(prev);
+      prev = drop;
+    }
+    // No step in the ground where the ramp starts or ends. Checked as "the drop across a
+    // 2mm window is what the gradient there says it should be" rather than as two heights
+    // being equal, which they are not and should not be — the mountain is descending.
+    for (const at of [1300, 10_000]) {
+      const h = 0.001;
+      expect(dropTo(at + h) - dropTo(at - h), `step at ${at}m`).toBeCloseTo(2 * h * slopeAt(at), 9);
+    }
+  });
+
+  it("still never turns uphill once the mountain is steep", () => {
+    // The no-stall invariant, checked deep rather than only over the opening kilometres.
+    // Steeper ground makes this *easier*, so the binding case stays the opening — but the
+    // undulation is unchanged out there and this is what proves it.
+    for (const phrase of SEEDS) {
+      const field = new TerrainField(hashString(phrase));
+      let worst = -Infinity;
+      let worstAt = 0;
+      for (let z = 4000; z < 11_000; z += 3) {
+        const [, dz] = field.gradientAt(centreX(field.params, z), z);
+        if (dz > worst) {
+          worst = dz;
+          worstAt = z;
+        }
+      }
+      expect(worst, `seed "${phrase}" flattens at ${worstAt.toFixed(0)}m`).toBeLessThan(-0.05);
+    }
   });
 });
 

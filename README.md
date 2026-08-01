@@ -34,19 +34,35 @@ for more than three seconds and the run ends.
 
 ## Difficulty
 
-The mountain keeps getting harder until 5km, and then stops. Five things escalate:
+The mountain keeps getting harder as you descend. Six things escalate:
 
 | | Opening | At 5km |
 | --- | --- | --- |
 | Obstacles per 12m | 3.2, reaching 10 by 1.3km | 15 |
-| Clear channel around the racing line | 5.0m, closing to 3.1m by 1.3km | 2.5m |
+| Clear channel around the racing line | 5.0m, closing to 3.1m by 1.3km | 2.8m |
 | Gulley width | full | 82% |
 | Weave in the racing line | ×1, reaching ×1.36 by 4.2km | ×1.36 |
-| Top speed while holding the line | 34.7 m/s | 36.5 m/s |
+| **Fall-line gradient** | **0.40 (22°) to 1.3km** | **0.66 (33°)** |
+| Top speed while holding the line | 36 m/s | 44 m/s |
 
-Speed ramps then raise the peak again, to 41.0 m/s, and cost the reference pilot thirteen more
-seeds: 8km on 28 of 53 rather than 41. The worst seed drops from 3615m to 3274m, so the 3km
-completability guarantee still holds, with 274m to spare.
+The gradient is the one that carries the rest. It holds at 0.40 through the opening, then
+climbs to **1.0 — a metre down per metre along, a 45° face — by 10km**, and holds there. Speed
+follows it: terminal speed is where gravity along the slope balances drag, so it goes as
+√gradient, and the peak on the racing line rises from 148 km/h to 173 km/h.
+
+That replaced a `dragScaleAt` that had been thinning the air with distance to fake the same
+effect. Running both was doubling up, and the fake one was the worse of the two — measured over
+57 seeds it bought 1.6% mean speed while adding 10% to the peak, and the peaks are what cost
+seeds. Tipping the mountain does it honestly.
+
+The reference pilot reaches 8km on 27 of 57 seeds, worst 3274m — so the 3km completability
+guarantee holds with 274m to spare, which is exactly the margin it had before the mountain
+tipped, on a course now 17% faster.
+
+A steep face cannot also snake hard, so past 4.2km the gulley trades weave for pitch and eases
+back toward straight. That is geometry rather than a difficulty knob: holding full weave at
+7.6km asked 2.01 rad/s of a rider who has 1.72, which is a line no input can hold. A steep
+couloir runs straight.
 
 Nothing below 1300m changed when this was added, deliberately: that is the stretch nearly
 every attempt covers, and per-seed bests already recorded should still describe the same
@@ -62,8 +78,9 @@ Speed and the weave compete for the same budget, and speed wins ties: it makes t
 *and* the trees harder, where the weave only bends the line. Narrowing the gulley is the one
 lever that costs nothing against it — a tighter corridor does not bend the line at all.
 
-Past 5km the course is stationary. It is meant to be survivable there, not endless: the
-reference pilot used to reach 8km on 52 of 53 daily seeds and now manages it on 28.
+Past 10km the course is stationary, the gradient having reached 45°. It is meant to be
+survivable there, not endless: the reference pilot used to reach 8km on 52 of 53 daily seeds
+and now manages it on 27 of 57.
 
 ## Speed ramps
 

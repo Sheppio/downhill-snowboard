@@ -20,8 +20,60 @@
 import { fbm1, noise1 } from "../core/noise";
 import { clamp01, lerp, smootherstep } from "../core/math";
 
-/** Constant fall-line gradient. tan(22°) ≈ 0.40 — steep, which is where the speed comes from. */
-export const SLOPE = 0.40;
+// --- The fall line -------------------------------------------------------------------------
+//
+// The mountain steepens as you descend. It opens at tan(22°) ≈ 0.40 — already steep, and where
+// the speed comes from — and rolls over toward 1 metre down per metre along, a 45° face, deep
+// in the run. That is the escalation the player *feels* rather than reads: the same corner
+// arrives sooner, and the ground itself is visibly tipping away.
+//
+// The ramp starts at 1300m for the same reason every other escalation does — see the note on
+// weaveGain — so the stretch nearly every attempt actually covers is untouched.
+
+/** Fall-line gradient through the opening. tan(22°). */
+export const SLOPE_START = 0.40;
+/** Gradient once the mountain has fully tipped over: 1m down per metre along, i.e. 45°. */
+export const SLOPE_DEEP = 1.0;
+/** Where the mountain begins to steepen. Matches every other difficulty ramp. */
+const SLOPE_RAMP_START = 1300;
+/** Where it reaches SLOPE_DEEP and stops. Beyond here the gradient is constant again. */
+const SLOPE_RAMP_END = 10000;
+
+/** The fall-line gradient at a given distance down the mountain. */
+export function slopeAt(z: number): number {
+  return lerp(
+    SLOPE_START,
+    SLOPE_DEEP,
+    clamp01((z - SLOPE_RAMP_START) / (SLOPE_RAMP_END - SLOPE_RAMP_START)),
+  );
+}
+
+/**
+ * How far the fall line has descended by `z` — the integral of `slopeAt` from 0.
+ *
+ * This is the part that is easy to get wrong, and wrong in a way that looks right. The obvious
+ * `-z * slopeAt(z)` is not a slope that varies with z, it is a *parabola*: differentiate it and
+ * the real gradient is `s(z) + z·s'(z)`, which through the ramp is about twice what `slopeAt`
+ * claims and blows straight past 45°. The height field has to be the antiderivative, so that
+ * the gradient the rider actually meets is the gradient this module says it is.
+ * `terrain.test.ts` checks the two against each other numerically.
+ *
+ * Negative z — the terrain behind the start line, which does get meshed — extends the opening
+ * gradient backwards, which is what clamping `slopeAt` implies and keeps the surface smooth
+ * across z = 0.
+ */
+export function dropTo(z: number): number {
+  if (z <= SLOPE_RAMP_START) return SLOPE_START * z;
+
+  const span = SLOPE_RAMP_END - SLOPE_RAMP_START;
+  const d = Math.min(z, SLOPE_RAMP_END) - SLOPE_RAMP_START;
+  // Opening stretch, plus the ramp's own area: a rectangle under SLOPE_START and the triangle
+  // the linear rise adds on top of it.
+  let drop =
+    SLOPE_START * SLOPE_RAMP_START + SLOPE_START * d + ((SLOPE_DEEP - SLOPE_START) * d * d) / (2 * span);
+  if (z > SLOPE_RAMP_END) drop += SLOPE_DEEP * (z - SLOPE_RAMP_END);
+  return drop;
+}
 
 /** Nominal half-width of the rideable floor, in metres. */
 const HALF_WIDTH_BASE = 20;
@@ -119,12 +171,46 @@ const WEAVE_GAIN_END = 4200;
  * It also sits inside the crossing-angle budget documented on `makeCourseParams`: the summed
  * worst case is ~0.87 today and ~1.41 is where an earlier, tighter set made seeds
  * unfollowable, so a gain of 1.3 takes it to ~1.14 — still clear of that line.
+ *
+ * Those figures were measured on a mountain of constant 0.40 gradient. The ceiling itself has
+ * not moved and neither has anything below WEAVE_GAIN_END, but the fall line now steepens past
+ * it and the rider gets much faster — so the weave eases back out there instead. See
+ * WEAVE_RELAX below for why that is geometry rather than a difficulty knob.
  */
 const WEAVE_GAIN_MAX = 1.36;
 
+// --- and where it hands over to the steepness -----------------------------------------------
+//
+// A steep face cannot also snake hard, and the fall line now tips toward 45° past 4200m. This
+// is not a fudge to make a test pass, it is the geometry: following x = g(z) at speed v needs a
+// yaw rate of curvature * v, and deep in a run v has gone from 39 m/s to 46. Holding the weave
+// at full gain out there asked 2.01 rad/s of a rider who has 1.72 — the line stops being merely
+// hard and becomes one that no input holds, which is the one thing the course must never do.
+//
+// So the gulley trades snaking for steepness: past the point the weave tops out it eases back
+// toward straight, and what makes the deep mountain frightening is the pitch, the speed and the
+// trees rather than the corners. A steep couloir runs straight, which is also why this reads as
+// terrain rather than as a difficulty knob being turned down.
+//
+// Nothing before WEAVE_GAIN_END moves, so the escalation players actually reach is exactly as
+// it was tuned and measured. This only touches ground the reference pilot dies well short of.
+const WEAVE_RELAX_END = 10000;
+/** How much of the weave survives once the mountain has fully tipped over. */
+const WEAVE_RELAX = 0.55;
+
 /** How much the centreline weave is amplified at a given distance down the mountain. */
 export function weaveGain(z: number): number {
-  return lerp(1, WEAVE_GAIN_MAX, clamp01((z - WEAVE_GAIN_START) / (WEAVE_GAIN_END - WEAVE_GAIN_START)));
+  const grown = lerp(
+    1,
+    WEAVE_GAIN_MAX,
+    clamp01((z - WEAVE_GAIN_START) / (WEAVE_GAIN_END - WEAVE_GAIN_START)),
+  );
+  const relax = lerp(
+    1,
+    WEAVE_RELAX,
+    clamp01((z - WEAVE_GAIN_END) / (WEAVE_RELAX_END - WEAVE_GAIN_END)),
+  );
+  return grown * relax;
 }
 
 /**
@@ -261,8 +347,20 @@ const GATE_CLEARANCE_RAMP = 1200;
 // tightening twice over — which is why this second stage is small.
 const GATE_SQUEEZE_START = 2200;
 const GATE_SQUEEZE_END = 5000;
-/** Clear half-width once the squeeze is complete. Rider radius is 0.6m. */
-export const GATE_CLEARANCE_DEEP = 2.5;
+/**
+ * Clear half-width once the squeeze is complete.
+ *
+ * Widened from 2.5 when the fall line started steepening. A gap is only as tight as the speed
+ * you arrive at it, and the deep mountain now runs about 12% faster than it did — measured over
+ * a year of daily seeds, holding 2.5 here put the worst seed's reference ride at 2986m, inside
+ * the 3000m completability guarantee. 2.8 puts it back at 3274m, which is exactly where it sat
+ * before the mountain tipped: the same margin, against a course that is meaningfully faster.
+ *
+ * Still comfortably the tightest the channel ever gets — it is 3.1 through the middle of a run
+ * — so this stays an escalation, just one paid for by speed rather than by width. The rider it
+ * has to admit is 0.225m to the half-width, not the 0.6m circle this was first sized against.
+ */
+export const GATE_CLEARANCE_DEEP = 2.8;
 /** How far the widest relief stretches open beyond the floor. */
 const GATE_BREATH = 2.4;
 
