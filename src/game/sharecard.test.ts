@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   cardSeedLabel,
+  cardVersion,
   challengeText,
   drawShareCard,
+  CARD_SIZE,
   runSummaryText,
   toKmh,
   type CardContext,
@@ -28,8 +30,15 @@ class RecordingContext implements CardContext {
   textBaseline: CanvasTextBaseline = "alphabetic";
   globalAlpha = 1;
 
-  /** Every string drawn, in order, with the size it was drawn at. */
-  readonly texts: { text: string; size: number; x: number; y: number }[] = [];
+  /** Every string drawn, in order, with the size, colour and alignment it was drawn with. */
+  readonly texts: {
+    text: string;
+    size: number;
+    x: number;
+    y: number;
+    fill: string;
+    align: CanvasTextAlign;
+  }[] = [];
   /** Calls that put geometry on the card, for the "it drew a scene at all" checks. */
   shapes = 0;
 
@@ -50,7 +59,15 @@ class RecordingContext implements CardContext {
     this.shapes++;
   }
   fillText(text: string, x: number, y: number): void {
-    this.texts.push({ text, size: this.size, x, y });
+    this.texts.push({
+      text,
+      size: this.size,
+      x,
+      y,
+      // A gradient is only ever the sky, never text, so flattening it to "" here loses nothing
+      fill: typeof this.fillStyle === "string" ? this.fillStyle : "",
+      align: this.textAlign,
+    });
   }
   strokeText(): void {
     // The outline pass of the same string; recording it would double every entry
@@ -187,9 +204,56 @@ describe("fitting what it is given", () => {
     const ctx = draw({ seed: "wwwwwwwwwwwwwwwwwwwwwwww" });
     for (const t of ctx.texts) {
       const width = t.text.length * t.size * 0.55;
-      expect(t.x - width / 2, `"${t.text}" runs off the left`).toBeGreaterThan(-1);
-      expect(t.x + width / 2, `"${t.text}" runs off the right`).toBeLessThan(1081);
+      // `x` means different things per alignment, and reading it as a centre for everything is
+      // how the build stamp — right-aligned against the edge — first showed up here as 111px
+      // of overhang it does not have.
+      const left = t.align === "right" ? t.x - width : t.x - width / 2;
+      expect(left, `"${t.text}" runs off the left`).toBeGreaterThan(-1);
+      expect(left + width, `"${t.text}" runs off the right`).toBeLessThan(1081);
     }
+  });
+});
+
+describe("the build stamp in the corner", () => {
+  /** The one text on the card drawn right-aligned — that alignment is how it is found. */
+  const stamp = (ctx: RecordingContext) => ctx.texts.find((t) => t.align === "right");
+
+  it("says which build drew the card", () => {
+    // The card is the one part of this game that reaches people who are not looking at the
+    // game, so when a run is disputed the build is the thing nobody can otherwise recover.
+    const found = stamp(draw());
+    expect(found, "nothing was drawn right-aligned, so there is no stamp").toBeDefined();
+    expect(found!.text, `stamp read "${found!.text}"`).toMatch(/^v\d+\.\d+\.\d+/);
+    expect(found!.text).toBe(cardVersion());
+  });
+
+  it("puts it in the top right, clear of the title", () => {
+    const found = stamp(draw())!;
+    // Right-aligned at the right edge, so x is where the text *ends*
+    expect(found.x, "not against the right edge").toBeGreaterThan(CARD_SIZE * 0.9);
+    expect(found.x, "hanging off the card").toBeLessThanOrEqual(CARD_SIZE);
+    // The title is centred at 7.5% down and 5% tall, so it occupies roughly 5%-10%. Anything
+    // sharing that band either crowds it or gets clipped by a narrow crop.
+    expect(found.y, "down in the title's band").toBeLessThan(CARD_SIZE * 0.048);
+    expect(found.y, "off the top of the card").toBeGreaterThan(0);
+  });
+
+  it("keeps it subtle, and does not leave the card right-aligned", () => {
+    const ctx = draw();
+    const found = stamp(ctx)!;
+    // Translucent: the alpha is what makes it a watermark rather than a headline. Full-strength
+    // ink here would compete with the score, which is the number the card exists to show.
+    const alpha = Number.parseFloat(/rgba\([^)]*,\s*([\d.]+)\s*\)/.exec(found.fill)?.[1] ?? "1");
+    expect(alpha, `stamp drawn at ${found.fill}`).toBeLessThan(0.6);
+    expect(alpha, "so faint it may as well not be there").toBeGreaterThan(0.15);
+    // Small: well under the stat labels, which are the smallest thing meant to be read
+    expect(found.size).toBeLessThan(CARD_SIZE * 0.027);
+
+    // Everything after it is centred, so the alignment change must not leak. Miss this and the
+    // seed and the URL slide off the right-hand edge of the card.
+    const after = ctx.texts.slice(ctx.texts.indexOf(found) + 1);
+    expect(after.length, "the stamp was drawn last, so this proves nothing").toBeGreaterThan(3);
+    expect(after.every((t) => t.align === "center")).toBe(true);
   });
 });
 

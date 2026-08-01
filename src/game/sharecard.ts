@@ -98,6 +98,13 @@ const TREE = "#1f7a5a";
 const TREE_DARK = "#15614a";
 
 /**
+ * The build stamp in the corner: ink at low opacity, so it reads as a watermark on the sky
+ * rather than as one of the numbers the card is about. Everything else up there is either
+ * outlined white or full-strength ink.
+ */
+const VERSION_INK = "rgba(11, 57, 84, 0.4)";
+
+/**
  * The same stack the page uses, so the card matches the game on the device that drew it.
  *
  * No web font is loaded and none should be: a card that waits on a network font would either
@@ -106,6 +113,22 @@ const TREE_DARK = "#15614a";
  */
 const FACE = `"Baloo 2", "Nunito", "Trebuchet MS", system-ui, -apple-system, sans-serif`;
 const font = (size: number, weight = 700) => `${weight} ${size}px ${FACE}`;
+
+/**
+ * The build that drew the card, e.g. `v0.24.1 · 2d4a6ee`.
+ *
+ * The same stamp the start screen shows, deliberately: a card is the one part of this game that
+ * travels to people who are not looking at the game, and when someone says a run looks wrong the
+ * useful question is which build it was set on. The commit is the half that answers that — the
+ * version alone cannot tell a released build from a local one built on top of it.
+ *
+ * Guarded because `__APP_VERSION__` is a build-time define. It is substituted everywhere the
+ * bundler and the test runner look, both of which share one config, but a card that threw here
+ * would take the whole share down over a caption.
+ */
+export function cardVersion(): string {
+  return typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
+}
 
 /** Metres per second to the km/h the HUD and the end screen both show. */
 export function toKmh(speed: number): number {
@@ -248,6 +271,21 @@ export function drawShareCard(ctx: CardContext, r: CardResult, size = CARD_SIZE)
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   outlined(ctx, "DOWNHILL", mid, size * 0.075, size * 0.05, SNOW, 900);
+
+  // --- Which build drew this, tucked into the top corner
+  //
+  // Above the title rather than beside it: the title is centred and 5% of the card tall, so
+  // anything sharing its line either crowds it or gets clipped on a narrow crop. This sits on
+  // empty sky at 3% down, clear of the title's box, and small and faint enough to read as a
+  // watermark — the card is a boast, and the build number is not part of the boast.
+  const stamp = cardVersion();
+  if (stamp) {
+    ctx.textAlign = "right";
+    ctx.fillStyle = VERSION_INK;
+    ctx.font = font(size * 0.022, 700);
+    ctx.fillText(stamp, size * 0.965, size * 0.032);
+    ctx.textAlign = "center"; // everything below this is centred
+  }
 
   // --- The number the game is about
   outlined(ctx, r.score.toLocaleString(), mid, size * 0.225, size * 0.17, SUN, 900);

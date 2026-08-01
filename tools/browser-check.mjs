@@ -562,7 +562,19 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
             if (Math.abs(r - 255) < 12 && Math.abs(g - 209) < 12 && Math.abs(b - 102) < 12) sun++;
           }
         }
-        return { width: img.width, height: img.height, colours: colours.size, sun };
+        // The build stamp, top right. Ink at 40% over the sky lands near (90,155,186) where
+        // bare sky is about (143,220,255), so "noticeably darker than sky" finds the glyphs
+        // without needing to read them. Sampled every 2px because the text is 24px tall and a
+        // coarse grid walks straight between the strokes.
+        let stamp = 0;
+        for (let y = Math.round(img.height * 0.015); y < img.height * 0.05; y += 2) {
+          for (let x = Math.round(img.width * 0.68); x < img.width * 0.98; x += 2) {
+            const [r, g, b] = at(x, y);
+            if (r < 120 && g < 190 && b < 230) stamp++;
+          }
+        }
+
+        return { width: img.width, height: img.height, colours: colours.size, sun, stamp };
       }, shared.dataUrl)
     : null;
 
@@ -588,13 +600,21 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
     // A card that failed to draw is a flat fill, or a gradient and nothing else
     if (card.colours < 12) problems.push(`the card is nearly blank — ${card.colours} colours`);
     if (card.sun < 20) problems.push(`the score is not on the card — ${card.sun} pixels of it`);
+    // Present, and still a watermark. Both ends matter: the whole point of putting the build on
+    // the card is that it survives to whoever is looking at it, and the whole point of it being
+    // faint is that it does not compete with the score.
+    if (card.stamp < 30)
+      problems.push(`the build stamp is not on the card — ${card.stamp} pixels of it`);
+    if (card.stamp > 4000)
+      problems.push(`the build stamp dominates the corner — ${card.stamp} pixels of it`);
   }
 
   if (problems.length) fail(`sharing a run — ${problems.join("; ")}`);
   else
     console.log(
       `✓ shared a ${(shared.size / 1024).toFixed(0)}KB PNG card as "${shared.name}" for a ` +
-        `${ended.score}-point run: ${card.width}px square, ${card.colours} colours, sent with ` +
+        `${ended.score}-point run: ${card.width}px square, ${card.colours} colours, ` +
+        `${card.stamp}px of build stamp in the corner, sent with ` +
         `"${shared.text}" and a link to the seed`,
     );
 
