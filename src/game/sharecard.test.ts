@@ -218,13 +218,24 @@ describe("the build stamp in the corner", () => {
   /** The one text on the card drawn right-aligned — that alignment is how it is found. */
   const stamp = (ctx: RecordingContext) => ctx.texts.find((t) => t.align === "right");
 
-  it("says which build drew the card", () => {
+  it("says which version drew the card, and nothing else", () => {
     // The card is the one part of this game that reaches people who are not looking at the
-    // game, so when a run is disputed the build is the thing nobody can otherwise recover.
+    // game, so the release it was set on is worth carrying. The commit is not: it goes out to
+    // people with no repository to look it up in.
     const found = stamp(draw());
     expect(found, "nothing was drawn right-aligned, so there is no stamp").toBeDefined();
-    expect(found!.text, `stamp read "${found!.text}"`).toMatch(/^v\d+\.\d+\.\d+/);
+    expect(found!.text, `stamp read "${found!.text}"`).toMatch(/^v?\d+\.\d+\.\d+$/);
     expect(found!.text).toBe(cardVersion());
+  });
+
+  it("trims the commit off the build stamp rather than keeping its own version", () => {
+    // The start screen shows `v0.24.2 · e3b7ba8`; this has to be the same number with the sha
+    // taken off, not a second copy that can drift. Checked against the define the rest of the
+    // game reads, so a card claiming a different release than the build it came from fails.
+    expect(cardVersion()).not.toContain("·");
+    expect(cardVersion()).not.toMatch(/dirty/);
+    expect(__APP_VERSION__.startsWith(cardVersion())).toBe(true);
+    expect(cardVersion().length).toBeGreaterThan(3);
   });
 
   it("puts it in the top right, clear of the title", () => {

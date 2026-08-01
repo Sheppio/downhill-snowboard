@@ -115,19 +115,24 @@ const FACE = `"Baloo 2", "Nunito", "Trebuchet MS", system-ui, -apple-system, san
 const font = (size: number, weight = 700) => `${weight} ${size}px ${FACE}`;
 
 /**
- * The build that drew the card, e.g. `v0.24.1 · 2d4a6ee`.
+ * The version that drew the card, e.g. `v0.24.2`.
  *
- * The same stamp the start screen shows, deliberately: a card is the one part of this game that
- * travels to people who are not looking at the game, and when someone says a run looks wrong the
- * useful question is which build it was set on. The commit is the half that answers that — the
- * version alone cannot tell a released build from a local one built on top of it.
+ * The version only. The start screen's stamp also carries the commit — `v0.24.2 · e3b7ba8` —
+ * which is the right thing there, where it is diagnostic and nobody but the developer sees it.
+ * On a card it is noise: this goes out to people who do not have the repository and would not
+ * know what a short sha was if they did, and the release is the part that means anything to
+ * them. So the hash is trimmed off rather than a second source of truth being introduced, and
+ * the two stay in step by construction.
  *
  * Guarded because `__APP_VERSION__` is a build-time define. It is substituted everywhere the
  * bundler and the test runner look, both of which share one config, but a card that threw here
  * would take the whole share down over a caption.
  */
 export function cardVersion(): string {
-  return typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
+  const stamp = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
+  // Everything up to the separator the build stamp uses, so a stamp that is only ever a
+  // version — no git, building from a tarball — is returned untouched rather than emptied.
+  return stamp.split("·")[0]!.trim();
 }
 
 /** Metres per second to the km/h the HUD and the end screen both show. */

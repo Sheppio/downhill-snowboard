@@ -21,6 +21,14 @@ export interface HudCallbacks {
   onShareSeed(seed: string): void;
   /** The press before that share: a chance to draw the card before it is needed. */
   onPrepareShareSeed(seed: string): void;
+  /**
+   * The scores list has opened, listing every seed on it, newest first.
+   *
+   * This is where the cards get drawn. A card takes over a second to render and a tap takes a
+   * tenth of one, so anything that waits for the press has already lost — opening the list is
+   * the last moment that buys enough time.
+   */
+  onScoresShown(seeds: string[]): void;
   onShuffle(): void;
   onRetry(): void;
   onShare(): void;
@@ -199,10 +207,11 @@ export class Hud {
         share.textContent = "↗";
         share.setAttribute("aria-label", `Share your best on ${label}`);
         share.dataset.shareSeed = r.seed;
-        // Drawing the card takes a moment, and `navigator.share` cannot be given that moment —
-        // it needs the activation the click carries, and awaiting spends it. So the render
-        // starts on the press and the click just sends whatever is ready. The gap between the
-        // two is most of a card.
+        // The press only ever *reorders* the queue — it moves this seed to the front so a
+        // list of thirty does not draw twenty-nine other cards before the one being asked for.
+        // It is not what buys the time: a press is a tenth of a second and a card is over one,
+        // so relying on this gap shipped a share sheet with no picture in it. See
+        // `onScoresShown`, which is what actually gets the card drawn in time.
         share.addEventListener("pointerdown", () => this.callbacks.onPrepareShareSeed(r.seed));
         share.addEventListener("click", () => this.callbacks.onShareSeed(r.seed));
 
@@ -212,6 +221,10 @@ export class Hud {
         return row;
       }),
     );
+
+    // Start drawing the cards now. Finding a row and tapping it takes a person a second or
+    // two, which is the only window in this flow long enough to render one in.
+    this.callbacks.onScoresShown(records.map((r) => r.seed));
 
     this.scoresEmpty.hidden = records.length > 0;
     // Shown instead of the menu rather than over it: two stacked dimmed backdrops read as a

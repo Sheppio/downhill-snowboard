@@ -74,8 +74,20 @@ class Game {
   /** The finished run the end screen is showing, and the card drawn from it. */
   private lastResult: CardResult | null = null;
   private shareCard: File | null = null;
-  /** The most recent scores-list card, kept so a second tap on the same row is instant. */
-  private listCard: { seed: string; file: File | null } | null = null;
+  /**
+   * Cards for the scores list, by seed. A stored `null` is a seed whose card could not be
+   * drawn at all — recorded so it is not attempted again on every press.
+   *
+   * Drawn ahead of being needed, because they cannot be drawn on demand: `navigator.share`
+   * needs the activation the tap carries and awaiting spends it, so whatever the tap sends has
+   * to already exist. A card takes ~1.5s to render and a tap lasts a tenth of that, which is
+   * why hanging this off the press — as it first did — meant the share sheet opened with no
+   * picture in it every time.
+   */
+  private listCards = new Map<string, File | null>();
+  /** Seeds still to draw, in the order they will be drawn. */
+  private cardQueue: string[] = [];
+  private drawingCard = false;
 
   // Adaptive resolution
   private fpsSamples: number[] = [];
@@ -133,14 +145,14 @@ class Game {
           if (message) this.hud.flashShare(message);
         });
       },
-      // The press before the tap, so the card has the length of a press to draw itself in.
-      // Nothing else can buy it that time: `navigator.share` needs the tap's own activation,
-      // and awaiting a render inside the handler spends it.
+      // Opening the list is what starts the cards; the press only jumps the queue. The other
+      // way round does not work — see `queueListCards`.
+      onScoresShown: (seeds) => this.queueListCards(seeds),
       onPrepareShareSeed: (seed) => this.prepareListCard(seed),
       onShareSeed: (seed) => {
         const result = this.listResult(seed);
         if (!result) return;
-        const card = this.listCard?.seed === seed ? this.listCard.file : null;
+        const card = this.listCards.get(seed) ?? null;
         void shareRun(result, card).then((outcome) => {
           if (shareMessage(outcome)) this.hud.flashScoreShare(seed);
         });
@@ -256,7 +268,11 @@ class Game {
    */
   private bankScore(): void {
     if (this.state !== "playing" && this.state !== "paused" && this.state !== "crashing") return;
-    recordBest(this.seed, this.score.value, this.controller.distance, this.controller.topSpeed);
+    if (recordBest(this.seed, this.score.value, this.controller.distance, this.controller.topSpeed)) {
+      // The card for this seed now shows a score that has been beaten. Dropped rather than
+      // redrawn, so the next visit to the list draws it from the record that replaced it.
+      this.listCards.delete(this.seed);
+    }
   }
 
   /**
@@ -279,16 +295,67 @@ class Game {
     };
   }
 
-  /** Start drawing a scores-row card, unless the one in hand is already for this seed. */
+  /**
+   * How many scores-list cards to hold at once.
+   *
+   * Each is a 1080-square PNG, a couple of hundred KB, so the whole list is not worth keeping:
+   * the list can hold two hundred rows and nobody shares from the bottom of it. Comfortably
+   * more than fits on a screen, which is what decides whether the one being reached for is
+   * already drawn.
+   */
+  private static readonly MAX_LIST_CARDS = 24;
+
+  /**
+   * Draw cards for the seeds on the scores list, in order, starting now.
+   *
+   * Called when the list opens rather than when a row is pressed. That is the whole fix: a
+   * person takes a second or two to find the row they want, a card takes about that long to
+   * render, and a press takes a tenth of a second. Drawing on the press meant the file was
+   * never ready in time and every share from this list went out as text with no picture.
+   *
+   * One at a time. Rendering thirty cards at once would tie up the main thread on a phone for
+   * as long as it takes to do them all, and the first row is the one most likely to be wanted.
+   */
+  private queueListCards(seeds: string[]): void {
+    for (const seed of seeds.slice(0, Game.MAX_LIST_CARDS)) {
+      if (!this.listCards.has(seed) && !this.cardQueue.includes(seed)) this.cardQueue.push(seed);
+    }
+    this.drawNextCard();
+  }
+
+  /** Bring one seed to the front of the queue — the press before a share. */
   private prepareListCard(seed: string): void {
-    if (this.listCard?.seed === seed) return;
-    const result = this.listResult(seed);
-    if (!result) return;
-    // Claimed before the render finishes, so a second press while it is drawing does not start
-    // a second one. The file lands here when it is ready; a share before then goes without it.
-    this.listCard = { seed, file: null };
+    if (this.listCards.has(seed)) return;
+    this.cardQueue = [seed, ...this.cardQueue.filter((s) => s !== seed)];
+    this.drawNextCard();
+  }
+
+  private drawNextCard(): void {
+    if (this.drawingCard) return;
+
+    // Skips are resolved here rather than at enqueue time, since a card can arrive, or a seed
+    // can lose its record, between being queued and being reached.
+    let seed: string | undefined;
+    let result: CardResult | null = null;
+    while ((seed = this.cardQueue.shift()) !== undefined) {
+      if (this.listCards.has(seed)) continue;
+      result = this.listResult(seed);
+      if (result) break;
+    }
+    if (seed === undefined || !result) return;
+
+    this.drawingCard = true;
+    const drawing = seed;
     void prepareShareCard(result).then((file) => {
-      if (this.listCard?.seed === seed) this.listCard = { seed, file };
+      // Oldest out first: the map keeps insertion order, and the oldest entry is the row
+      // furthest from the top of a list that is already sorted by how recent it is.
+      if (this.listCards.size >= Game.MAX_LIST_CARDS) {
+        const oldest = this.listCards.keys().next().value;
+        if (oldest !== undefined) this.listCards.delete(oldest);
+      }
+      this.listCards.set(drawing, file);
+      this.drawingCard = false;
+      this.drawNextCard();
     });
   }
 

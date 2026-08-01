@@ -1258,21 +1258,35 @@ else console.log("✓ a different seed builds a different mountain");
       });
     });
 
-    // The press starts the card; the tap sends it. Driven as two events rather than one click
-    // because that split is the whole mechanism — `navigator.share` needs the tap's own
-    // activation, so the render has to have started before it.
+    // Opening the list starts the cards; a tap sends whichever one is asked for. The card is
+    // never drawn *by* the tap — `navigator.share` needs the tap's own activation and awaiting
+    // a render spends it, so anything the tap sends has to already exist.
+    //
+    // This used to press the button, wait up to fifteen seconds for the card, and only then
+    // click. That passed against a build where sharing from this list never attached a picture
+    // at all, because no person waits fifteen seconds between pressing a button and releasing
+    // it: a card takes ~1.5s to render and a tap lasts a tenth of that. So the click below
+    // gets no preparation of its own — no `pointerdown` first, nothing waited for after the
+    // list is ready — and if the picture is not already in hand, it is not going out.
     const shareButton = await page.$("#scores-list li:nth-child(2) .score-share");
     if (!shareButton) fail("no share button on the scores rows");
     else {
-      await shareButton.dispatchEvent("pointerdown");
+      const seed2 = await page.evaluate(
+        () => document.querySelector("#scores-list li:nth-child(2) .score-share").dataset.shareSeed,
+      );
+      // Waited on because opening the list is what starts it — an earlier, separate action from
+      // the tap under test. This is the window a person spends finding the row they want.
       const ready = await page
-        .waitForFunction(() => window.__game.listCard?.file != null, { timeout: 15000 })
+        .waitForFunction((seed) => window.__game.listCards?.get(seed) != null, seed2, {
+          timeout: 30000,
+        })
         .then(() => true)
         .catch(() => false);
       await shareButton.click();
       await page.waitForFunction(() => window.__shared != null, { timeout: 10000 });
       const sent = await page.evaluate(() => window.__shared);
       const tick = await page.textContent("#scores-list li:nth-child(2) .score-share");
+      if (!ready) fail("the scores list never drew a card for row 2, however long it was given");
 
       // What the two rows can actually put on a card, straight out of storage
       const kept = await page.evaluate(() => {
@@ -1282,8 +1296,14 @@ else console.log("✓ a different seed builds a different mountain");
       });
 
       const problems = [];
-      if (!ready) problems.push("pressing a row never started drawing its card");
-      if (sent.type !== "image/png") problems.push(`shared a ${sent.type ?? "nothing"}`);
+      if (!ready) problems.push("opening the list never drew a card for the row");
+      // The regression this whole section exists for: a share from this list that carries no
+      // picture. It is not a degraded share, it is the wrong one — the text is a bare challenge
+      // precisely because everything about the run is supposed to be on the image beside it, so
+      // without the image the message says nothing at all.
+      if (sent.type !== "image/png")
+        problems.push(`no card was attached — shared a ${sent.type ?? "nothing"}`);
+      if (!(sent.size > 10_000)) problems.push(`the card is only ${sent.size} bytes`);
       if (!sent.url?.includes("powder-chute-42"))
         problems.push(`the link does not name the row's seed: ${sent.url}`);
       if (/\d/.test(sent.text ?? "")) problems.push(`the message restates the card: "${sent.text}"`);
