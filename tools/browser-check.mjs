@@ -513,6 +513,11 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
   await page.evaluate(() => window.__game.startRun("powder-chute-42"));
   await page.waitForTimeout(1500);
   const ended = await page.evaluate(() => {
+    // Forced over a thousand so the score carries a thousands separator. This check rides for
+    // a second and a half and earns about seventeen points, and "17" has no comma — which is
+    // exactly why the comma colliding with the strap below it survived every previous run of
+    // this check and shipped. A real card is far more often four digits than two.
+    window.__game.score.total = 4410;
     window.__game.endRun("crash");
     return { score: window.__game.score.value, dist: window.__game.controller.distance };
   });
@@ -562,6 +567,37 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
             if (Math.abs(r - 255) < 12 && Math.abs(g - 209) < 12 && Math.abs(b - 102) < 12) sun++;
           }
         }
+        // Nothing on the card may touch anything else on it.
+        //
+        // Rows of the upper half are classed as ink or sky by comparing against the sky at that
+        // row's left edge — the background is a vertical gradient, so the far left of a row is
+        // exactly what that row's empty space looks like. Contiguous ink rows are one block,
+        // and what matters is the space between blocks.
+        //
+        // This exists because a grouped score hangs a comma below its digits, and "4,410" put
+        // that comma two pixels from the strap under it while leaving thirty-seven pixels of
+        // slack below the strap. Two pixels reads as a collision on a phone. It only appears
+        // above a thousand points, which is why the layout looked fine everywhere it had been
+        // looked at — so the score planted for this check is deliberately over a thousand.
+        const rowBands = [];
+        {
+          let cur = null;
+          for (let y = Math.round(img.height * 0.1); y < img.height * 0.42; y++) {
+            const sky = at(4, y);
+            let n = 0;
+            for (let x = 0; x < img.width; x++) {
+              const p = at(x, y);
+              if (Math.abs(p[0] - sky[0]) + Math.abs(p[1] - sky[1]) + Math.abs(p[2] - sky[2]) > 40) n++;
+            }
+            if (n > 3) cur = cur ? ((cur.bottom = y), cur) : { top: y, bottom: y };
+            else if (cur) {
+              rowBands.push(cur);
+              cur = null;
+            }
+          }
+          if (cur) rowBands.push(cur);
+        }
+
         // The build stamp, top right. Ink at 40% over the sky lands near (90,155,186) where
         // bare sky is about (143,220,255), so "noticeably darker than sky" finds the glyphs
         // without needing to read them. Sampled every 2px because the text is 24px tall and a
@@ -574,7 +610,7 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
           }
         }
 
-        return { width: img.width, height: img.height, colours: colours.size, sun, stamp };
+        return { width: img.width, height: img.height, colours: colours.size, sun, stamp, rowBands };
       }, shared.dataUrl)
     : null;
 
@@ -607,6 +643,16 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
       problems.push(`the build stamp is not on the card — ${card.stamp} pixels of it`);
     if (card.stamp > 4000)
       problems.push(`the build stamp dominates the corner — ${card.stamp} pixels of it`);
+    // Score, strap, rule — three separate things, and they have to stay separate
+    if (card.rowBands.length < 3)
+      problems.push(`the top of the card ran together into ${card.rowBands.length} block(s)`);
+    else {
+      const gap = card.rowBands[1].top - card.rowBands[0].bottom;
+      if (gap < 12)
+        problems.push(
+          `the strap is ${gap}px under the score — a grouped score's comma collides with it`,
+        );
+    }
   }
 
   if (problems.length) fail(`sharing a run — ${problems.join("; ")}`);

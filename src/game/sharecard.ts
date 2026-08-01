@@ -295,9 +295,13 @@ export function drawShareCard(ctx: CardContext, r: CardResult, size = CARD_SIZE)
   // --- The number the game is about
   outlined(ctx, r.score.toLocaleString(), mid, size * 0.225, size * 0.17, SUN, 900);
 
+  // Sat 0.325 down, which put it two pixels under the score and thirty-seven above the rule
+  // below it. Two pixels is a collision, not a gap: a grouped score like "4,410" hangs a comma
+  // below the digits, and on a shared card it ran straight into the strap. Measured on the
+  // rendered PNG, this centres the line in the space it has — about twenty pixels either side.
   ctx.fillStyle = INK;
   ctx.font = font(size * 0.038, 800);
-  ctx.fillText(r.strap, mid, size * 0.325);
+  ctx.fillText(r.strap, mid, size * 0.34);
 
   // A dashed rule, as on the end screen. Drawn as ticks rather than with a line dash, which
   // would be one more method the recording context in the tests has to pretend to have.
