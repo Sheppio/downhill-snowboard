@@ -349,8 +349,41 @@ export function drawShareCard(ctx: CardContext, r: CardResult, size = CARD_SIZE)
  * picture, and repeating them in the text just makes the message long enough that a chat app
  * truncates it — with the link, the only part that is not on the card, at the end.
  */
-export function challengeText(): string {
-  return "Think you can beat that?";
+export const CHALLENGES = [
+  "Think you can beat that?",
+  "Your turn. Try not to hit a tree.",
+  "Go on then, beat it.",
+  "Reckon you can top that?",
+  "Same mountain, same trees. Show me.",
+  "Bet you can't beat it.",
+  "Your move. I'll wait.",
+  "Beat that and I'll believe you.",
+  "Let's see you do better.",
+  "Come and have a go, if you think you're fast enough.",
+] as const;
+
+/**
+ * The line that travels with the card.
+ *
+ * Several of them, because this message goes to the same few people over and over. One fixed
+ * line stops reading as a challenge by about the fourth time it lands in a group chat and
+ * starts reading as a bot — which is fatal for the only thing here that makes anyone tap.
+ *
+ * Not one of them contains a digit, and that is a rule rather than an accident: every number
+ * about the run is already on the picture beside it, and repeating them here only makes the
+ * message long enough for a chat app to truncate — taking the link, which is the one part not
+ * on the card, off the end. `sharecard.test.ts` holds the whole list to it.
+ *
+ * `pick` is a 0..1 roll, defaulted rather than generated inside, so the tests can choose a line
+ * instead of hoping for one.
+ */
+export function challengeText(pick: number = Math.random()): string {
+  const i = Math.floor(clamp01(pick) * CHALLENGES.length);
+  return CHALLENGES[Math.min(i, CHALLENGES.length - 1)]!;
+}
+
+function clamp01(v: number): number {
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
 }
 
 /**
@@ -360,7 +393,7 @@ export function challengeText(): string {
  * to be, so they go in the words: a bare challenge with no run attached to it is not a boast,
  * it is a link nobody opens.
  */
-export function runSummaryText(r: CardResult): string {
+export function runSummaryText(r: CardResult, pick: number = Math.random()): string {
   const where = isDaily(r.seed)
     ? `the Downhill run for ${cardSeedLabel(r.seed)}`
     : `Downhill seed "${r.seed}"`;
@@ -371,7 +404,7 @@ export function runSummaryText(r: CardResult): string {
     r.topSpeed != null ? `up to ${toKmh(r.topSpeed)}km/h` : null,
   ].filter(Boolean);
   const run = detail.length ? ` — ${detail.join(", ")}` : "";
-  return `${r.score.toLocaleString()} on ${where}${run}. Think you can beat that?`;
+  return `${r.score.toLocaleString()} on ${where}${run}. ${challengeText(pick)}`;
 }
 
 /**

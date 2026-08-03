@@ -4,6 +4,7 @@ import {
   cardSeedLabel,
   cardVersion,
   challengeText,
+  CHALLENGES,
   drawShareCard,
   CARD_SIZE,
   runSummaryText,
@@ -278,14 +279,37 @@ describe("the same seed always decorates its own card the same way", () => {
 });
 
 describe("the message that travels with the card", () => {
-  it("is a challenge and nothing else", () => {
+  it("is a challenge and nothing else, whichever one comes up", () => {
     // Everything about the run is already on the picture. Saying it again only makes the
     // message long enough for a chat app to truncate it — and what gets truncated is the end,
-    // which is where the link lives.
-    const text = challengeText();
-    expect(text).not.toMatch(/\d/);
-    expect(text.length).toBeLessThan(60);
-    expect(text).toMatch(/beat/i);
+    // which is where the link lives. Held against the whole list, not a sample of it: one line
+    // that sneaks a number in would only surface for the players who happened to roll it.
+    expect(CHALLENGES.length).toBeGreaterThanOrEqual(5);
+    for (const text of CHALLENGES) {
+      expect(text, `"${text}" carries a number the card already shows`).not.toMatch(/\d/);
+      expect(text.length, `"${text}" is long enough to be truncated`).toBeLessThan(60);
+      expect(text, `"${text}" is not a challenge`).toMatch(/[?.!]$/);
+      expect(text).not.toContain("https://");
+    }
+    expect(new Set(CHALLENGES).size, "duplicates waste a variation").toBe(CHALLENGES.length);
+  });
+
+  it("actually varies, rather than dressing up one line", () => {
+    // The point of a list is that the same person receiving these does not read the same
+    // sentence every time. A picker that always lands on the first entry would pass every
+    // check above and none of the intent.
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) seen.add(challengeText(i / 200));
+    expect(seen.size).toBe(CHALLENGES.length);
+  });
+
+  it("picks by the roll it is handed, and survives a bad one", () => {
+    expect(challengeText(0)).toBe(CHALLENGES[0]);
+    // 1 is the exclusive end of Math.random()'s range, but a caller can still pass it, and
+    // flooring it lands one past the end of the list
+    expect(challengeText(1)).toBe(CHALLENGES[CHALLENGES.length - 1]);
+    expect(CHALLENGES).toContain(challengeText(-5));
+    expect(CHALLENGES).toContain(challengeText(Number.NaN));
   });
 });
 
@@ -308,7 +332,6 @@ describe("the message for when there is no card", () => {
     // Passed as `url` to navigator.share, which appends it. Including it here too gets it
     // pasted twice in WhatsApp.
     expect(runSummaryText(RESULT)).not.toContain("https://");
-    expect(challengeText()).not.toContain("https://");
   });
 });
 

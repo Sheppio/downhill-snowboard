@@ -14,6 +14,26 @@ import { chromium } from "playwright";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 const OUT = process.argv[2] ?? "./.screenshots";
+
+/**
+ * The challenge lines the card can be sent with, restated because this file drives the *built*
+ * game and cannot import the source. `sharecard.test.ts` holds the real list to the same rules;
+ * what this adds is that the line actually reaching `navigator.share` is one of them, rather
+ * than something assembled on the way out. If the list changes, this fails until it is updated,
+ * which is the intended amount of friction for user-facing copy.
+ */
+const CHALLENGES = [
+  "Think you can beat that?",
+  "Your turn. Try not to hit a tree.",
+  "Go on then, beat it.",
+  "Reckon you can top that?",
+  "Same mountain, same trees. Show me.",
+  "Bet you can't beat it.",
+  "Your move. I'll wait.",
+  "Beat that and I'll believe you.",
+  "Let's see you do better.",
+  "Come and have a go, if you think you're fast enough.",
+];
 const BASE = process.env.GAME_URL ?? "http://127.0.0.1:4173/";
 mkdirSync(OUT, { recursive: true });
 
@@ -625,8 +645,11 @@ if (end.title !== "WIPEOUT") fail(`expected WIPEOUT, got ${end.title}`);
     problems.push(`the link does not name the seed: ${shared.url}`);
   // A challenge and nothing else. The run is on the picture beside it, and restating it only
   // makes the message long enough to be truncated — taking the link, which is at the end.
-  if (!/beat/i.test(shared.text ?? ""))
-    problems.push(`the message is not a challenge: "${shared.text}"`);
+  // One of the written challenges — there are ten, picked at random, so the same person
+  // getting these does not read the same sentence every time. Checked against the list rather
+  // than for a keyword, which would pass for any sentence containing the word.
+  if (!CHALLENGES.includes(shared.text ?? ""))
+    problems.push(`the message is not one of the challenges: "${shared.text}"`);
   if (/\d/.test(shared.text ?? ""))
     problems.push(`the message repeats what is already on the card: "${shared.text}"`);
   if (!card) problems.push("no image was attached at all");

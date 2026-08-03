@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { shareMessage, shareRun } from "./share";
+import { CHALLENGES } from "./sharecard";
 import type { CardResult } from "./sharecard";
 
 const RESULT: CardResult = {
@@ -37,7 +38,9 @@ describe("sharing a run", () => {
       // A challenge, not a second copy of the card. The run's numbers are all on the picture,
       // and repeating them only pushes the link far enough down to be truncated.
       expect(sent.text).not.toMatch(/\d/);
-      expect(sent.text).toMatch(/beat/i);
+      // One of the written challenges, rather than anything matching a keyword: the point is
+      // that what goes out is a line somebody chose, not whatever the caller happened to build.
+      expect(CHALLENGES as readonly string[]).toContain(sent.text);
     });
   });
 
