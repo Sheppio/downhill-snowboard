@@ -486,6 +486,13 @@ body {
   min-height: 52px;
 }
 
+/* The placeholder is the hint that this box wants a code, so it has to stay legible */
+#seed-input::placeholder {
+  color: var(--muted);
+  font-weight: 700;
+  opacity: 1;
+}
+
 #seed-input:focus {
   outline: none;
   border-color: var(--sky);

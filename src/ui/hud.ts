@@ -192,7 +192,11 @@ export class Hud {
         ride.type = "button";
         ride.className = "score-row";
         const far = formatDistance(r.distance);
-        ride.setAttribute("aria-label", `Ride ${label}, your best ${r.score} over ${far}`);
+        ride.setAttribute(
+          "aria-label",
+          `Ride ${isDaily(r.seed) ? "the daily run for" : "slope code"} ${label}, ` +
+            `your best ${r.score} over ${far}`,
+        );
         ride.append(
           cell("score-seed", label),
           cell("score-value", r.score.toLocaleString()),

@@ -328,7 +328,10 @@ export function drawShareCard(ctx: CardContext, r: CardResult, size = CARD_SIZE)
   const label = cardSeedLabel(r.seed);
   ctx.fillStyle = INK_SOFT;
   ctx.font = font(size * 0.026, 800);
-  ctx.fillText(isDaily(r.seed) ? "DAILY SEED" : "SEED", mid, size * 0.575);
+  // "Slope code" rather than "seed", here and throughout the UI: a seed is a word from inside
+  // the program, and this card goes to people who have never seen the game. The daily run says
+  // what it is instead, because the value beneath it is a date, not something anyone types.
+  ctx.fillText(isDaily(r.seed) ? "DAILY RUN" : "SLOPE CODE", mid, size * 0.575);
   const seedPx = fitText(ctx, label, size * 0.86, size * 0.072, 900);
   outlined(ctx, label, mid, size * 0.635, seedPx, SUN, 900);
 
@@ -396,7 +399,7 @@ function clamp01(v: number): number {
 export function runSummaryText(r: CardResult, pick: number = Math.random()): string {
   const where = isDaily(r.seed)
     ? `the Downhill run for ${cardSeedLabel(r.seed)}`
-    : `Downhill seed "${r.seed}"`;
+    : `Downhill slope code "${r.seed}"`;
   // Only what this particular share actually knows. A scores-list row has no top speed, and
   // "at up to undefined km/h" is worse than saying nothing.
   const detail = [

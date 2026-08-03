@@ -10,7 +10,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>Downhill — seeded snowboard runs</title>
+    <title>Downhill — daily snowboard runs</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏂</text></svg>" />
     <link rel="stylesheet" href="/src/ui/style.css" />
   </head>
@@ -56,7 +56,7 @@
       <div id="start" class="panel-wrap" hidden>
         <div class="panel">
           <h1>DOWNHILL</h1>
-          <p class="tagline">Same seed, same mountain. Hold left or right to carve.</p>
+          <p class="tagline">Same slope code, same mountain. Hold left or right to carve.</p>
 
           <button id="btn-daily" class="btn btn-primary">
             <span class="btn-title">Today's Run</span>
@@ -72,11 +72,12 @@
               autocapitalize="off"
               spellcheck="false"
               maxlength="24"
-              aria-label="Course seed"
+              aria-label="Slope code"
+              placeholder="slope code"
             />
-            <button id="btn-shuffle" class="btn btn-icon" aria-label="Random seed">🎲</button>
+            <button id="btn-shuffle" class="btn btn-icon" aria-label="Random slope code">🎲</button>
           </div>
-          <button id="btn-ride" class="btn btn-secondary">Ride this seed</button>
+          <button id="btn-ride" class="btn btn-secondary">Ride this code</button>
           <!-- Why a typed code was refused. Empty and hidden until there is something to say. -->
           <p class="seed-error" id="seed-error" role="status" hidden></p>
 
@@ -86,7 +87,7 @@
         </div>
       </div>
 
-      <!-- Local leaderboard: your best on every seed, most recently set at the top -->
+      <!-- Local leaderboard: your best on every slope code, most recently set at the top -->
       <div id="scores" class="panel-wrap" hidden>
         <div class="panel">
           <h2 class="scores-title">YOUR SCORES</h2>
@@ -109,12 +110,12 @@
           <div class="breakdown">
             <div><span id="end-dist">0</span><small>distance</small></div>
             <div><span id="end-top">0</span><small>top speed</small></div>
-            <div><span id="end-seed">—</span><small>seed</small></div>
+            <div><span id="end-seed">—</span><small>slope code</small></div>
           </div>
 
-          <button id="btn-retry" class="btn btn-primary">Retry this seed</button>
+          <button id="btn-retry" class="btn btn-primary">Retry this run</button>
           <button id="btn-share" class="btn btn-secondary">Copy challenge link</button>
-          <button id="btn-menu" class="btn btn-ghost">Change seed</button>
+          <button id="btn-menu" class="btn btn-ghost">Change code</button>
 
           <!-- Build stamp, filled in from __APP_VERSION__ so it tracks the commit -->
           <p class="version" data-version></p>
@@ -131,7 +132,7 @@
           </div>
           <button id="btn-resume" class="btn btn-primary">Resume</button>
           <button id="btn-restart" class="btn btn-secondary">Restart run</button>
-          <button id="btn-quit" class="btn btn-ghost">Change seed</button>
+          <button id="btn-quit" class="btn btn-ghost">Change code</button>
           <p class="version" data-version></p>
         </div>
       </div>

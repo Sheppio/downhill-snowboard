@@ -1441,7 +1441,7 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
 
   await page.evaluate(() => localStorage.clear());
 
-  // 1. Paused, then "Change seed". The score is read while the run is frozen, so the
+  // 1. Paused, then "Change code". The score is read while the run is frozen, so the
   // comparison is exact — read before pausing it climbs a little further before the click
   // lands, which is what an earlier version of this check tripped over.
   const quit = await rideFor("quit-from-pause", 1300);
