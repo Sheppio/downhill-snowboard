@@ -1494,6 +1494,60 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   }
 }
 
+// --- A date-shaped code has to be today's -------------------------------------------------------
+// The daily run is only a competition while everybody meets the same mountain on the same day
+// with the same warning. Typing a date in defeats both halves at once, so the box refuses one
+// that is not today — and refusing has to mean the run does not start, not merely that a
+// message appears next to a run that started anyway.
+{
+  await page.evaluate(() => window.__game.showMenu());
+  await page.waitForSelector("#start:not([hidden])", { timeout: 10000 });
+
+  const dayOffset = (days) => {
+    const d = new Date(Date.now() + days * 86400_000);
+    return d.toISOString().slice(0, 10).replace(/-/g, "");
+  };
+
+  const tryCode = async (code) => {
+    await page.fill("#seed-input", code);
+    await page.click("#btn-ride");
+    await page.waitForTimeout(250);
+    return page.evaluate(() => ({
+      state: window.__game.state,
+      seed: window.__game.seed,
+      error: document.getElementById("seed-error")?.hidden
+        ? null
+        : document.getElementById("seed-error")?.textContent,
+    }));
+  };
+
+  const problems = [];
+
+  const tomorrow = await tryCode(dayOffset(1));
+  if (tomorrow.state !== "menu")
+    problems.push(`tomorrow's code started a run (state ${tomorrow.state})`);
+  if (!tomorrow.error) problems.push("tomorrow's code was refused without saying why");
+  else if (!/hasn't happened/i.test(tomorrow.error))
+    problems.push(`odd refusal for tomorrow: "${tomorrow.error}"`);
+
+  const yesterday = await tryCode(dayOffset(-1));
+  if (yesterday.state !== "menu")
+    problems.push(`yesterday's code started a run (state ${yesterday.state})`);
+  if (!yesterday.error) problems.push("yesterday's code was refused without saying why");
+
+  // ...and an ordinary code still rides, so this has not simply broken the box
+  const ordinary = await tryCode("powder-chute-42");
+  if (ordinary.state === "menu") problems.push("an ordinary code no longer starts a run");
+  if (ordinary.seed !== "powder-chute-42") problems.push(`rode "${ordinary.seed}" instead`);
+
+  if (problems.length) fail(`date-shaped codes — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ a date-shaped code must be today's: tomorrow refused ("${tomorrow.error}"), ` +
+        `yesterday refused ("${yesterday.error}"), an ordinary code still rides`,
+    );
+}
+
 // --- Landscape ---------------------------------------------------------------------------------
 // The game used to call screen.orientation.lock("portrait-primary") on every run. Android
 // honours that while fullscreen and iOS ignores it, so turning the phone did nothing on exactly

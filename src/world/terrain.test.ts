@@ -64,8 +64,8 @@ describe("seeded determinism", () => {
     // The seed string *is* the course, so rewriting the format for a date already played
     // would move that day's mountain and strand every best recorded on it.
     expect(dailySeed(new Date("2026-07-28T11:30:00Z"))).toBe("daily-2026-07-28");
-    expect(dailySeed(new Date("2026-08-01T23:59:59Z"))).toBe("daily-2026-08-01");
-    expect(dailySeed(new Date("2026-08-02T00:00:00Z"))).toBe("20260802");
+    expect(dailySeed(new Date("2026-08-03T23:59:59Z"))).toBe("daily-2026-08-03");
+    expect(dailySeed(new Date("2026-08-04T00:00:00Z"))).toBe("20260804");
     expect(dailySeed(new Date("2027-01-01T00:00:00Z"))).toBe("20270101");
   });
 });

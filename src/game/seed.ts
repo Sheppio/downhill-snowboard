@@ -70,18 +70,52 @@ export function seedLabel(seed: string): string {
   return iso === null ? seed : dailyLabel(new Date(`${iso}T00:00:00Z`));
 }
 
+/** The UTC date, as `YYYY-MM-DD`. */
+function today(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/**
+ * Why a typed course code cannot be ridden, or null if it can.
+ *
+ * The daily run is the competition, and it is only a competition because everybody meets the
+ * same mountain on the same day with no more warning than anyone else. Typing a date in gives
+ * away both halves of that: tomorrow's code is a practice run at a course nobody else has seen
+ * yet, and last Tuesday's is an attempt at a day that has already been scored.
+ *
+ * Only the *date-shaped* codes are restricted. Anything else a player types is theirs to ride
+ * as often as they like — the whole point of custom courses is that they are not the daily.
+ */
+export function dailyEntryError(seed: string, now: Date = new Date()): string | null {
+  const iso = dailySeedDate(seed);
+  if (iso === null) return null; // an ordinary course code, always fine
+
+  const nowIso = today(now);
+  if (iso === nowIso) return null;
+
+  const when = dailyLabel(new Date(`${iso}T00:00:00Z`));
+  return iso > nowIso
+    ? `${when} hasn't happened yet — no early practice!`
+    : `${when} is done and dusted. Today's run is ${dailySeed(now)}.`;
+}
+
 /**
  * The seed to open with: whatever is in the URL, otherwise today's run.
  *
  * Defaulting to the daily seed rather than a random one matters — it means a first-time
  * player lands directly on the course everyone else is racing.
+ *
+ * A link carrying a date that is not today falls back to today's run rather than being
+ * refused. A URL is the obvious way around a restriction on the input box, so the rule has to
+ * hold here too — but a challenge someone was sent last week should still open the game rather
+ * than dead-end on an error, and today's course is the honest thing to offer them instead.
  */
-export function initialSeed(): string {
+export function initialSeed(now: Date = new Date()): string {
   try {
     const fromUrl = new URLSearchParams(window.location.search).get(SEED_PARAM);
     if (fromUrl) {
       const seed = normaliseSeed(fromUrl);
-      if (seed) return seed;
+      if (seed && dailyEntryError(seed, now) === null) return seed;
     }
   } catch {
     // Malformed URL — fall through to the daily seed

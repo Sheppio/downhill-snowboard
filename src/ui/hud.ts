@@ -6,7 +6,7 @@
  */
 
 import { formatDistance, formatWhen, readScores } from "../game/leaderboard";
-import { dailyLabel, isDaily, seedLabel } from "../game/seed";
+import { dailyEntryError, dailyLabel, isDaily, normaliseSeed, seedLabel } from "../game/seed";
 
 function must<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -53,6 +53,7 @@ export class Hud {
 
   private readonly start = must("start");
   private readonly seedInput = must<HTMLInputElement>("seed-input");
+  private readonly seedError = must<HTMLParagraphElement>("seed-error");
   private readonly dailyLabelEl = must("daily-label");
   private readonly startBest = must("start-best");
 
@@ -85,9 +86,7 @@ export class Hud {
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
     must<HTMLButtonElement>("btn-daily").addEventListener("click", () => callbacks.onRideDaily());
-    must<HTMLButtonElement>("btn-ride").addEventListener("click", () =>
-      callbacks.onRideSeed(this.seedInput.value),
-    );
+    must<HTMLButtonElement>("btn-ride").addEventListener("click", () => this.rideTyped());
     must<HTMLButtonElement>("btn-shuffle").addEventListener("click", () => callbacks.onShuffle());
 
     // Opening and closing the leaderboard is the panel's own business — it reads storage and
@@ -109,9 +108,13 @@ export class Hud {
     this.seedInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         this.seedInput.blur();
-        callbacks.onRideSeed(this.seedInput.value);
+        this.rideTyped();
       }
     });
+
+    // Clear a refusal as soon as they start changing what they typed. Leaving it up while the
+    // box says something different makes the message look like it is about the new text.
+    this.seedInput.addEventListener("input", () => this.showSeedError(null));
 
     this.dailyLabelEl.textContent = dailyLabel();
 
@@ -358,6 +361,25 @@ export class Hud {
   }
 
   /** Momentary confirmation on the share button — cheaper than a toast, and clearer. */
+  /**
+   * Ride whatever is in the box, unless it is a date that is not today.
+   *
+   * Checked here rather than in the game, because the answer is a message on this panel: the
+   * run simply does not start. The daily code is the competition, and it only is one while
+   * nobody can practise tomorrow's course or re-attempt a day that has already been scored.
+   */
+  private rideTyped(): void {
+    const typed = normaliseSeed(this.seedInput.value);
+    const refusal = dailyEntryError(typed);
+    this.showSeedError(refusal);
+    if (refusal === null) this.callbacks.onRideSeed(this.seedInput.value);
+  }
+
+  private showSeedError(message: string | null): void {
+    this.seedError.textContent = message ?? "";
+    this.seedError.hidden = message === null;
+  }
+
   flashShare(message: string): void {
     this.shareBtn.textContent = message;
     window.setTimeout(() => {

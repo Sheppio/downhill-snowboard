@@ -116,8 +116,11 @@ export function randomSeedPhrase(): string {
  *
  * So the old shape stays true for every date it was ever used on, and the new one starts on a
  * day that has not happened yet. Both are read everywhere; only one is ever written.
+ *
+ * Set to the day *after* the change was made, deliberately: picking today would have moved the
+ * mountain under anyone already riding it, halfway through their day.
  */
-const COMPACT_DAILY_FROM = "2026-08-02";
+const COMPACT_DAILY_FROM = "2026-08-04";  // the day after this was written, so no run in progress moved
 
 /**
  * The seed everyone races on a given day. Derived from the UTC date so a player in Auckland

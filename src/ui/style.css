@@ -351,6 +351,19 @@ body {
   min-height: 1em;
 }
 
+/*
+ * Why a typed course code was refused. Berry rather than the usual soft ink: this is the one
+ * message on the start panel that is telling the player *no*, and it has to read as that at a
+ * glance rather than as another line of help text.
+ */
+.seed-error {
+  margin: -4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--berry);
+}
+
 .breakdown {
   display: flex;
   justify-content: space-around;
