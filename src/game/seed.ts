@@ -31,21 +31,43 @@ export function dailyLabel(now: Date = new Date()): string {
   });
 }
 
+/**
+ * The UTC date a daily seed stands for, as `YYYY-MM-DD`, or null if it is not one.
+ *
+ * Reads both shapes. `YYYYMMDD` is what the game writes now; `daily-YYYY-MM-DD` is what it
+ * wrote until 2 Aug 2026, and those seeds are still on people's devices and in links already
+ * sent — a shared challenge is meant to keep working.
+ *
+ * The calendar has the last word. `20260230` is eight digits in the right shape and not a day
+ * that exists, and `new Date` will quietly hand back 2 March rather than refusing, so the only
+ * honest test is whether the date agrees it is the date it was asked for. Without that,
+ * February the thirtieth becomes a course you could ride but never on the day it claims.
+ */
+export function dailySeedDate(seed: string): string | null {
+  let iso: string | null = null;
+  if (/^daily-\d{4}-\d{2}-\d{2}$/.test(seed)) iso = seed.slice("daily-".length);
+  else if (/^\d{8}$/.test(seed)) iso = `${seed.slice(0, 4)}-${seed.slice(4, 6)}-${seed.slice(6, 8)}`;
+  if (iso === null) return null;
+
+  const date = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== iso) return null;
+  return iso;
+}
+
 export function isDaily(seed: string): boolean {
-  return seed.startsWith("daily-");
+  return dailySeedDate(seed) !== null;
 }
 
 /**
  * How a seed should be shown to a player.
  *
- * Daily seeds are machine-shaped (`daily-2026-07-29`) because they have to be derived from
- * the date without coordination. Nobody wants to read a list of those, so they are turned
- * back into the date they encode.
+ * Daily seeds are machine-shaped because they have to be derived from the date without
+ * coordination. Nobody wants to read a list of those, so they are turned back into the date
+ * they encode.
  */
 export function seedLabel(seed: string): string {
-  if (!isDaily(seed)) return seed;
-  const date = new Date(`${seed.slice("daily-".length)}T00:00:00Z`);
-  return Number.isNaN(date.getTime()) ? seed : dailyLabel(date);
+  const iso = dailySeedDate(seed);
+  return iso === null ? seed : dailyLabel(new Date(`${iso}T00:00:00Z`));
 }
 
 /**

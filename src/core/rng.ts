@@ -107,10 +107,27 @@ export function randomSeedPhrase(): string {
 }
 
 /**
+ * The first UTC date whose daily seed is a bare `YYYYMMDD`.
+ *
+ * A cutover rather than a rename, because the seed string *is* the course: it is hashed to
+ * build the mountain, so `daily-2026-08-01` and `20260801` are two different days out on two
+ * different hills. Rewriting the format retroactively would swap the course under everyone
+ * playing today's run, halfway through the day, and orphan every daily best already recorded.
+ *
+ * So the old shape stays true for every date it was ever used on, and the new one starts on a
+ * day that has not happened yet. Both are read everywhere; only one is ever written.
+ */
+const COMPACT_DAILY_FROM = "2026-08-02";
+
+/**
  * The seed everyone races on a given day. Derived from the UTC date so a player in Auckland
  * and a player in Los Angeles get the same mountain at the same moment — and it needs no
  * server to coordinate.
+ *
+ * ISO dates compare correctly as plain strings — fixed width, largest field first — so the
+ * cutover needs no date arithmetic to get wrong.
  */
 export function dailySeed(now: Date = new Date()): string {
-  return `daily-${now.toISOString().slice(0, 10)}`;
+  const iso = now.toISOString().slice(0, 10);
+  return iso >= COMPACT_DAILY_FROM ? iso.replace(/-/g, "") : `daily-${iso}`;
 }

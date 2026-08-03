@@ -54,10 +54,19 @@ describe("seeded determinism", () => {
 
   it("derives the daily seed from the UTC date, not local time", () => {
     // Same instant, two very different local dates — must still be one shared course.
-    const instant = new Date("2026-07-28T11:30:00Z");
-    expect(dailySeed(instant)).toBe("daily-2026-07-28");
-    expect(dailySeed(new Date("2026-07-28T23:59:59Z"))).toBe("daily-2026-07-28");
-    expect(dailySeed(new Date("2026-07-29T00:00:01Z"))).toBe("daily-2026-07-29");
+    const instant = new Date("2026-08-05T11:30:00Z");
+    expect(dailySeed(instant)).toBe("20260805");
+    expect(dailySeed(new Date("2026-08-05T23:59:59Z"))).toBe("20260805");
+    expect(dailySeed(new Date("2026-08-06T00:00:01Z"))).toBe("20260806");
+  });
+
+  it("keeps the old daily seeds exactly as they were, and switches on the cutover day", () => {
+    // The seed string *is* the course, so rewriting the format for a date already played
+    // would move that day's mountain and strand every best recorded on it.
+    expect(dailySeed(new Date("2026-07-28T11:30:00Z"))).toBe("daily-2026-07-28");
+    expect(dailySeed(new Date("2026-08-01T23:59:59Z"))).toBe("daily-2026-08-01");
+    expect(dailySeed(new Date("2026-08-02T00:00:00Z"))).toBe("20260802");
+    expect(dailySeed(new Date("2027-01-01T00:00:00Z"))).toBe("20270101");
   });
 });
 
