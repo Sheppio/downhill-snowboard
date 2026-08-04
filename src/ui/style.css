@@ -807,13 +807,14 @@ body {
 }
 
 /*
- * A score that has stopped counting, after a daily run is continued.
+ * A score that will not be recorded — a continued run, or a re-run on a continued day that has
+ * climbed past the best already stored.
  *
- * Drained of the gold and dimmed rather than hidden: the number still means something — it is
- * what the run was worth when it was still being scored — but it must not read as the live,
- * climbing figure the rest of the game trains the player to watch.
+ * Drained of the gold and dimmed rather than hidden. The number still means something, and in
+ * the second case it is still climbing; what it must not do is read as the live figure the rest
+ * of the game trains the player to watch and expect to keep.
  */
-.stat-score.is-frozen .value {
+.stat-score.is-unrecorded .value {
   color: var(--muted);
   -webkit-text-stroke-color: #2a6f9799;
   opacity: 0.75;

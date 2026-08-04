@@ -2036,7 +2036,7 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     // The number has to visibly stop, not merely fail to be saved. A gold figure climbing at
     // sixty frames a second is the game's loudest claim that something is being earned.
     frozen: window.__game.score.isFrozen,
-    greyed: document.getElementById("hud-score-block").classList.contains("is-frozen"),
+    greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
     multShown: !document.getElementById("hud-mult").hidden,
     // ...while the distance carries on, because that part is still true
     shownDistance: Number(document.getElementById("hud-dist").textContent.replace(/\D/g, "")),
@@ -2058,6 +2058,33 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
       shown: window.__game.lastResult?.score ?? null,
     };
   });
+
+  // A *fresh* run on a continued day is a clean attempt: it counts, and it is drawn as
+  // counting, right up to the moment it climbs past the best already stored. Past that it keeps
+  // climbing — the run is real — but greys, because nothing above that line will be saved.
+  await dp.evaluate((seed) => window.__game.startRun(seed), today);
+  await dp.waitForFunction(() => window.__game.state === "playing", { timeout: 10000 });
+  await dp.waitForTimeout(800);
+  const rerun = await dp.evaluate(() => ({
+    score: window.__game.score.value,
+    best: JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]").find(
+      (r) => r.seed === window.__game.seed,
+    )?.score,
+    greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
+  }));
+
+  // Push it past the stored best and let it run on
+  const above = await dp.evaluate(async () => {
+    const g = window.__game;
+    g.score.total = 3000;
+    await new Promise((r) => setTimeout(r, 700));
+    return {
+      score: g.score.value,
+      greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
+      multShown: !document.getElementById("hud-mult").hidden,
+    };
+  });
+  const stillClimbing = await dp.evaluate(() => window.__game.score.value);
 
   // ...and that an ordinary course never offers it at all
   await dp.evaluate(() => window.__game.startRun("powder-chute-42"));
@@ -2098,7 +2125,10 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   if (!daily) problems.push("the clean run before the continue was not recorded at all");
   else if (daily.score !== crashed.score)
     problems.push(`the continued run counted: banked ${daily.score}, expected ${crashed.score}`);
-  if (banked.continueShown) problems.push("the continue was offered a second time");
+  if (!banked.continueShown)
+    problems.push("the continue was not offered again — it is meant to be unlimited");
+  if (!/carry on|no longer count/i.test(banked.note ?? ""))
+    problems.push(`a spent day still threatens to charge for the continue: "${banked.note}"`);
   // The bug this section exists for now, found by playing rather than by any check here: the
   // end screen announced a new personal best over a score the game had just refused to save,
   // and put that claim on the card, so a continued run could be sent to somebody as a clean
@@ -2108,20 +2138,33 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`a continued run claimed a record: "${banked.best}"`);
   if (!/continued/i.test(banked.best ?? ""))
     problems.push(`the end screen does not say the run was continued: "${banked.best}"`);
+  if (!/no longer count/i.test(banked.note ?? ""))
+    problems.push(`a spent day does not say so: "${banked.note}"`);
   if (!/continued/i.test(banked.strap ?? ""))
     problems.push(`the shared card does not say the run was continued: "${banked.strap}"`);
   if (banked.shown !== crashed.score)
     problems.push(`the card shows ${banked.shown}, not the frozen ${crashed.score}`);
-  if (!/no longer count/i.test(banked.note ?? ""))
-    problems.push(`a spent day does not say so: "${banked.note}"`);
   if (custom.shown) problems.push("an ordinary course offered the continue");
+  // The re-run rules
+  if (!(rerun.score > 0)) problems.push("a fresh run on a continued day did not score at all");
+  if (!(rerun.score < rerun.best))
+    problems.push(`the re-run passed the best (${rerun.best}) before this could be checked`);
+  if (rerun.greyed)
+    problems.push(`a re-run below the best (${rerun.score} of ${rerun.best}) was greyed anyway`);
+  if (!above.greyed)
+    problems.push(`a re-run past the best (${above.score} of ${rerun.best}) was not greyed`);
+  if (!(stillClimbing > above.score))
+    problems.push(`the re-run stopped counting past the best: ${above.score} to ${stillClimbing}`);
+  if (!above.multShown)
+    problems.push("the multiplier was hidden over a score that is still climbing");
 
   if (problems.length) fail(`the daily continue — ${problems.join("; ")}`);
   else
     console.log(
-      `✓ a daily run can be continued once: resumed at ${after.z.toFixed(0)}m keeping ` +
-        `${after.score} points frozen and greyed; it did not move while the run carried ` +
-        `on to ${after.shownDistance}m; a custom code never offers it`,
+      `✓ a daily run can be continued freely: resumed at ${after.z.toFixed(0)}m keeping ` +
+        `${after.score} points frozen and greyed; a re-run then counted normally at ` +
+        `${rerun.score} and greyed once past the ${rerun.best} best while still climbing to ` +
+        `${stillClimbing}; the continue stayed on offer; a custom code never offers it`,
     );
   await dp.close();
 }

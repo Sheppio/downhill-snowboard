@@ -26,7 +26,7 @@ import { hasContinued, markContinued, readBest, readRecord, recordBest } from ".
 import { initialSeed, isDaily, normaliseSeed, randomSeed, shareUrl, syncUrl, todaysSeed } from "./game/seed";
 import { prepareShareCard, shareMessage, shareRun } from "./game/share";
 import type { CardResult } from "./game/sharecard";
-import { Hud } from "./ui/hud";
+import { Hud, type ScoreDisplay } from "./ui/hud";
 
 /** Seconds off course before the run is ended. */
 const OUT_OF_BOUNDS_GRACE = 3;
@@ -68,6 +68,13 @@ class Game {
   private seed = initialSeed();
   /** The best on this seed when the current run started — what a new record has to beat. */
   private bestAtStart = 0;
+  /**
+   * Whether today's course has been continued, so nothing on it will be recorded.
+   *
+   * Cached at the start of a run rather than asked per frame: `hasContinued` parses a list out
+   * of localStorage, and the score's colour is decided sixty times a second.
+   */
+  private spentDay = false;
   private oobTimer = 0;
   private crashTimer = 0;
   private endReason: "crash" | "outOfBounds" = "crash";
@@ -392,10 +399,9 @@ class Game {
     this.lastRampZ = this.controller.z;
     this.tracks.clear();
     this.score.reset();
-    // Starting again on a day that has already been continued does not restore the scoring.
-    // The day is spent, so the number stays grey and still from the first metre rather than
-    // climbing for a whole run that was never going to count.
-    if (hasContinued(seed)) this.score.freeze();
+    // A fresh run on a continued day counts normally, and normally is how it is drawn — right
+    // up to the point it passes the best already stored. See `scoreDisplay`.
+    this.spentDay = hasContinued(seed);
     this.input.reset();
     this.oobTimer = 0;
     this.crashTimer = 0;
@@ -500,7 +506,7 @@ class Game {
       this.engine.getFps(),
       this.score.multiplierAt(c.speed),
       this.score.boost,
-      this.score.isFrozen,
+      this.scoreDisplay(),
     );
 
     // Obstacles
@@ -576,6 +582,7 @@ class Game {
     if (!isDaily(this.seed) || hasContinued(this.seed)) return;
 
     markContinued(this.seed);
+    this.spentDay = true;
     // Stop the score there and then. The run carries on and the distance keeps climbing, but
     // nothing further is earned — and the HUD greys the number so that is visible from the
     // first frame rather than only on the end screen.
@@ -598,6 +605,27 @@ class Game {
     this.crashTimer = 0;
     this.state = "playing";
     this.hud.showPlaying();
+  }
+
+  /**
+   * How the score should be drawn this frame.
+   *
+   * The rule is one sentence: grey when the number on screen is not going to be kept.
+   *
+   * A continued run earns nothing more, so it is greyed and still. A *fresh* run on a continued
+   * day is a clean attempt and counts normally — but the day is spent, so the moment it passes
+   * the best already stored it is climbing into territory nothing will save, and it greys while
+   * carrying on. That is the whole message: keep going, this one is for you rather than for the
+   * board.
+   *
+   * Below the stored best there is nothing to warn about. A run that cannot beat the best would
+   * not have been recorded on any day, spent or not, so greying it would be greying an ordinary
+   * run for no reason.
+   */
+  private scoreDisplay(): ScoreDisplay {
+    if (this.score.isFrozen) return "stopped";
+    if (this.spentDay && this.score.value > this.bestAtStart) return "unrecorded";
+    return "counting";
   }
 
   private updateCrashing(dt: number): void {
@@ -652,7 +680,7 @@ class Game {
     //
     // It covers every run on the day, not only the continued one. Once the day is spent, a
     // fresh attempt on that course is not recorded either, and would have made the same claim.
-    const spent = hasContinued(this.seed);
+    const spent = this.spentDay;
     // Compared against the best as it stood when this run *began*, not against what is in
     // storage now: banking mid-run means the run's own score may already be in there, and
     // asking storage would then deny the run the record it just set.
@@ -684,10 +712,11 @@ class Game {
       seed: this.seed,
       best,
       isRecord,
-      // Only a daily run, and only while the day is still worth something. A custom course can
-      // simply be ridden again from the top, so a continue there would be a button that saves
-      // nothing; and once the day is spent there is nothing left to warn anybody about.
-      canContinue: isDaily(this.seed) && !spent,
+      // Every time, on any daily run. The first press is what costs the day; after that there
+      // is nothing left to spend, so there is no reason to stop offering it — the point of the
+      // feature is seeing the mountain, and one continue rarely gets anybody to the bottom.
+      // A custom course still never offers it: it can simply be ridden again from the top.
+      canContinue: isDaily(this.seed),
       spent,
     });
 

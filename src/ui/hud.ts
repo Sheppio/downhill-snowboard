@@ -14,6 +14,20 @@ function must<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
+/**
+ * How the score should be drawn.
+ *
+ *  - `counting`   — normal. Gold, climbing, and it will be kept.
+ *  - `unrecorded` — climbing, but greyed: the day has been continued, and this run has passed
+ *                   the best already stored, so what is on screen is beyond anything that will
+ *                   be saved. Grey is the only thing saying so.
+ *  - `stopped`    — a continued run. Greyed *and* still, because it is not earning at all.
+ *
+ * One value rather than a pair of flags, because "greyed" and "still" are not independent and a
+ * pair can be set to a combination that means nothing.
+ */
+export type ScoreDisplay = "counting" | "unrecorded" | "stopped";
+
 export interface HudCallbacks {
   onRideDaily(): void;
   onRideSeed(seed: string): void;
@@ -59,6 +73,7 @@ export class Hud {
   private readonly seedError = must<HTMLParagraphElement>("seed-error");
   private readonly continueBtn = must<HTMLButtonElement>("btn-continue");
   private readonly continueNote = must<HTMLParagraphElement>("continue-note");
+  private readonly continueSub = must("continue-sub");
   private readonly dailyLabelEl = must("daily-label");
   private readonly startBest = must("start-best");
 
@@ -285,20 +300,25 @@ export class Hud {
     fps: number,
     multiplier: number,
     boost: number,
-    frozen = false,
+    display: ScoreDisplay = "counting",
   ): void {
     this.fps.textContent = String(Math.round(fps));
     this.speed.textContent = String(Math.round(speedMs * 3.6));
     this.dist.textContent = String(Math.floor(distance));
     this.score.textContent = score.toLocaleString();
 
-    // Greyed the moment the run is continued, and it stops moving at the same time. A live,
-    // gold, climbing number is the game's loudest claim that something is being earned; when
-    // nothing is being kept it has to stop making it. The distance carries on, because that is
-    // still true — the run is still going, it is just no longer worth anything.
-    this.scoreBlock.classList.toggle("is-frozen", frozen);
+    // Grey means one thing throughout: this number is not being kept. A live, gold, climbing
+    // score is the game's loudest claim that something is being earned, so it has to stop
+    // making that claim when nothing is being saved — whether the score has stopped (a
+    // continued run) or is still climbing past a best it can no longer take.
+    //
+    // The distance and the speed keep their normal colours in every case, because they are
+    // still true: the run is still going, it is just no longer worth anything.
+    this.scoreBlock.classList.toggle("is-unrecorded", display !== "counting");
 
-    if (multiplier > 1.02 && !frozen) {
+    // Hidden only when the score has actually stopped. A score still climbing is still being
+    // multiplied, and hiding it there would leave the ramp bonus with nothing to show for it.
+    if (multiplier > 1.02 && display !== "stopped") {
       this.mult.hidden = false;
       this.mult.textContent = `×${multiplier.toFixed(2)}`;
     } else {
@@ -354,18 +374,25 @@ export class Hud {
     // Three states, and the middle one is the one that matters: the offer has to say what it
     // costs *before* it is taken, not after. Once spent, the button goes and the reason stays,
     // so a score that is not being saved never looks like one that is.
+    this.continueSub.textContent = opts.spent
+      ? "carry on down the mountain"
+      : "today's score stops counting";
     this.continueBtn.hidden = !opts.canContinue;
-    if (opts.canContinue) {
+    if (!opts.canContinue) {
+      this.continueNote.hidden = true;
+      this.continueNote.textContent = "";
+    } else if (opts.spent) {
+      // The price has already been paid, so the offer stops being a warning and becomes an
+      // invitation. Carrying on saying "this will cost you the day" after the day is gone
+      // reads as a threat the game cannot carry out.
+      this.continueNote.hidden = false;
+      this.continueNote.textContent =
+        "Carry on as long as you like — today's runs no longer count towards your best.";
+    } else {
       this.continueNote.hidden = false;
       this.continueNote.textContent =
         "Keep this run going from where it ended. Use it and today's runs stop counting " +
         "towards your best — for the rest of the day.";
-    } else if (opts.spent) {
-      this.continueNote.hidden = false;
-      this.continueNote.textContent = "Continued earlier, so today's runs no longer count.";
-    } else {
-      this.continueNote.hidden = true;
-      this.continueNote.textContent = "";
     }
   }
 

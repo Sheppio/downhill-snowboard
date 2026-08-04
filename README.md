@@ -199,8 +199,12 @@ A daily run ends at the first mistake, so most attempts are over inside a kilome
 nobody sees the mountain past 3km, where the fall line has tipped over and the speed is the
 point. So a daily run can be **continued once**, from where it ended.
 
-It costs the day. **The score stops there and greys out**, and does not move again however far
-the run goes. What was banked before continuing still stands, since that part was ridden clean;
+The first one costs the day; after that they are free, and there is no limit. One continue
+rarely gets anybody to the bottom, and once the day is spent there is nothing left to charge
+for.
+
+**A continued run's score stops there and greys out**, and does not move again however far the
+run goes. What was banked before continuing still stands, since that part was ridden clean;
 everything after it is riding for its own sake.
 
 Freezing the number rather than merely declining to save it is the point. A gold figure
@@ -208,6 +212,12 @@ climbing at sixty frames a second is the game's loudest claim that something is 
 and it was still making that claim over a score nothing was keeping — right up to the end
 screen, and onto a card that could be sent to somebody as a clean run. The distance carries on
 counting, because that part is still true.
+
+**A fresh run on a continued day is different.** That is a clean attempt, so it counts, and it
+is drawn as counting — gold and climbing, exactly as normal. It only greys once it passes the
+best already stored, and then it carries on climbing. Grey means one thing everywhere: this
+number is not being kept. Below the best there is nothing to say, since a run that cannot beat
+the best would not have been recorded on any day.
 
 Custom codes do not offer it. They can simply be ridden again.
 
