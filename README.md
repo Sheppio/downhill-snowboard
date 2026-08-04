@@ -59,6 +59,18 @@ The reference pilot reaches 8km on 27 of 57 seeds, worst 3274m — so the 3km co
 guarantee holds with 274m to spare, which is exactly the margin it had before the mountain
 tipped, on a course now 17% faster.
 
+**With one caveat, found by widening that test from a sample to the whole year.** It used to
+ride one daily seed in seven. Ridden on all 365, six a year never reach 3000m. That is not
+caused by the mountain steepening — measured on both the old and new code formats it is six
+either way, and the old format's worst was far worse, ending at 1477m. The cause is the
+reference pilot: on every failing seed it dies 3–4m off the racing line, through a channel
+about 3m wide, using **one percent of full lock**. A proportional controller following a curve
+settles at an offset, so it stabilises wrong with all its authority unused. Widening the
+channel, shortening the lookahead and adding the curvature feedforward it lacks were all tried
+and all measured worse. The test now rides every day of the year and holds the line at "nothing
+dies before 2400m, at most eight fall short" — visible in CI rather than hidden by sampling,
+and not where this should be left.
+
 A steep face cannot also snake hard, so past 4.2km the gulley trades weave for pitch and eases
 back toward straight. That is geometry rather than a difficulty knob: holding full weave at
 7.6km asked 2.01 rad/s of a rider who has 1.72, which is a line no input can hold. A steep
@@ -158,20 +170,46 @@ a metre out over the snow, and a collider that tracked it would be unreadable �
 *into* the turn, away from whatever is being dodged. What threads a gap is the board and the
 legs.
 
-## Seeds
+## Slope codes
 
-Every course is generated from a seed, and **the same seed always builds exactly the same
+Every course is generated from a code, and **the same code always builds exactly the same
 mountain** — same terrain, same corners, same trees, on any device.
 
-- **Today's Run** is a seed derived from the UTC date, so everyone in the world races the same
-  course on the same day. No server involved.
-- Type any seed you like, or hit the dice for a random one.
+The UI calls it a *slope code*. The source calls it a seed, because that is what it is; the
+player is not the one who needs to know that.
+
+- **Today's Run** is a code derived from the UTC date — `20260804` — so everyone in the world
+  races the same course on the same day. No server involved.
+- Type any code you like, or hit the dice for a random one.
 - The end screen gives you a link that drops someone straight onto the course you just rode.
+
+Daily codes were `daily-2026-08-03` until 4 August 2026 and a bare `YYYYMMDD` from then on.
+Both are still read, so links already sent keep working; only the new one is written. It is a
+cutover rather than a rename because the code *is* the course — it is hashed to build the
+mountain — so rewriting old ones would move days that have already been played.
+
+**A date-shaped code has to be today's.** Type tomorrow's and the run does not start; type last
+Tuesday's and it does not either. Otherwise the daily stops being a competition: one player
+practises the course a day early, another grinds a day everyone else has already finished. A
+link carrying an old date falls back to today's run rather than dead-ending.
+
+### Continuing a daily run
+
+A daily run ends at the first mistake, so most attempts are over inside a kilometre and almost
+nobody sees the mountain past 3km, where the fall line has tipped over and the speed is the
+point. So a daily run can be **continued once**, from where it ended.
+
+It costs the day. From the moment it is used nothing further on that course is recorded — the
+score banked before continuing still stands, since that part was ridden clean, but the run that
+carries on cannot improve it. A continued run and a single-go run are not the same achievement.
+
+Custom codes do not offer it. They can simply be ridden again.
 
 ## Sharing a run
 
 **Share result** on the end screen hands the system share sheet a picture of the run — score,
-distance, top speed, and the seed — with the challenge link attached. On a phone that is
+distance, top speed, and the slope code — with the challenge link attached. The line that goes
+with it is picked from ten, so the same people do not read the same sentence every time. On a phone that is
 WhatsApp, Messages, or whatever else is installed.
 
 **Every row of Your scores has its own ↗**, so a best from last week can be sent as easily as
