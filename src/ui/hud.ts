@@ -441,6 +441,9 @@ export class Hud {
 
     this.endTitle.textContent = opts.reason === "crash" ? "WIPEOUT" : "OFF COURSE";
     this.endScore.textContent = opts.score.toLocaleString();
+    // Gold means kept. A spent day keeps nothing — not the continued run, and not a fresh one
+    // from the top either — so the total wears the same grey it wore in the HUD on the way down.
+    this.endScore.classList.toggle("is-unrecorded", opts.spent);
     // A spent day says so instead of quoting a best this run cannot have taken. Claiming a
     // record over a score that was never saved is worse than saying nothing at all, and that
     // claim also went onto the shared card — see the strap in `endRun`.

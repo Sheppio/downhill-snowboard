@@ -348,6 +348,18 @@ body {
   paint-order: stroke fill;
 }
 
+/*
+ * The same grey the score wore while the run was being ridden.
+ *
+ * The end screen was still announcing a continued run's total in gold, which is the colour the
+ * whole game uses for a number it is keeping — and the line directly underneath says it is not
+ * keeping this one. Carrying the grey through from the HUD to the end screen means grey means one
+ * thing in both places, and the player does not have to read the small print to know which it is.
+ */
+.final-score.is-unrecorded {
+  color: var(--muted);
+}
+
 .best {
   margin: 0;
   font-size: 13px;

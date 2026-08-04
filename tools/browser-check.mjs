@@ -2086,6 +2086,10 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
       best: document.getElementById("end-best").textContent,
       strap: window.__game.lastResult?.strap ?? null,
       shown: window.__game.lastResult?.score ?? null,
+      // Gold is the colour of a score being kept, all the way to the end screen. Read as a
+      // colour rather than as a class name, because the class is only the mechanism — what
+      // matters is that the number stopped looking like one the game is keeping.
+      scoreColour: getComputedStyle(document.getElementById("end-score")).color,
     };
   });
 
@@ -2176,7 +2180,13 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   await dp.waitForTimeout(600);
   const custom = await dp.evaluate(() => {
     window.__game.endRun("crash");
-    return { shown: !document.getElementById("btn-continue").hidden };
+    return {
+      shown: !document.getElementById("btn-continue").hidden,
+      // A clean run's total, for the continued one to be compared against. Two colours read off
+      // the same element beats hard-coding a hex: it survives any repaint of the palette and
+      // still fails if the two ever converge.
+      scoreColour: getComputedStyle(document.getElementById("end-score")).color,
+    };
   });
 
   // The question is asked per code, not once per player. Every code has its own day to lose, so
@@ -2270,6 +2280,11 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   if (!(banked.shown >= crashed.score))
     problems.push(`the card shows ${banked.shown}, less than the ${crashed.score} already earned`);
   if (custom.shown) problems.push("an ordinary course offered the continue");
+  // Grey means the same thing on the end screen as it did in the HUD on the way down
+  if (banked.scoreColour === custom.scoreColour)
+    problems.push(
+      `a continued run's total is drawn like a clean one — both ${custom.scoreColour}`,
+    );
   // Pressing it again has to work, not merely be offered
   if (second.state !== "playing")
     problems.push(`a second continue did nothing — still ${second.state}`);
