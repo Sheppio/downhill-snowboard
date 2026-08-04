@@ -2033,6 +2033,11 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
       stored: JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]"),
       continueShown: !document.getElementById("btn-continue").hidden,
       note: document.getElementById("continue-note").textContent,
+      // What the screen claims about a score that was just refused, and what the card built
+      // from it would carry to somebody else
+      best: document.getElementById("end-best").textContent,
+      strap: window.__game.lastResult?.strap ?? null,
+      shown: window.__game.lastResult?.score ?? null,
     };
   });
 
@@ -2067,6 +2072,19 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   else if (daily.score !== crashed.score)
     problems.push(`the continued run counted: banked ${daily.score}, expected ${crashed.score}`);
   if (banked.continueShown) problems.push("the continue was offered a second time");
+  // The bug this section exists for now, found by playing rather than by any check here: the
+  // end screen announced a new personal best over a score the game had just refused to save,
+  // and put that claim on the card, so a continued run could be sent to somebody as a clean
+  // one. A card is the only thing in this game that travels to other people; it must not be
+  // able to lie about what it is.
+  if (/personal best/i.test(banked.best ?? ""))
+    problems.push(`a continued run claimed a record: "${banked.best}"`);
+  if (!/continued/i.test(banked.best ?? ""))
+    problems.push(`the end screen does not say the run was continued: "${banked.best}"`);
+  if (!/continued/i.test(banked.strap ?? ""))
+    problems.push(`the shared card does not say the run was continued: "${banked.strap}"`);
+  if (banked.shown !== 5000)
+    problems.push(`the card shows ${banked.shown}, not the ${5000} the run reached`);
   if (!/no longer count/i.test(banked.note ?? ""))
     problems.push(`a spent day does not say so: "${banked.note}"`);
   if (custom.shown) problems.push("an ordinary course offered the continue");

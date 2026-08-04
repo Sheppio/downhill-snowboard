@@ -632,11 +632,22 @@ class Game {
     this.hud.setOutOfBounds(false, 1);
 
     const score = this.score.value;
+    recordBest(this.seed, score, this.controller.distance, this.controller.topSpeed);
+
+    // Nothing on a continued day is recorded, so nothing on it can be a personal best.
+    //
+    // This was missed the first time and it mattered: the end screen announced a new personal
+    // best over a score the game had just refused to save, and put that claim on the card as
+    // well — so a continued run could be sent to somebody as a clean one. That is precisely the
+    // comparison the continue exists to protect.
+    //
+    // It covers every run on the day, not only the continued one. Once the day is spent, a
+    // fresh attempt on that course is not recorded either, and would have made the same claim.
+    const spent = hasContinued(this.seed);
     // Compared against the best as it stood when this run *began*, not against what is in
     // storage now: banking mid-run means the run's own score may already be in there, and
     // asking storage would then deny the run the record it just set.
-    const isRecord = score > this.bestAtStart;
-    recordBest(this.seed, score, this.controller.distance, this.controller.topSpeed);
+    const isRecord = !spent && score > this.bestAtStart;
 
     const best = readBest(this.seed);
     const result: CardResult = {
@@ -644,7 +655,14 @@ class Game {
       distance: this.controller.distance,
       topSpeed: this.controller.topSpeed,
       seed: this.seed,
-      strap: isRecord ? "New personal best!" : `Best on this run: ${best.toLocaleString()}`,
+      // The card is the one thing here that travels to other people, so a continued run has to
+      // say so on its face. Everything else about the picture is identical, which is the point:
+      // it can still be shared, it just cannot be passed off.
+      strap: spent
+        ? "Continued run — doesn't count"
+        : isRecord
+          ? "New personal best!"
+          : `Best on this run: ${best.toLocaleString()}`,
       url: shareUrl(this.seed),
     };
     this.lastResult = result;
@@ -660,8 +678,8 @@ class Game {
       // Only a daily run, and only while the day is still worth something. A custom course can
       // simply be ridden again from the top, so a continue there would be a button that saves
       // nothing; and once the day is spent there is nothing left to warn anybody about.
-      canContinue: isDaily(this.seed) && !hasContinued(this.seed),
-      spent: hasContinued(this.seed),
+      canContinue: isDaily(this.seed) && !spent,
+      spent,
     });
 
     // Drawn now, not when the button is pressed. `navigator.share` needs the activation from

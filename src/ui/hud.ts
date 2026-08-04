@@ -330,9 +330,14 @@ export class Hud {
 
     this.endTitle.textContent = opts.reason === "crash" ? "WIPEOUT" : "OFF COURSE";
     this.endScore.textContent = opts.score.toLocaleString();
-    this.endBest.textContent = opts.isRecord
-      ? "New personal best!"
-      : `Best on this run: ${opts.best.toLocaleString()}`;
+    // A spent day says so instead of quoting a best this run cannot have taken. Claiming a
+    // record over a score that was never saved is worse than saying nothing at all, and that
+    // claim also went onto the shared card — see the strap in `endRun`.
+    this.endBest.textContent = opts.spent
+      ? "Continued run — doesn't count towards your best"
+      : opts.isRecord
+        ? "New personal best!"
+        : `Best on this run: ${opts.best.toLocaleString()}`;
 
     this.endDist.textContent = `${Math.floor(opts.distance)}m`;
     this.endTop.textContent = `${Math.round(opts.topSpeed * 3.6)}km/h`;
