@@ -36,13 +36,17 @@ for more than three seconds and the run ends.
 
 Speed and score are the two big numbers, each with a quieter line beneath it.
 
-- **▲ under the speed** is the fastest this run has been. Hidden while you are still
-  accelerating, when it would only repeat the number above it.
+- **`max N km/h` under the speed** is the fastest this run has been. Hidden while you are still
+  accelerating, when it would only repeat the number above it. A word rather than an icon, to
+  match the `best` beneath the score — two labelled second lines read as a pair, where a
+  triangle and a word read as two unrelated things.
 - **A wedge and an angle** under that is the fall line where you are — 22° at the top, tipping
   toward 45° deep down. The wedge is drawn *at* that angle rather than filled like a meter, so
   the picture is the hill and it reads without the number beside it.
 - **`best N` under the score** is the target on this course. Hidden when there is not one yet,
-  and once the run has passed it — at which point it has nothing left to say.
+  and once the run has passed it — at which point it has nothing left to say. It keeps its
+  normal colour through a continued run: the target has not moved just because this run will
+  not be recorded.
 
 ## Difficulty
 

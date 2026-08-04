@@ -61,6 +61,8 @@ export class Hud {
   private readonly scoreBlock = must("hud-score-block");
   private readonly topSpeed = must("hud-top-speed");
   private readonly best = must("hud-best");
+  private readonly bestValue = must("hud-best-value");
+  private readonly topSpeedValue = must("hud-top-speed-value");
   private readonly slope = must("hud-slope");
   private readonly slopeText = must("hud-slope-text");
   private readonly slopeFill = must<HTMLElement>("hud-slope-fill");
@@ -338,13 +340,13 @@ export class Hud {
     const top = Math.round(v.topSpeedMs * 3.6);
     const showTop = top > Math.round(v.speedMs * 3.6);
     this.topSpeed.hidden = !showTop;
-    if (showTop) this.topSpeed.textContent = `▲ ${top}`;
+    if (showTop) this.topSpeedValue.textContent = String(top);
 
     // The target. Hidden when there is not one — telling a first-time player their best is
     // zero is worse than saying nothing, and a run already past it has nothing left to chase.
     const showBest = v.best > 0 && v.score < v.best;
     this.best.hidden = !showBest;
-    if (showBest) this.best.textContent = `best ${v.best.toLocaleString()}`;
+    if (showBest) this.bestValue.textContent = v.best.toLocaleString();
 
     // How steep the ground is here, drawn as a wedge at that angle. The height is the gradient
     // itself, capped at the 1.0 the mountain builds to — so the picture is the hill, shallow at

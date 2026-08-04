@@ -2034,6 +2034,7 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     z: window.__game.controller.z,
     score: window.__game.score.value,
     // It keeps counting — the riding is real — but greys, because none of it will be kept.
+
     greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
     multShown: !document.getElementById("hud-mult").hidden,
     // ...while the distance carries on, because that part is still true
@@ -2082,6 +2083,12 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   const laterRun = await dp.evaluate(() => ({
     state: window.__game.state,
     greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
+    // The target beside it does *not* grey. It is the number to beat either way, and dimming it
+    // says the target has somehow moved. Read here rather than on the first continue, where the
+    // score has just equalled the best and the target is hidden — nothing to compare.
+    bestShown: !document.getElementById("hud-best").hidden,
+    scoreColour: getComputedStyle(document.getElementById("hud-score")).color,
+    bestColour: getComputedStyle(document.getElementById("hud-best")).color,
   }));
   await dp.evaluate(() => window.__game.endRun("crash"));
   await dp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
@@ -2145,6 +2152,7 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   if (!(atResume.score >= crashed.score))
     problems.push(`the continue lost the score earned so far: ${crashed.score} to ${atResume.score}`);
   if (!after.greyed) problems.push("a continued run's score is drawn as one that will be kept");
+
   if (!(after.shownDistance > 0 && after.z > atResume.z))
     problems.push("the run did not continue at all — distance never moved");
   if (!atResume.onGround) problems.push("the rider resumed in mid-air");
@@ -2187,6 +2195,10 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`continuing a later run on a spent day did nothing — still ${laterRun.state}`);
   if (!laterRun.greyed)
     problems.push("a later continued run's score is not greyed");
+  if (!laterRun.bestShown)
+    problems.push("the target vanished on a continued run that is nowhere near it");
+  else if (laterRun.bestColour === laterRun.scoreColour)
+    problems.push(`the target greyed with the score — both are ${laterRun.bestColour}`);
   // The re-run rules
   if (!(rerun.score > 0)) problems.push("a fresh run on a continued day did not score at all");
   if (!(rerun.score < rerun.best))

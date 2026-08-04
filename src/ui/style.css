@@ -698,7 +698,7 @@ body {
   }
 
   .stat .sub {
-    font-size: clamp(9px, 2.4vh, 12px);
+    font-size: clamp(11px, 3.1vh, 15px);
   }
 
   .panel h1 {
@@ -830,8 +830,10 @@ body {
  */
 .stat-score.is-unrecorded .value {
   color: var(--muted);
-  -webkit-text-stroke-color: #2a6f9799;
-  opacity: 0.75;
+  /* Full-strength ink outline, and no opacity. The first version softened the stroke to a
+     translucent blue *and* dropped the whole thing to 0.75, which left a pale grey number on
+     pale grey snow — unreadable in exactly the places a score matters. Grey should say "this
+     is not being kept", not "this is not worth showing you". */
 }
 
 /*
@@ -858,13 +860,27 @@ body {
   display: flex;
   align-items: center;
   gap: 0.35em;
-  margin-top: 1px;
-  font-size: clamp(10px, 2.6vw, 13px);
+  margin-top: 2px;
+  font-size: clamp(13px, 3.7vw, 18px);
   font-weight: 800;
   line-height: 1.15;
   color: var(--snow);
-  opacity: 0.82;
-  text-shadow: 0 1px 2px #0b395480;
+  /* Outlined like everything else on the HUD rather than shadowed. These sit over snow, sky and
+     dark trees in the same run, and a shadow only helps against one of the three. */
+  -webkit-text-stroke: 0.07em var(--ink);
+  paint-order: stroke fill;
+}
+
+/* "max", "best" — the word that says what the number is. Quieter than the figure itself. */
+.sub-label {
+  opacity: 0.72;
+  font-size: 0.8em;
+  font-weight: 800;
+}
+
+.stat .sub .unit {
+  font-size: 0.72em;
+  opacity: 0.8;
 }
 
 /* The score's target sits under it and centres with it */
@@ -884,8 +900,8 @@ body {
 .slope-bar {
   position: relative;
   display: inline-block;
-  width: 24px;
-  height: 14px;
+  width: 30px;
+  height: 17px;
 }
 
 .slope-bar i {
@@ -898,8 +914,8 @@ body {
   transform: scaleY(0.35);
 }
 
-/* A score that will not be recorded greys its target line with it */
-.stat-score.is-unrecorded .sub {
-  color: var(--muted);
-  opacity: 0.85;
-}
+/*
+ * The target is not affected by whether *this* run counts. It is the number to beat either
+ * way, so it keeps its normal colours through a continued run — greying it said the target had
+ * somehow moved, which it has not.
+ */
