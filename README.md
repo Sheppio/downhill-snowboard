@@ -361,11 +361,17 @@ says what kind of change it was. Bump it in the same commit as the change it des
 | Change | Bump | Example |
 | --- | --- | --- |
 | A bug fix — something was meant to work this way and didn't | **patch** | the run-in ramp putting the tightest corner at 119m |
-| A change to how something works, or new behaviour | **minor** | steering from the average of every finger; the course continuing to get harder past 1300m |
+| A small addition or tweak that leaves the game recognisably the same | **patch** | the build stamp on the share card; the top speed and slope readouts under the HUD |
+| A change to how the game *plays* | **minor** | steering from the average of every finger; the fall line steepening toward 45° |
 
-Patch means "the same game, working properly". Minor means "if you had a feel for this, it has
-changed" — which is the distinction worth having when someone comes back to a build after a
-week and wants to know whether their muscle memory still applies.
+Patch is the default, and the bar for minor is higher than it looks: **would somebody coming
+back after a week find their muscle memory wrong?** New readouts, new copy, a button moving, a
+layout fix — none of that changes how the mountain rides, so none of it is a minor. Reach for
+minor when the physics, the course, or the scoring moves.
+
+This started out as "minor for any behaviour change", which pulled almost everything into minor
+and marched the middle number for a fortnight of small work. The question above is the one that
+was actually wanted.
 
 **Do not bump for CI or test-only changes.** Workflow config, test timeouts, new tests, the
 browser check — none of it reaches the built game, so moving the number for it only adds noise
