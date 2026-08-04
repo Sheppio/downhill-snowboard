@@ -231,6 +231,17 @@ already stored, which is where it crosses from "could not have been a record any
 
 Grey means one thing everywhere: **this number is not being kept.**
 
+**The first continue on a code asks first.** It sits directly above Retry, it cannot be undone,
+and what it costs is not obvious from the button — so it opens a confirmation naming the code and
+saying what will be spent. Only the first: every press after it on the same code costs nothing, so
+a warning there would be a dialog that means nothing, and the game would be training players to
+dismiss the one press that matters.
+
+The question comes back on **every code**, not once per player. Each code has its own day to lose,
+and being warned about Tuesday's is no reason to spend Wednesday's without being asked. It is not
+a preference and there is nothing to remember: the gate reads whether *this* seed has been
+continued, which is the same record that decides whether the score counts.
+
 Custom codes do not offer it. They can simply be ridden again.
 
 ## Sharing a run

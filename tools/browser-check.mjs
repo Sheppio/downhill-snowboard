@@ -2011,7 +2011,38 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     stored: JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]"),
   }));
 
+  // The first press on a code asks first. Spending the day cannot be undone, so the button that
+  // does it is not allowed to do it on one tap.
   await dp.click("#btn-continue");
+  await dp.waitForTimeout(300);
+  // A panel nobody has looked at is a panel that fits until it doesn't — the tagline that pushed
+  // the start screen past a 390px landscape viewport was found this way and not by any assertion.
+  await dp.screenshot({ path: `${OUT}/11-confirm-continue.png` });
+  const asked = await dp.evaluate(() => ({
+    shown: !document.getElementById("confirm-continue").hidden,
+    body: document.getElementById("confirm-continue-body").textContent,
+    state: window.__game.state,
+  }));
+
+  // Backing out has to actually back out — the offer withdrawn, the day untouched. Only pressed
+  // if there is something to back out of: with no confirmation at all this button is off-screen,
+  // and clicking it would end the section on a locator timeout instead of on the rule that was
+  // actually broken.
+  if (asked.shown) await dp.click("#btn-cancel-continue");
+  await dp.waitForTimeout(300);
+  const cancelled = await dp.evaluate(() => ({
+    shown: !document.getElementById("confirm-continue").hidden,
+    state: window.__game.state,
+    spent: (JSON.parse(localStorage.getItem("downhill.continued.v1") ?? "[]")).length > 0,
+  }));
+
+  // Ask again after backing out. Read rather than waited for: a gate that fires once and then
+  // lets everything through leaves this panel closed, and that should be reported as the rule it
+  // broke, not as a locator that timed out.
+  await dp.click("#btn-continue");
+  await dp.waitForTimeout(300);
+  const reAsked = await dp.evaluate(() => !document.getElementById("confirm-continue").hidden);
+  if (reAsked) await dp.click("#btn-confirm-continue");
   await dp.waitForFunction(() => window.__game.state === "playing", { timeout: 10000 });
   // Read the instant the run resumes. Whether the rider is on the snow is a question about
   // being *set down*, and a second later they may be over a roller with both feet in the air
@@ -2070,6 +2101,9 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   const second = await dp.evaluate(() => ({
     state: window.__game.state,
     z: window.__game.controller.z,
+    // ...and it does it without asking. The warning is about a cost, and on this press there is
+    // no cost left to warn about; repeating it would be a dialog that means nothing.
+    asked: !document.getElementById("confirm-continue").hidden,
   }));
 
   // ...and again on a *later* run that day, which is the other way it died
@@ -2082,6 +2116,7 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   await dp.waitForTimeout(600);
   const laterRun = await dp.evaluate(() => ({
     state: window.__game.state,
+    asked: !document.getElementById("confirm-continue").hidden,
     greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
     // The target beside it does *not* grey. It is the number to beat either way, and dimming it
     // says the target has somehow moved. Read here rather than on the first continue, where the
@@ -2123,7 +2158,17 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
       multiplier: g.score.multiplierAt(g.controller.speed),
     };
   });
-  const stillClimbing = await dp.evaluate(() => window.__game.score.value);
+  // Let frames actually pass before asking whether the number moved. Read back-to-back with
+  // `above` it was a coin toss — an evaluate round-trip is a couple of milliseconds and a frame
+  // is sixteen, so an unchanged score meant "no frame ran", not "the score is frozen", which is
+  // the thing under test. Also reported alongside the state: if the rider crashed in the
+  // meantime the score stops for a reason that has nothing to do with the best.
+  await dp.waitForTimeout(400);
+  const climbed = await dp.evaluate(() => ({
+    score: window.__game.score.value,
+    state: window.__game.state,
+  }));
+  const stillClimbing = climbed.score;
 
   // ...and that an ordinary course never offers it at all
   await dp.evaluate(() => window.__game.startRun("powder-chute-42"));
@@ -2133,6 +2178,26 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     window.__game.endRun("crash");
     return { shown: !document.getElementById("btn-continue").hidden };
   });
+
+  // The question is asked per code, not once per player. Every code has its own day to lose, so
+  // being warned about Tuesday's is no reason to spend Wednesday's without being asked.
+  //
+  // Standing in for a second code by rewriting the record of which codes have been spent: a
+  // genuinely different daily code only exists on a different day, and this asks the same
+  // question — is the gate keyed on *this* seed, or on having ever continued anything? A
+  // one-time flag passes every other assertion here and fails this one.
+  await dp.evaluate(() => localStorage.setItem("downhill.continued.v1", '["20200101"]'));
+  await dp.evaluate((seed) => window.__game.startRun(seed), today);
+  await dp.waitForFunction(() => window.__game.state === "playing", { timeout: 10000 });
+  await dp.waitForTimeout(600);
+  await dp.evaluate(() => window.__game.endRun("crash"));
+  await dp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+  await dp.click("#btn-continue");
+  await dp.waitForTimeout(400);
+  const freshCode = await dp.evaluate(() => ({
+    asked: !document.getElementById("confirm-continue").hidden,
+    state: window.__game.state,
+  }));
 
   const problems = [];
   if (!offered.shown) problems.push("a daily run did not offer the continue");
@@ -2145,6 +2210,25 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`banked ${cleanRun.score} for the clean run, expected ${crashed.score}`);
   if (!/stop counting/i.test(offered.note ?? ""))
     problems.push(`the offer does not say what it costs: "${offered.note}"`);
+  // The confirmation. Spending the day cannot be taken back, so the first press must ask, must
+  // say what it costs, and cancelling must leave everything exactly as it was.
+  if (!asked.shown) problems.push("the first continue on a code spent the day without asking");
+  if (asked.state !== "ended")
+    problems.push(`the confirmation was skipped — the game was ${asked.state} before answering`);
+  if (!/stops? counting|no longer count|spends? your scoring/i.test(asked.body ?? ""))
+    problems.push(`the confirmation does not say what it costs: "${asked.body}"`);
+  if (cancelled.shown) problems.push("cancelling left the confirmation up");
+  if (cancelled.state !== "ended")
+    problems.push(`cancelling continued anyway — the game went ${cancelled.state}`);
+  if (cancelled.spent) problems.push("cancelling still spent the day");
+  if (!reAsked) problems.push("pressing continue again after cancelling did not ask — it just went");
+  if (second.asked) problems.push("the second continue on the same code asked again");
+  if (laterRun.asked) problems.push("a later run on a spent code asked to spend it again");
+  if (!freshCode.asked)
+    problems.push("a code that has not been continued was not asked about — the warning is once-ever");
+  if (freshCode.state !== "ended")
+    problems.push(`a fresh code continued without asking — the game went ${freshCode.state}`);
+
   if (after.state !== "playing") problems.push(`continuing left the game ${after.state}`);
   if (!(after.z >= crashed.z - 1)) problems.push(`continued at ${after.z}m, behind the crash at ${crashed.z}m`);
   if (!(after.score > atResume.score))
@@ -2208,7 +2292,10 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   if (!above.greyed)
     problems.push(`a re-run past the best (${above.score} of ${rerun.best}) was not greyed`);
   if (!(stillClimbing > above.score))
-    problems.push(`the re-run stopped counting past the best: ${above.score} to ${stillClimbing}`);
+    problems.push(
+      `the re-run stopped counting past the best: ${above.score} to ${stillClimbing} ` +
+        `(${climbed.state})`,
+    );
   if (above.multiplier > 1.02 && !above.multShown)
     problems.push(
       `the multiplier (x${above.multiplier.toFixed(2)}) was hidden over a climbing score`,
@@ -2221,7 +2308,9 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
         `${atResume.score} points and still counting to ${after.score}, greyed throughout; ` +
         `pressed again and again on a later run, both took; a re-run then counted normally at ` +
         `${rerun.score} and greyed once past the ${rerun.best} best while still climbing to ` +
-        `${stillClimbing}; the continue stayed on offer; a custom code never offers it`,
+        `${stillClimbing}; the continue stayed on offer; a custom code never offers it; and the ` +
+        `first press on a code asked before spending it — cancelling changed nothing, later ` +
+        `presses went straight through, and an un-continued code asked again`,
     );
   await dp.close();
 }

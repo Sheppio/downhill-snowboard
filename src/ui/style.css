@@ -821,6 +821,23 @@ body {
 }
 
 /*
+ * The warning in the confirmation panel. Bigger and darker than `.continue-note`, which says the
+ * same thing beside the button: there it is a caption on an offer, here it is the whole question,
+ * and a player has stopped to read it.
+ */
+.confirm-body {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.confirm-body strong {
+  color: var(--berry);
+}
+
+/*
  * A score that will not be recorded — a continued run, or a re-run on a continued day that has
  * climbed past the best already stored.
  *

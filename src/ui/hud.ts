@@ -8,6 +8,23 @@
 import { formatDistance, formatWhen, readScores } from "../game/leaderboard";
 import { dailyEntryError, dailyLabel, isDaily, normaliseSeed, seedLabel } from "../game/seed";
 
+/**
+ * Prose built as nodes, not markup.
+ *
+ * The confirmation names the course code, and a code is whatever the player typed. Assembling
+ * the sentence with `innerHTML` would put that string through the HTML parser; these two never
+ * can, whatever it contains.
+ */
+function text(value: string): Text {
+  return document.createTextNode(value);
+}
+
+function strong(value: string): HTMLElement {
+  const el = document.createElement("strong");
+  el.textContent = value;
+  return el;
+}
+
 function must<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`missing UI element #${id}`);
@@ -80,6 +97,8 @@ export class Hud {
   private readonly continueBtn = must<HTMLButtonElement>("btn-continue");
   private readonly continueNote = must<HTMLParagraphElement>("continue-note");
   private readonly continueSub = must("continue-sub");
+  private readonly confirmContinue = must("confirm-continue");
+  private readonly confirmBody = must("confirm-continue-body");
   private readonly dailyLabelEl = must("daily-label");
   private readonly startBest = must("start-best");
 
@@ -109,6 +128,16 @@ export class Hud {
   /** Kept because the leaderboard rows are built later and each one starts a run. */
   private readonly callbacks: HudCallbacks;
 
+  /**
+   * Whether the day on the course now showing its end screen has already been spent.
+   *
+   * This is exactly the flag the confirmation turns on: the first continue on a code is the one
+   * that costs the day, and every one after it costs nothing, so `spent` is both "has this been
+   * warned about" and "is there anything left to warn about". It comes from storage, keyed by
+   * seed, which is what makes the question come back on the next code rather than never again.
+   */
+  private endSpent = false;
+
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
     must<HTMLButtonElement>("btn-daily").addEventListener("click", () => callbacks.onRideDaily());
@@ -122,7 +151,20 @@ export class Hud {
 
     must<HTMLButtonElement>("btn-reload").addEventListener("click", () => location.reload());
     must<HTMLButtonElement>("btn-retry").addEventListener("click", () => callbacks.onRetry());
-    this.continueBtn.addEventListener("click", () => callbacks.onContinue());
+    // The first continue on a code is asked about; the rest go straight through. Nothing is
+    // remembered here beyond the end screen currently up — `endSpent` is refreshed from storage
+    // by every `showEnd`, so a different code asks again.
+    this.continueBtn.addEventListener("click", () => {
+      if (this.endSpent) callbacks.onContinue();
+      else this.confirmContinue.hidden = false;
+    });
+    must<HTMLButtonElement>("btn-cancel-continue").addEventListener("click", () => {
+      this.confirmContinue.hidden = true;
+    });
+    must<HTMLButtonElement>("btn-confirm-continue").addEventListener("click", () => {
+      this.confirmContinue.hidden = true;
+      callbacks.onContinue();
+    });
     this.shareBtn.addEventListener("click", () => callbacks.onShare());
     must<HTMLButtonElement>("btn-menu").addEventListener("click", () => callbacks.onBackToMenu());
 
@@ -165,7 +207,8 @@ export class Hud {
    * that is the first thing anyone would want to know.
    */
   showBroken(err: unknown): void {
-    for (const panel of [this.hud, this.oob, this.start, this.end, this.paused, this.scores]) {
+    const panels = [this.hud, this.oob, this.start, this.end, this.paused, this.scores];
+    for (const panel of [...panels, this.confirmContinue]) {
       panel.hidden = true;
     }
     this.broken.hidden = false;
@@ -180,6 +223,7 @@ export class Hud {
     this.startBest.textContent = best > 0 ? `Your best on this run: ${best.toLocaleString()}` : "";
     this.start.hidden = false;
     this.end.hidden = true;
+    this.confirmContinue.hidden = true;
     this.paused.hidden = true;
     this.scores.hidden = true;
     this.hud.hidden = true;
@@ -275,6 +319,7 @@ export class Hud {
   showPlaying(): void {
     this.start.hidden = true;
     this.end.hidden = true;
+    this.confirmContinue.hidden = true;
     this.paused.hidden = true;
     this.scores.hidden = true;
     this.hud.hidden = false;
@@ -432,6 +477,18 @@ export class Hud {
         "Keep this run going from where it ended. Use it and today's runs stop counting " +
         "towards your best — for the rest of the day.";
     }
+
+    // What the confirmation will ask, prepared here so the press itself only has to un-hide it.
+    // The code is named because the cost is scoped to it: it is this course's day being spent,
+    // not the game's, and the next code will still be worth riding for a score.
+    this.endSpent = opts.spent;
+    this.confirmContinue.hidden = true;
+    this.confirmBody.replaceChildren(
+      text("Continuing picks the run up from where it ended — but it "),
+      strong("spends your scoring on " + seedLabel(opts.seed)),
+      text(". Nothing you ride on this code counts towards your best after that, "),
+      text("including fresh runs from the top."),
+    );
   }
 
   setSeedInput(seed: string): void {

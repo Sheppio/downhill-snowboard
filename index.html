@@ -152,6 +152,23 @@
         </div>
       </div>
 
+      <!--
+        Guard on the first continue of each slope code. Spending the day is not undoable and the
+        button that does it sits directly above Retry, so it asks once — every code, not once
+        ever, because each code has its own day to lose.
+      -->
+      <div id="confirm-continue" class="panel-wrap" hidden>
+        <div class="panel">
+          <h2>ARE YOU SURE?</h2>
+          <p class="confirm-body" id="confirm-continue-body"></p>
+          <button id="btn-cancel-continue" class="btn btn-primary">No, keep my score</button>
+          <button id="btn-confirm-continue" class="btn btn-secondary">
+            <span class="btn-title">Yes, continue from here</span>
+            <span class="btn-sub">today's score stops counting</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Paused -->
       <div id="paused" class="panel-wrap" hidden>
         <div class="panel">
