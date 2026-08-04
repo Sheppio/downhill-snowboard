@@ -59,6 +59,11 @@ export class Hud {
   private readonly score = must("hud-score");
   private readonly mult = must("hud-mult");
   private readonly scoreBlock = must("hud-score-block");
+  private readonly topSpeed = must("hud-top-speed");
+  private readonly best = must("hud-best");
+  private readonly slope = must("hud-slope");
+  private readonly slopeText = must("hud-slope-text");
+  private readonly slopeFill = must<HTMLElement>("hud-slope-fill");
   private readonly boostBar = must("hud-boost");
   private readonly boostFill = must("hud-boost-fill");
   private readonly dist = must("hud-dist");
@@ -292,19 +297,32 @@ export class Hud {
    * was the only thing feeding it. A ramp bonus is not a function of speed, so a readout that
    * works it out from speed would show the wrong number at the one moment anybody is looking.
    */
-  updateHud(
-    speedMs: number,
-    distance: number,
-    score: number,
-    fps: number,
-    multiplier: number,
-    boost: number,
-    display: ScoreDisplay = "counting",
-  ): void {
-    this.fps.textContent = String(Math.round(fps));
-    this.speed.textContent = String(Math.round(speedMs * 3.6));
-    this.dist.textContent = String(Math.floor(distance));
-    this.score.textContent = score.toLocaleString();
+  /**
+   * The live readouts, once a frame.
+   *
+   * An object rather than nine positional arguments. It reached seven and the next three were
+   * all numbers, at which point a transposed pair is a silent bug that reads perfectly well.
+   */
+  updateHud(v: {
+    speedMs: number;
+    /** The fastest this run has been, m/s. Shown under the live speed. */
+    topSpeedMs: number;
+    distance: number;
+    /** Fall-line gradient here, as a ratio: 0.4 is 22°, 1.0 is 45°. */
+    gradient: number;
+    score: number;
+    /** The score to beat on this course, or 0 if there is not one yet. */
+    best: number;
+    fps: number;
+    multiplier: number;
+    boost: number;
+    display?: ScoreDisplay;
+  }): void {
+    const display = v.display ?? "counting";
+    this.fps.textContent = String(Math.round(v.fps));
+    this.speed.textContent = String(Math.round(v.speedMs * 3.6));
+    this.dist.textContent = String(Math.floor(v.distance));
+    this.score.textContent = v.score.toLocaleString();
 
     // Grey means one thing: this number is not being kept. A gold, climbing score is the
     // game's loudest claim that something is being earned, so it stops making that claim when
@@ -314,18 +332,40 @@ export class Hud {
     // Distance and speed keep their normal colours throughout; they were never in question.
     this.scoreBlock.classList.toggle("is-unrecorded", display !== "counting");
 
-    if (multiplier > 1.02) {
+    // The run's fastest, under the live speed. Hidden until it means something: for the first
+    // seconds of a run the top speed *is* the current speed, and two identical numbers stacked
+    // on top of each other read as a rendering fault.
+    const top = Math.round(v.topSpeedMs * 3.6);
+    const showTop = top > Math.round(v.speedMs * 3.6);
+    this.topSpeed.hidden = !showTop;
+    if (showTop) this.topSpeed.textContent = `▲ ${top}`;
+
+    // The target. Hidden when there is not one — telling a first-time player their best is
+    // zero is worse than saying nothing, and a run already past it has nothing left to chase.
+    const showBest = v.best > 0 && v.score < v.best;
+    this.best.hidden = !showBest;
+    if (showBest) this.best.textContent = `best ${v.best.toLocaleString()}`;
+
+    // How steep the ground is here, drawn as a wedge at that angle. The height is the gradient
+    // itself, capped at the 1.0 the mountain builds to — so the picture is the hill, shallow at
+    // the top and steep by the bottom, and it reads without the number beside it.
+    const degrees = Math.round((Math.atan(v.gradient) * 180) / Math.PI);
+    this.slope.hidden = false;
+    this.slopeText.textContent = `${degrees}°`;
+    this.slopeFill.style.transform = `scaleY(${Math.min(1, Math.max(0.05, v.gradient)).toFixed(3)})`;
+
+    if (v.multiplier > 1.02) {
       this.mult.hidden = false;
-      this.mult.textContent = `×${multiplier.toFixed(2)}`;
+      this.mult.textContent = `×${v.multiplier.toFixed(2)}`;
     } else {
       this.mult.hidden = true;
     }
 
     // The bar is the ramp bonus draining, so the player can see what they bought and how long
     // it lasts. Scaled rather than resized, which the compositor can do without a reflow.
-    this.boostBar.hidden = boost <= 0;
-    this.mult.classList.toggle("is-boosted", boost > 0);
-    if (boost > 0) this.boostFill.style.transform = `scaleX(${boost})`;
+    this.boostBar.hidden = v.boost <= 0;
+    this.mult.classList.toggle("is-boosted", v.boost > 0);
+    if (v.boost > 0) this.boostFill.style.transform = `scaleX(${v.boost})`;
   }
 
   /** `remaining` is 1 when the player has just left the course, 0 when the run ends. */

@@ -14,7 +14,7 @@ import { ObstacleField, ObstacleRenderer } from "./world/obstacles";
 import { applyRamps, RampRenderer } from "./world/ramps";
 import { createBackdrop, setupSky, SnowSpray } from "./world/scenery";
 import { SnowTracks } from "./world/tracks";
-import { OUT_OF_BOUNDS_FRACTION, gateX, lateralFraction } from "./world/course";
+import { OUT_OF_BOUNDS_FRACTION, gateX, lateralFraction, slopeAt } from "./world/course";
 import { RiderController } from "./player/controller";
 import { Rider } from "./player/rider";
 import { ChaseCamera } from "./player/camera";
@@ -508,15 +508,20 @@ class Game {
     }
 
     this.score.update(c.distance, c.speed, dt);
-    this.hud.updateHud(
-      c.speed,
-      c.distance,
-      this.score.value,
-      this.engine.getFps(),
-      this.score.multiplierAt(c.speed),
-      this.score.boost,
-      this.scoreDisplay(),
-    );
+    this.hud.updateHud({
+      speedMs: c.speed,
+      topSpeedMs: c.topSpeed,
+      distance: c.distance,
+      // The fall line where the rider is, which is what the slope indicator is about — not the
+      // ground's local tilt, which rolls with every undulation and would jitter constantly.
+      gradient: slopeAt(c.distance),
+      score: this.score.value,
+      best: this.bestAtStart,
+      fps: this.engine.getFps(),
+      multiplier: this.score.multiplierAt(c.speed),
+      boost: this.score.boost,
+      display: this.scoreDisplay(),
+    });
 
     // Obstacles
     // Physics position, not the interpolated render one, so collisions stay deterministic

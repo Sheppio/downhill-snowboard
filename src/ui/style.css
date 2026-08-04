@@ -149,8 +149,13 @@ body {
   gap: 0;
 }
 
+/*
+ * The score is the number the game is about, and it was the same size as the speed beside it.
+ * Bigger, so a glance lands on it rather than having to pick it out of a row of three.
+ */
 .stat-score .value {
   color: var(--sun);
+  font-size: clamp(30px, 10vw, 50px);
 }
 
 .stat-dist .value {
@@ -687,6 +692,15 @@ body {
     border-radius: 20px;
   }
 
+  /* Landscape is short, and the score now carries two lines under it */
+  .stat-score .value {
+    font-size: clamp(26px, 8vh, 40px);
+  }
+
+  .stat .sub {
+    font-size: clamp(9px, 2.4vh, 12px);
+  }
+
   .panel h1 {
     font-size: clamp(26px, 6vh, 38px);
   }
@@ -818,4 +832,74 @@ body {
   color: var(--muted);
   -webkit-text-stroke-color: #2a6f9799;
   opacity: 0.75;
+}
+
+/*
+ * The quiet second line under a stat: the run's top speed, the gradient, the score to beat.
+ *
+ * Deliberately much smaller and unoutlined. These are context for the big number above them —
+ * something to glance at between corners — and giving them the same chunky treatment would
+ * turn one readout the eye lands on into three it has to sort through at 170km/h.
+ */
+/* A stat that carries sub-lines becomes a column; its headline keeps the baseline row */
+.stat-speed {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.stat-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.18em;
+}
+
+.stat .sub {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  margin-top: 1px;
+  font-size: clamp(10px, 2.6vw, 13px);
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--snow);
+  opacity: 0.82;
+  text-shadow: 0 1px 2px #0b395480;
+}
+
+/* The score's target sits under it and centres with it */
+.stat-score .sub {
+  justify-content: center;
+}
+
+/*
+ * The slope indicator: a wedge drawn at the gradient the rider is actually on.
+ *
+ * The angle *is* the readout. The first version filled a fixed triangle from the left, which
+ * put the meter's thin end where the information was and read as an empty sliver at anything
+ * short of a cliff. Scaling the triangle's height instead draws the hill: shallow at the top of
+ * the mountain, steep by the bottom, legible from the corner of the eye without reading the
+ * number beside it.
+ */
+.slope-bar {
+  position: relative;
+  display: inline-block;
+  width: 24px;
+  height: 14px;
+}
+
+.slope-bar i {
+  position: absolute;
+  inset: 0;
+  background: var(--sun);
+  /* A right triangle rising to the right — the slope itself */
+  clip-path: polygon(0 100%, 100% 0, 100% 100%);
+  transform-origin: 0 100%;
+  transform: scaleY(0.35);
+}
+
+/* A score that will not be recorded greys its target line with it */
+.stat-score.is-unrecorded .sub {
+  color: var(--muted);
+  opacity: 0.85;
 }

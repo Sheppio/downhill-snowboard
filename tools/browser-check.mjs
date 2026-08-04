@@ -2214,6 +2214,106 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   await dp.close();
 }
 
+// --- The readouts under the speed and the score -------------------------------------------------
+// Three quiet lines: the run's fastest, how steep the ground is, and the score to beat. Each is
+// only worth having if it is *right*, and each has a state where it should say nothing at all.
+{
+  const rp = await ctx.newPage();
+  await rp.addInitScript(() =>
+    localStorage.setItem(
+      "downhill.scores.v1",
+      JSON.stringify([
+        { seed: "alpine", score: 9500, at: Date.now(), distance: 6000, topSpeed: 45, gen: 7 },
+      ]),
+    ),
+  );
+  await rp.goto(`${BASE}?debug=1&seed=alpine`, { waitUntil: "load" });
+  await rp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+  await rp.evaluate(() => window.__game.startRun("alpine"));
+  await rp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+
+  const read = () =>
+    rp.evaluate(() => {
+      const el = (id) => document.getElementById(id);
+      const wedge = el("hud-slope-fill");
+      return {
+        speed: Number(el("hud-speed").textContent),
+        topHidden: el("hud-top-speed").hidden,
+        topText: el("hud-top-speed").textContent,
+        slope: Number(el("hud-slope-text").textContent.replace(/\D/g, "")),
+        wedge: Number(/scaleY\(([\d.]+)\)/.exec(wedge.style.transform)?.[1] ?? "0"),
+        bestHidden: el("hud-best").hidden,
+        bestText: el("hud-best").textContent,
+        score: Number(el("hud-score").textContent.replace(/\D/g, "")),
+        gradient: window.__game.field ? null : null,
+      };
+    });
+
+  // Straight out of the gate: still accelerating, so the top speed *is* the current speed and
+  // saying so twice reads as a rendering fault.
+  await rp.waitForTimeout(900);
+  const early = await read();
+
+  // Deep down, where the mountain has tipped over
+  await rp.evaluate(() => {
+    const g = window.__game;
+    const c = g.controller;
+    c.z = 6800;
+    c.y = g.field.heightAt(c.x, c.z);
+    c.prevX = c.x;
+    c.prevY = c.y;
+    c.prevZ = c.z;
+    c.accumulator = 0;
+    c.topSpeed = 48;
+    g.terrain.prime(c.z);
+    g.camera.reset(c);
+  });
+  await rp.waitForTimeout(800);
+  const deep = await read();
+
+  // ...and once the run is past the stored best there is no target left to show
+  await rp.evaluate(() => {
+    window.__game.score.total = 12000;
+  });
+  await rp.waitForTimeout(300);
+  const beaten = await read();
+
+  const problems = [];
+
+  if (!early.topHidden)
+    problems.push(`the top speed showed while still accelerating: "${early.topText}"`);
+  if (deep.topHidden) problems.push("the run's top speed never appeared");
+  else if (Number(deep.topText.replace(/\D/g, "")) !== Math.round(48 * 3.6))
+    problems.push(`top speed reads "${deep.topText}", not the 48 m/s the run reached`);
+  if (!(deep.speed < Number(deep.topText.replace(/\D/g, ""))))
+    problems.push("the top speed is not above the current speed, so it says nothing");
+
+  // The opening is a flat 22°, and the fall line only steepens from there
+  if (!(early.slope >= 20 && early.slope <= 24))
+    problems.push(`the opening reads ${early.slope}°, not the 22° it is`);
+  if (!(deep.slope > early.slope + 8))
+    problems.push(`the slope barely moved: ${early.slope}° to ${deep.slope}° at 6.8km`);
+  // The wedge is the gradient drawn, so it has to grow with it rather than sit still
+  if (!(deep.wedge > early.wedge + 0.15))
+    problems.push(`the wedge did not steepen: ${early.wedge} to ${deep.wedge}`);
+  if (!(deep.wedge <= 1)) problems.push(`the wedge overflowed its box at ${deep.wedge}`);
+
+  if (early.bestHidden) problems.push("the score to beat was not shown");
+  else if (!/9,500/.test(early.bestText))
+    problems.push(`the target reads "${early.bestText}", not the stored 9,500`);
+  if (!beaten.bestHidden)
+    problems.push(`a run past the best still shows a target: "${beaten.bestText}"`);
+
+  if (problems.length) fail(`the HUD readouts — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ speed, slope and target read true: quiet while accelerating, then ${deep.topText} over ` +
+        `${deep.speed}km/h, ${early.slope}° at the top and ${deep.slope}° at 6.8km with the ` +
+        `wedge ${early.wedge}→${deep.wedge}, "${early.bestText}" until the run passes it`,
+    );
+  await rp.close();
+}
+
 if (errors.length) process.exitCode = 1;
 
 await browser.close();

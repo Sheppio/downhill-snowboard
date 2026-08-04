@@ -23,11 +23,25 @@
       <div id="hud" hidden>
         <div class="hud-row">
           <div class="stat stat-speed">
-            <span class="value" id="hud-speed">0</span><span class="unit">km/h</span>
+            <!-- The live figure keeps its own baseline row; the quieter lines stack beneath -->
+            <span class="stat-main"
+              ><span class="value" id="hud-speed">0</span><span class="unit">km/h</span></span
+            >
+            <!--
+              The run's fastest, and how steep the ground is here. Both sit under the live
+              speed as smaller, quieter lines: they are context for the big number above them,
+              not readouts competing with it.
+            -->
+            <span class="sub" id="hud-top-speed" hidden>▲ 0</span>
+            <span class="sub" id="hud-slope" hidden
+              ><span class="slope-bar"><i id="hud-slope-fill"></i></span
+              ><span id="hud-slope-text">0°</span></span>
           </div>
           <!-- Score takes the centre: it is the number the game is actually about. -->
           <div class="stat stat-score" id="hud-score-block">
             <span class="value" id="hud-score">0</span>
+            <!-- The target. Hidden until there is one, so a first run is not told it has none. -->
+            <span class="sub" id="hud-best" hidden>best 0</span>
             <span class="mult" id="hud-mult" hidden>×1.00</span>
             <!-- The ramp bonus draining away. Under the multiplier, because it is part of
                  the same number rather than a readout of its own. -->
