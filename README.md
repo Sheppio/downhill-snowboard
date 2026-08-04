@@ -199,9 +199,15 @@ A daily run ends at the first mistake, so most attempts are over inside a kilome
 nobody sees the mountain past 3km, where the fall line has tipped over and the speed is the
 point. So a daily run can be **continued once**, from where it ended.
 
-It costs the day. From the moment it is used nothing further on that course is recorded — the
-score banked before continuing still stands, since that part was ridden clean, but the run that
-carries on cannot improve it. A continued run and a single-go run are not the same achievement.
+It costs the day. **The score stops there and greys out**, and does not move again however far
+the run goes. What was banked before continuing still stands, since that part was ridden clean;
+everything after it is riding for its own sake.
+
+Freezing the number rather than merely declining to save it is the point. A gold figure
+climbing at sixty frames a second is the game's loudest claim that something is being earned,
+and it was still making that claim over a score nothing was keeping — right up to the end
+screen, and onto a card that could be sent to somebody as a clean run. The distance carries on
+counting, because that part is still true.
 
 Custom codes do not offer it. They can simply be ridden again.
 

@@ -392,6 +392,10 @@ class Game {
     this.lastRampZ = this.controller.z;
     this.tracks.clear();
     this.score.reset();
+    // Starting again on a day that has already been continued does not restore the scoring.
+    // The day is spent, so the number stays grey and still from the first metre rather than
+    // climbing for a whole run that was never going to count.
+    if (hasContinued(seed)) this.score.freeze();
     this.input.reset();
     this.oobTimer = 0;
     this.crashTimer = 0;
@@ -496,6 +500,7 @@ class Game {
       this.engine.getFps(),
       this.score.multiplierAt(c.speed),
       this.score.boost,
+      this.score.isFrozen,
     );
 
     // Obstacles
@@ -571,6 +576,10 @@ class Game {
     if (!isDaily(this.seed) || hasContinued(this.seed)) return;
 
     markContinued(this.seed);
+    // Stop the score there and then. The run carries on and the distance keeps climbing, but
+    // nothing further is earned — and the HUD greys the number so that is visible from the
+    // first frame rather than only on the end screen.
+    this.score.freeze();
 
     const z = this.controller.z;
     this.wipeout.stop();

@@ -45,6 +45,7 @@ export class Hud {
   private readonly speed = must("hud-speed");
   private readonly score = must("hud-score");
   private readonly mult = must("hud-mult");
+  private readonly scoreBlock = must("hud-score-block");
   private readonly boostBar = must("hud-boost");
   private readonly boostFill = must("hud-boost-fill");
   private readonly dist = must("hud-dist");
@@ -284,13 +285,20 @@ export class Hud {
     fps: number,
     multiplier: number,
     boost: number,
+    frozen = false,
   ): void {
     this.fps.textContent = String(Math.round(fps));
     this.speed.textContent = String(Math.round(speedMs * 3.6));
     this.dist.textContent = String(Math.floor(distance));
     this.score.textContent = score.toLocaleString();
 
-    if (multiplier > 1.02) {
+    // Greyed the moment the run is continued, and it stops moving at the same time. A live,
+    // gold, climbing number is the game's loudest claim that something is being earned; when
+    // nothing is being kept it has to stop making it. The distance carries on, because that is
+    // still true — the run is still going, it is just no longer worth anything.
+    this.scoreBlock.classList.toggle("is-frozen", frozen);
+
+    if (multiplier > 1.02 && !frozen) {
       this.mult.hidden = false;
       this.mult.textContent = `×${multiplier.toFixed(2)}`;
     } else {

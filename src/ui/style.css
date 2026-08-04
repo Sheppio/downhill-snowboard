@@ -805,3 +805,16 @@ body {
   line-height: 1.35;
   color: var(--ink-soft);
 }
+
+/*
+ * A score that has stopped counting, after a daily run is continued.
+ *
+ * Drained of the gold and dimmed rather than hidden: the number still means something — it is
+ * what the run was worth when it was still being scored — but it must not read as the live,
+ * climbing figure the rest of the game trains the player to watch.
+ */
+.stat-score.is-frozen .value {
+  color: var(--muted);
+  -webkit-text-stroke-color: #2a6f9799;
+  opacity: 0.75;
+}

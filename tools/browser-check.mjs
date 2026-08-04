@@ -2013,21 +2013,39 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
 
   await dp.click("#btn-continue");
   await dp.waitForFunction(() => window.__game.state === "playing", { timeout: 10000 });
-  await dp.waitForTimeout(900);
+  // Read the instant the run resumes. Whether the rider is on the snow is a question about
+  // being *set down*, and a second later they may be over a roller with both feet in the air
+  // like anybody else — which is how measuring it late turned a good resume into a failure.
+  const atResume = await dp.evaluate(() => ({
+    score: window.__game.score.value,
+    z: window.__game.controller.z,
+    onGround: !window.__game.controller.airborne,
+    gap: Math.abs(
+      window.__game.controller.y -
+        window.__game.field.heightAt(window.__game.controller.x, window.__game.controller.z),
+    ),
+  }));
+  await dp.waitForTimeout(1500);
+  // The greyed score is the whole point of this and a number cannot show it
+  await dp.screenshot({ path: `${OUT}/10-continued.png` });
 
   const after = await dp.evaluate(() => ({
     state: window.__game.state,
     z: window.__game.controller.z,
     score: window.__game.score.value,
-    onGround: !window.__game.controller.airborne,
-    gap: Math.abs(window.__game.controller.y - window.__game.field.heightAt(window.__game.controller.x, window.__game.controller.z)),
+    // The number has to visibly stop, not merely fail to be saved. A gold figure climbing at
+    // sixty frames a second is the game's loudest claim that something is being earned.
+    frozen: window.__game.score.isFrozen,
+    greyed: document.getElementById("hud-score-block").classList.contains("is-frozen"),
+    multShown: !document.getElementById("hud-mult").hidden,
+    // ...while the distance carries on, because that part is still true
+    shownDistance: Number(document.getElementById("hud-dist").textContent.replace(/\D/g, "")),
   }));
 
   // End it again, having earned more, and check the extra did not count. What was banked
   // *before* continuing is a clean run and keeps standing — the deal is that nothing further
   // counts, not that the run so far is confiscated.
   const banked = await dp.evaluate(() => {
-    window.__game.score.total = 5000;
     window.__game.endRun("crash");
     return {
       stored: JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]"),
@@ -2063,9 +2081,18 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`the offer does not say what it costs: "${offered.note}"`);
   if (after.state !== "playing") problems.push(`continuing left the game ${after.state}`);
   if (!(after.z >= crashed.z - 1)) problems.push(`continued at ${after.z}m, behind the crash at ${crashed.z}m`);
-  if (after.score < crashed.score) problems.push(`the score was reset: ${crashed.score} became ${after.score}`);
-  if (!after.onGround) problems.push("the rider resumed in mid-air");
-  if (!(after.gap < 1.5)) problems.push(`the rider resumed ${after.gap.toFixed(1)}m off the snow`);
+  if (after.score !== atResume.score)
+    problems.push(`the score kept counting after continuing: ${atResume.score} to ${after.score}`);
+  if (after.score !== crashed.score)
+    problems.push(`the score moved across the continue: ${crashed.score} became ${after.score}`);
+  if (!after.frozen) problems.push("the score was not frozen");
+  if (!after.greyed) problems.push("the frozen score is still drawn as a live one");
+  if (after.multShown) problems.push("a multiplier is shown over a score that cannot grow");
+  if (!(after.shownDistance > 0 && after.z > atResume.z))
+    problems.push("the run did not continue at all — distance never moved");
+  if (!atResume.onGround) problems.push("the rider resumed in mid-air");
+  if (!(atResume.gap < 1.5))
+    problems.push(`the rider resumed ${atResume.gap.toFixed(1)}m off the snow`);
   // The price. The clean 1500 stays; the 5000 earned after continuing does not.
   const daily = banked.stored.find((r) => r.seed === today);
   if (!daily) problems.push("the clean run before the continue was not recorded at all");
@@ -2083,8 +2110,8 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`the end screen does not say the run was continued: "${banked.best}"`);
   if (!/continued/i.test(banked.strap ?? ""))
     problems.push(`the shared card does not say the run was continued: "${banked.strap}"`);
-  if (banked.shown !== 5000)
-    problems.push(`the card shows ${banked.shown}, not the ${5000} the run reached`);
+  if (banked.shown !== crashed.score)
+    problems.push(`the card shows ${banked.shown}, not the frozen ${crashed.score}`);
   if (!/no longer count/i.test(banked.note ?? ""))
     problems.push(`a spent day does not say so: "${banked.note}"`);
   if (custom.shown) problems.push("an ordinary course offered the continue");
@@ -2093,8 +2120,8 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   else
     console.log(
       `✓ a daily run can be continued once: resumed at ${after.z.toFixed(0)}m keeping ` +
-        `${after.score} points; the clean ${crashed.score} still stands and the ` +
-        `${5000} earned after it did not count; a custom code never offers it`,
+        `${after.score} points frozen and greyed; it did not move while the run carried ` +
+        `on to ${after.shownDistance}m; a custom code never offers it`,
     );
   await dp.close();
 }

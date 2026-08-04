@@ -190,3 +190,48 @@ describe("the score does not depend on the frame rate", () => {
     }
   }, 120_000);
 });
+
+describe("a score that has stopped counting", () => {
+  it("stops paying for ground once frozen", () => {
+    const s = new Score();
+    s.update(100, 30, 1);
+    const earned = s.value;
+    expect(earned).toBeGreaterThan(0);
+
+    s.freeze();
+    s.update(500, 30, 1);
+    s.update(2000, 40, 1);
+    expect(s.value, "the run went on; the scoring did not").toBe(earned);
+  });
+
+  it("says so, so the HUD can grey the number it has stopped moving", () => {
+    const s = new Score();
+    expect(s.isFrozen).toBe(false);
+    s.freeze();
+    expect(s.isFrozen).toBe(true);
+  });
+
+  it("keeps the high-water mark moving, so nothing is paid for twice", () => {
+    // Ground covered while frozen must not become payable again if a later run unfreezes over
+    // the same metres. Cheap to guarantee here; impossible to notice later.
+    const s = new Score();
+    s.freeze();
+    s.update(1000, 30, 1);
+    expect(s.value).toBe(0);
+
+    // A fresh run resets both, which is the only way back
+    s.reset();
+    expect(s.isFrozen).toBe(false);
+    s.update(1000, 30, 1);
+    expect(s.value).toBeGreaterThan(0);
+  });
+
+  it("still drains the ramp bonus, so the boost bar does not stick", () => {
+    const s = new Score();
+    s.awardBoost();
+    s.freeze();
+    expect(s.boost).toBeGreaterThan(0);
+    s.update(10, 30, 5);
+    expect(s.boost, "a timer, not an earning — it has to run out").toBe(0);
+  });
+});
