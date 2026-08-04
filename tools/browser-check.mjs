@@ -2059,6 +2059,35 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     };
   });
 
+  // Press it a second time, and check it *does* something.
+  //
+  // This is where the last version was wrong. It asserted the button came back on offer and
+  // never pressed it again — and the offer was drawn from one condition while the action was
+  // guarded by another, so the button was there and dead. Second press of a run, and every
+  // press on any later run that day. Showing a control is not evidence it works.
+  const before2 = await dp.evaluate(() => window.__game.controller.z);
+  await dp.click("#btn-continue");
+  await dp.waitForTimeout(600);
+  const second = await dp.evaluate(() => ({
+    state: window.__game.state,
+    z: window.__game.controller.z,
+  }));
+
+  // ...and again on a *later* run that day, which is the other way it died
+  await dp.evaluate((seed) => window.__game.startRun(seed), today);
+  await dp.waitForFunction(() => window.__game.state === "playing", { timeout: 10000 });
+  await dp.waitForTimeout(700);
+  await dp.evaluate(() => window.__game.endRun("crash"));
+  await dp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+  await dp.click("#btn-continue");
+  await dp.waitForTimeout(600);
+  const laterRun = await dp.evaluate(() => ({
+    state: window.__game.state,
+    frozen: window.__game.score.isFrozen,
+  }));
+  await dp.evaluate(() => window.__game.endRun("crash"));
+  await dp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+
   // A *fresh* run on a continued day is a clean attempt: it counts, and it is drawn as
   // counting, right up to the moment it climbs past the best already stored. Past that it keeps
   // climbing — the run is real — but greys, because nothing above that line will be saved.
@@ -2082,6 +2111,11 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
       score: g.score.value,
       greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
       multShown: !document.getElementById("hud-mult").hidden,
+      // The multiplier legitimately hides below x1.02, and whether the rider is under that at
+      // this instant is luck — it depends on how fast they happen to be going. Asserting it is
+      // shown without asking what it *is* fails on a slow moment and says nothing about the
+      // rule under test.
+      multiplier: g.score.multiplierAt(g.controller.speed),
     };
   });
   const stillClimbing = await dp.evaluate(() => window.__game.score.value);
@@ -2145,6 +2179,15 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   if (banked.shown !== crashed.score)
     problems.push(`the card shows ${banked.shown}, not the frozen ${crashed.score}`);
   if (custom.shown) problems.push("an ordinary course offered the continue");
+  // Pressing it again has to work, not merely be offered
+  if (second.state !== "playing")
+    problems.push(`a second continue did nothing — still ${second.state}`);
+  if (!(second.z >= before2 - 1))
+    problems.push(`the second continue went backwards: ${before2}m to ${second.z}m`);
+  if (laterRun.state !== "playing")
+    problems.push(`continuing a later run on a spent day did nothing — still ${laterRun.state}`);
+  if (!laterRun.frozen)
+    problems.push("a later run continued without freezing its score");
   // The re-run rules
   if (!(rerun.score > 0)) problems.push("a fresh run on a continued day did not score at all");
   if (!(rerun.score < rerun.best))
@@ -2155,14 +2198,17 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`a re-run past the best (${above.score} of ${rerun.best}) was not greyed`);
   if (!(stillClimbing > above.score))
     problems.push(`the re-run stopped counting past the best: ${above.score} to ${stillClimbing}`);
-  if (!above.multShown)
-    problems.push("the multiplier was hidden over a score that is still climbing");
+  if (above.multiplier > 1.02 && !above.multShown)
+    problems.push(
+      `the multiplier (x${above.multiplier.toFixed(2)}) was hidden over a climbing score`,
+    );
 
   if (problems.length) fail(`the daily continue — ${problems.join("; ")}`);
   else
     console.log(
       `✓ a daily run can be continued freely: resumed at ${after.z.toFixed(0)}m keeping ` +
-        `${after.score} points frozen and greyed; a re-run then counted normally at ` +
+        `${after.score} points frozen and greyed; pressed again and again on a later run, ` +
+        `both took; a re-run then counted normally at ` +
         `${rerun.score} and greyed once past the ${rerun.best} best while still climbing to ` +
         `${stillClimbing}; the continue stayed on offer; a custom code never offers it`,
     );

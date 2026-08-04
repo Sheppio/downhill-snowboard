@@ -579,8 +579,17 @@ class Game {
    */
   private continueRun(): void {
     if (this.state !== "ended") return;
-    if (!isDaily(this.seed) || hasContinued(this.seed)) return;
+    // Daily runs only, and that is the whole gate. It used to refuse a course that had already
+    // been continued, which was correct while a continue was a once-a-day thing and became a
+    // dead button the moment it was not: the end screen offered it every time, because the
+    // offer is drawn from `isDaily` alone, and pressing it did nothing. Second press of a run,
+    // and every press on any later run that day.
+    //
+    // Two gates for one rule is what did it. There is one now, and the offer and the action
+    // read the same thing.
+    if (!isDaily(this.seed)) return;
 
+    // Idempotent, so continuing again on an already-spent day costs nothing further
     markContinued(this.seed);
     this.spentDay = true;
     // Stop the score there and then. The run carries on and the distance keeps climbing, but
