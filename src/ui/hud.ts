@@ -18,15 +18,14 @@ function must<T extends HTMLElement>(id: string): T {
  * How the score should be drawn.
  *
  *  - `counting`   — normal. Gold, climbing, and it will be kept.
- *  - `unrecorded` — climbing, but greyed: the day has been continued, and this run has passed
- *                   the best already stored, so what is on screen is beyond anything that will
- *                   be saved. Grey is the only thing saying so.
- *  - `stopped`    — a continued run. Greyed *and* still, because it is not earning at all.
+ *  - `unrecorded` — climbing exactly as normal, but greyed, because nothing on screen is going
+ *                   to be saved: either the run was continued, or the day was already spent and
+ *                   this run has passed the best already stored.
  *
- * One value rather than a pair of flags, because "greyed" and "still" are not independent and a
- * pair can be set to a combination that means nothing.
+ * The score always counts. Grey is the only difference, and it means one thing: this number is
+ * not being kept.
  */
-export type ScoreDisplay = "counting" | "unrecorded" | "stopped";
+export type ScoreDisplay = "counting" | "unrecorded";
 
 export interface HudCallbacks {
   onRideDaily(): void;
@@ -307,18 +306,15 @@ export class Hud {
     this.dist.textContent = String(Math.floor(distance));
     this.score.textContent = score.toLocaleString();
 
-    // Grey means one thing throughout: this number is not being kept. A live, gold, climbing
-    // score is the game's loudest claim that something is being earned, so it has to stop
-    // making that claim when nothing is being saved — whether the score has stopped (a
-    // continued run) or is still climbing past a best it can no longer take.
+    // Grey means one thing: this number is not being kept. A gold, climbing score is the
+    // game's loudest claim that something is being earned, so it stops making that claim when
+    // nothing is being saved — while still counting, because the riding is real and a player
+    // deep in a continued run wants to know what it was worth.
     //
-    // The distance and the speed keep their normal colours in every case, because they are
-    // still true: the run is still going, it is just no longer worth anything.
+    // Distance and speed keep their normal colours throughout; they were never in question.
     this.scoreBlock.classList.toggle("is-unrecorded", display !== "counting");
 
-    // Hidden only when the score has actually stopped. A score still climbing is still being
-    // multiplied, and hiding it there would leave the ramp bonus with nothing to show for it.
-    if (multiplier > 1.02 && display !== "stopped") {
+    if (multiplier > 1.02) {
       this.mult.hidden = false;
       this.mult.textContent = `×${multiplier.toFixed(2)}`;
     } else {

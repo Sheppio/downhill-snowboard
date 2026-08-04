@@ -2033,9 +2033,7 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     state: window.__game.state,
     z: window.__game.controller.z,
     score: window.__game.score.value,
-    // The number has to visibly stop, not merely fail to be saved. A gold figure climbing at
-    // sixty frames a second is the game's loudest claim that something is being earned.
-    frozen: window.__game.score.isFrozen,
+    // It keeps counting — the riding is real — but greys, because none of it will be kept.
     greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
     multShown: !document.getElementById("hud-mult").hidden,
     // ...while the distance carries on, because that part is still true
@@ -2083,7 +2081,7 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   await dp.waitForTimeout(600);
   const laterRun = await dp.evaluate(() => ({
     state: window.__game.state,
-    frozen: window.__game.score.isFrozen,
+    greyed: document.getElementById("hud-score-block").classList.contains("is-unrecorded"),
   }));
   await dp.evaluate(() => window.__game.endRun("crash"));
   await dp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
@@ -2142,13 +2140,11 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`the offer does not say what it costs: "${offered.note}"`);
   if (after.state !== "playing") problems.push(`continuing left the game ${after.state}`);
   if (!(after.z >= crashed.z - 1)) problems.push(`continued at ${after.z}m, behind the crash at ${crashed.z}m`);
-  if (after.score !== atResume.score)
-    problems.push(`the score kept counting after continuing: ${atResume.score} to ${after.score}`);
-  if (after.score !== crashed.score)
-    problems.push(`the score moved across the continue: ${crashed.score} became ${after.score}`);
-  if (!after.frozen) problems.push("the score was not frozen");
-  if (!after.greyed) problems.push("the frozen score is still drawn as a live one");
-  if (after.multShown) problems.push("a multiplier is shown over a score that cannot grow");
+  if (!(after.score > atResume.score))
+    problems.push(`the score stopped counting after continuing: ${atResume.score} to ${after.score}`);
+  if (!(atResume.score >= crashed.score))
+    problems.push(`the continue lost the score earned so far: ${crashed.score} to ${atResume.score}`);
+  if (!after.greyed) problems.push("a continued run's score is drawn as one that will be kept");
   if (!(after.shownDistance > 0 && after.z > atResume.z))
     problems.push("the run did not continue at all — distance never moved");
   if (!atResume.onGround) problems.push("the rider resumed in mid-air");
@@ -2176,8 +2172,11 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`a spent day does not say so: "${banked.note}"`);
   if (!/continued/i.test(banked.strap ?? ""))
     problems.push(`the shared card does not say the run was continued: "${banked.strap}"`);
-  if (banked.shown !== crashed.score)
-    problems.push(`the card shows ${banked.shown}, not the frozen ${crashed.score}`);
+  // The card carries what the continued run actually reached — it is a real ride and worth
+  // showing — and says on its face that it was continued, which is what stops it being passed
+  // off as a clean one.
+  if (!(banked.shown >= crashed.score))
+    problems.push(`the card shows ${banked.shown}, less than the ${crashed.score} already earned`);
   if (custom.shown) problems.push("an ordinary course offered the continue");
   // Pressing it again has to work, not merely be offered
   if (second.state !== "playing")
@@ -2186,8 +2185,8 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     problems.push(`the second continue went backwards: ${before2}m to ${second.z}m`);
   if (laterRun.state !== "playing")
     problems.push(`continuing a later run on a spent day did nothing — still ${laterRun.state}`);
-  if (!laterRun.frozen)
-    problems.push("a later run continued without freezing its score");
+  if (!laterRun.greyed)
+    problems.push("a later continued run's score is not greyed");
   // The re-run rules
   if (!(rerun.score > 0)) problems.push("a fresh run on a continued day did not score at all");
   if (!(rerun.score < rerun.best))
@@ -2207,8 +2206,8 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   else
     console.log(
       `✓ a daily run can be continued freely: resumed at ${after.z.toFixed(0)}m keeping ` +
-        `${after.score} points frozen and greyed; pressed again and again on a later run, ` +
-        `both took; a re-run then counted normally at ` +
+        `${atResume.score} points and still counting to ${after.score}, greyed throughout; ` +
+        `pressed again and again on a later run, both took; a re-run then counted normally at ` +
         `${rerun.score} and greyed once past the ${rerun.best} best while still climbing to ` +
         `${stillClimbing}; the continue stayed on offer; a custom code never offers it`,
     );

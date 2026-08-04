@@ -75,6 +75,14 @@ class Game {
    * of localStorage, and the score's colour is decided sixty times a second.
    */
   private spentDay = false;
+  /**
+   * Whether *this* run was continued, as opposed to started from the top.
+   *
+   * Separate from `spentDay`, and the distinction is the whole of `scoreDisplay`. A continued
+   * run cannot be recorded from the moment it resumes, so it greys immediately. A fresh run on
+   * the same spent day is a clean attempt and is drawn as one until it climbs past the best.
+   */
+  private continuedThisRun = false;
   private oobTimer = 0;
   private crashTimer = 0;
   private endReason: "crash" | "outOfBounds" = "crash";
@@ -402,6 +410,7 @@ class Game {
     // A fresh run on a continued day counts normally, and normally is how it is drawn — right
     // up to the point it passes the best already stored. See `scoreDisplay`.
     this.spentDay = hasContinued(seed);
+    this.continuedThisRun = false;
     this.input.reset();
     this.oobTimer = 0;
     this.crashTimer = 0;
@@ -592,10 +601,9 @@ class Game {
     // Idempotent, so continuing again on an already-spent day costs nothing further
     markContinued(this.seed);
     this.spentDay = true;
-    // Stop the score there and then. The run carries on and the distance keeps climbing, but
-    // nothing further is earned — and the HUD greys the number so that is visible from the
-    // first frame rather than only on the end screen.
-    this.score.freeze();
+    // The score keeps counting from here — the riding is real and worth seeing a number for —
+    // but it greys from the first frame, because none of it is going to be kept.
+    this.continuedThisRun = true;
 
     const z = this.controller.z;
     this.wipeout.stop();
@@ -619,20 +627,18 @@ class Game {
   /**
    * How the score should be drawn this frame.
    *
-   * The rule is one sentence: grey when the number on screen is not going to be kept.
+   * One rule: grey when the number on screen is not going to be kept. It always counts —
+   * stopping it made a real run look broken, and a player deep in a continued descent still
+   * wants to know what the riding was worth.
    *
-   * A continued run earns nothing more, so it is greyed and still. A *fresh* run on a continued
-   * day is a clean attempt and counts normally — but the day is spent, so the moment it passes
-   * the best already stored it is climbing into territory nothing will save, and it greys while
-   * carrying on. That is the whole message: keep going, this one is for you rather than for the
-   * board.
-   *
-   * Below the stored best there is nothing to warn about. A run that cannot beat the best would
-   * not have been recorded on any day, spent or not, so greying it would be greying an ordinary
-   * run for no reason.
+   * A continued run greys the moment it resumes, because from there nothing can be recorded at
+   * all. A *fresh* run on the same spent day is a clean attempt from the top and is drawn as
+   * one, greying only once it passes the best already stored — that is where it crosses from
+   * "could not have been a record anyway" into "would have been, and will not be saved". Below
+   * that line there is nothing to warn anybody about.
    */
   private scoreDisplay(): ScoreDisplay {
-    if (this.score.isFrozen) return "stopped";
+    if (this.continuedThisRun) return "unrecorded";
     if (this.spentDay && this.score.value > this.bestAtStart) return "unrecorded";
     return "counting";
   }

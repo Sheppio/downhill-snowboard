@@ -83,34 +83,11 @@ export class Score {
   private furthest = 0;
   /** Seconds of ramp bonus left to drain. */
   private boostLeft = 0;
-  /**
-   * Whether the score has stopped counting.
-   *
-   * Set when a daily run is continued. Nothing on a continued day is recorded, and a score that
-   * keeps climbing while nothing is being kept is a lie told forty times a second — it was
-   * still climbing when the run ended, it went onto the end screen, and it went onto a card
-   * somebody could send to a friend. Freezing it says what is true: the run goes on, the
-   * scoring does not.
-   *
-   * The bonus keeps draining while frozen. It is a timer, and stopping it would leave the HUD's
-   * boost bar stuck part-full for the rest of the run.
-   */
-  private frozen = false;
 
   reset(): void {
     this.total = 0;
     this.furthest = 0;
     this.boostLeft = 0;
-    this.frozen = false;
-  }
-
-  /** Stop counting. There is no way back short of `reset` — see the note on `frozen`. */
-  freeze(): void {
-    this.frozen = true;
-  }
-
-  get isFrozen(): boolean {
-    return this.frozen;
   }
 
   /** A ramp was ridden. Refreshes the bonus rather than stacking it. */
@@ -135,13 +112,10 @@ export class Score {
    * slow frame earns exactly as much as the fast frames it replaces.
    */
   update(distance: number, speed: number, dt: number): void {
-    // The high-water mark still advances while frozen, so ground covered during a continued
-    // run is not paid for again if the score is ever unfrozen by a fresh run over the same
-    // metres. It costs nothing and closes the loophole before it exists.
     if (distance > this.furthest) {
       const delta = distance - this.furthest;
       this.furthest = distance;
-      if (!this.frozen) this.total += delta * this.multiplierAt(speed);
+      this.total += delta * this.multiplierAt(speed);
     }
     // Drained after paying, so the frame a ramp is collected on is worth the full bonus
     this.boostLeft = Math.max(0, this.boostLeft - dt);

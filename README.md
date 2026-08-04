@@ -203,21 +203,17 @@ The first one costs the day; after that they are free, and there is no limit. On
 rarely gets anybody to the bottom, and once the day is spent there is nothing left to charge
 for.
 
-**A continued run's score stops there and greys out**, and does not move again however far the
-run goes. What was banked before continuing still stands, since that part was ridden clean;
-everything after it is riding for its own sake.
+**A continued run's score keeps counting, and greys out.** The riding is real and worth a
+number — a player fifteen hundred metres into a continued descent still wants to know what it
+was worth — but it greys from the moment the run resumes, because none of it will be kept. What
+was banked before continuing still stands, since that part was ridden clean.
 
-Freezing the number rather than merely declining to save it is the point. A gold figure
-climbing at sixty frames a second is the game's loudest claim that something is being earned,
-and it was still making that claim over a score nothing was keeping — right up to the end
-screen, and onto a card that could be sent to somebody as a clean run. The distance carries on
-counting, because that part is still true.
+**A fresh run on a continued day is different.** That is a clean attempt from the top, so it is
+drawn as one — gold and climbing, exactly as normal. It greys only once it passes the best
+already stored, which is where it crosses from "could not have been a record anyway" into
+"would have been, and will not be saved".
 
-**A fresh run on a continued day is different.** That is a clean attempt, so it counts, and it
-is drawn as counting — gold and climbing, exactly as normal. It only greys once it passes the
-best already stored, and then it carries on climbing. Grey means one thing everywhere: this
-number is not being kept. Below the best there is nothing to say, since a run that cannot beat
-the best would not have been recorded on any day.
+Grey means one thing everywhere: **this number is not being kept.**
 
 Custom codes do not offer it. They can simply be ridden again.
 
