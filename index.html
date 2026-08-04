@@ -113,6 +113,16 @@
             <div><span id="end-seed">—</span><small>slope code</small></div>
           </div>
 
+          <!--
+            Daily runs only, and only once a day. Placed above Retry because it is the offer
+            worth reading, and carries its own warning: pressing it spends the day.
+          -->
+          <button id="btn-continue" class="btn btn-secondary" hidden>
+            <span class="btn-title">Continue from here</span>
+            <span class="btn-sub">today's score stops counting</span>
+          </button>
+          <p class="continue-note" id="continue-note" hidden></p>
+
           <button id="btn-retry" class="btn btn-primary">Retry this run</button>
           <button id="btn-share" class="btn btn-secondary">Copy challenge link</button>
           <button id="btn-menu" class="btn btn-ghost">Change code</button>

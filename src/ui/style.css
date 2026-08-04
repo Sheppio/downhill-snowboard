@@ -793,3 +793,15 @@ body {
   );
   will-change: transform;
 }
+
+/*
+ * The line under the continue button, and the one that replaces it once the day is spent.
+ * Soft ink rather than berry: this is a consequence being explained, not a refusal.
+ */
+.continue-note {
+  margin: -6px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}

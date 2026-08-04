@@ -1240,6 +1240,14 @@ else console.log("✓ a different seed builds a different mountain");
   await page.reload({ waitUntil: "load" });
   await page.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
 
+  // Re-stub `canShare` now, before anything opens the scores list. The reload above threw away
+  // the stub installed for the end-screen share, and the list starts drawing its cards the
+  // moment it opens — so a stub installed later than that arrives after `prepareShareCard` has
+  // already asked, been told the browser will not take files, and cached a null for every row.
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+  });
+
   // A fixed date rather than today's, so the row is the same whenever this runs. The label
   // itself is formatted in the browser's locale ("15 Jan 2026" here, "Jan 15, 2026" in a
   // US one), so it is checked by its parts rather than as one string.
@@ -1973,6 +1981,104 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
           )
           .join(", "),
     );
+}
+
+// --- The daily continue ------------------------------------------------------------------------
+// A daily run ends at the first mistake, so almost nobody ever reaches the part of the mountain
+// the game is about. This buys the rest of the run for the price of the day's scoring — which
+// only means anything if the price is actually charged, so that is what this checks.
+{
+  const dp = await ctx.newPage();
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  await dp.addInitScript(() => localStorage.clear());
+  await dp.goto(`${BASE}?debug=1`, { waitUntil: "load" });
+  await dp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+
+  await dp.evaluate((seed) => window.__game.startRun(seed), today);
+  await dp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+  await dp.waitForTimeout(1200);
+
+  const crashed = await dp.evaluate(() => {
+    window.__game.score.total = 1500;
+    window.__game.endRun("crash");
+    return { z: window.__game.controller.z, score: window.__game.score.value };
+  });
+  await dp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+
+  const offered = await dp.evaluate(() => ({
+    shown: !document.getElementById("btn-continue").hidden,
+    note: document.getElementById("continue-note").textContent,
+    stored: JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]"),
+  }));
+
+  await dp.click("#btn-continue");
+  await dp.waitForFunction(() => window.__game.state === "playing", { timeout: 10000 });
+  await dp.waitForTimeout(900);
+
+  const after = await dp.evaluate(() => ({
+    state: window.__game.state,
+    z: window.__game.controller.z,
+    score: window.__game.score.value,
+    onGround: !window.__game.controller.airborne,
+    gap: Math.abs(window.__game.controller.y - window.__game.field.heightAt(window.__game.controller.x, window.__game.controller.z)),
+  }));
+
+  // End it again, having earned more, and check the extra did not count. What was banked
+  // *before* continuing is a clean run and keeps standing — the deal is that nothing further
+  // counts, not that the run so far is confiscated.
+  const banked = await dp.evaluate(() => {
+    window.__game.score.total = 5000;
+    window.__game.endRun("crash");
+    return {
+      stored: JSON.parse(localStorage.getItem("downhill.scores.v1") ?? "[]"),
+      continueShown: !document.getElementById("btn-continue").hidden,
+      note: document.getElementById("continue-note").textContent,
+    };
+  });
+
+  // ...and that an ordinary course never offers it at all
+  await dp.evaluate(() => window.__game.startRun("powder-chute-42"));
+  await dp.waitForFunction(() => window.__game.state === "playing", { timeout: 10000 });
+  await dp.waitForTimeout(600);
+  const custom = await dp.evaluate(() => {
+    window.__game.endRun("crash");
+    return { shown: !document.getElementById("btn-continue").hidden };
+  });
+
+  const problems = [];
+  if (!offered.shown) problems.push("a daily run did not offer the continue");
+  // Looked up by seed rather than counted. The game opens on today's daily, and if the UTC day
+  // happens to roll over mid-check the seed it opened on is not the seed being ridden — a count
+  // then reads as a failure about scoring when it is really a failure about midnight.
+  const cleanRun = offered.stored.find((r) => r.seed === today);
+  if (!cleanRun) problems.push(`the clean run was not banked under "${today}"`);
+  else if (cleanRun.score !== crashed.score)
+    problems.push(`banked ${cleanRun.score} for the clean run, expected ${crashed.score}`);
+  if (!/stop counting/i.test(offered.note ?? ""))
+    problems.push(`the offer does not say what it costs: "${offered.note}"`);
+  if (after.state !== "playing") problems.push(`continuing left the game ${after.state}`);
+  if (!(after.z >= crashed.z - 1)) problems.push(`continued at ${after.z}m, behind the crash at ${crashed.z}m`);
+  if (after.score < crashed.score) problems.push(`the score was reset: ${crashed.score} became ${after.score}`);
+  if (!after.onGround) problems.push("the rider resumed in mid-air");
+  if (!(after.gap < 1.5)) problems.push(`the rider resumed ${after.gap.toFixed(1)}m off the snow`);
+  // The price. The clean 1500 stays; the 5000 earned after continuing does not.
+  const daily = banked.stored.find((r) => r.seed === today);
+  if (!daily) problems.push("the clean run before the continue was not recorded at all");
+  else if (daily.score !== crashed.score)
+    problems.push(`the continued run counted: banked ${daily.score}, expected ${crashed.score}`);
+  if (banked.continueShown) problems.push("the continue was offered a second time");
+  if (!/no longer count/i.test(banked.note ?? ""))
+    problems.push(`a spent day does not say so: "${banked.note}"`);
+  if (custom.shown) problems.push("an ordinary course offered the continue");
+
+  if (problems.length) fail(`the daily continue — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ a daily run can be continued once: resumed at ${after.z.toFixed(0)}m keeping ` +
+        `${after.score} points; the clean ${crashed.score} still stands and the ` +
+        `${5000} earned after it did not count; a custom code never offers it`,
+    );
+  await dp.close();
 }
 
 if (errors.length) process.exitCode = 1;

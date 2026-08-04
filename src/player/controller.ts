@@ -419,6 +419,42 @@ export class RiderController {
     return this.steer * 0.62 * clamp01(this.speed / 15);
   }
 
+  /**
+   * Put the rider back on the snow at a given point, mid-run.
+   *
+   * For the daily continue. Everything that describes *falling* is cleared — the vertical
+   * velocity, the airborne flag, the leftover steer — and the rider is set down pointing
+   * straight at the fall line at a speed they have to build back up from, so a continue is a
+   * restart from a standstill rather than a free pass through whatever stopped them.
+   *
+   * `topSpeed` is deliberately left alone: it belongs to the whole run, and the fastest the
+   * rider went before falling is still the fastest they went.
+   */
+  resumeAt(x: number, z: number): void {
+    this.x = x;
+    this.z = z;
+    this.heading = 0;
+    this.speed = START_SPEED;
+    this.vy = 0;
+    this.airborne = false;
+    this.steer = 0;
+    this.accumulator = 0;
+    this.y = this.field.heightAt(x, z);
+
+    const [gx, gz] = this.field.gradientAt(x, z);
+    this.gradX = gx;
+    this.gradZ = gz;
+    // Seeded from the surface the rider is being set down on, not from the last frame of the
+    // crash: the launch test differences this against the next step, and a stale value from
+    // wherever they fell reads as a cliff and throws them straight back into the air.
+    this.lastSurfaceVy = this.speed * gz;
+
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.prevZ = this.z;
+    this.prevHeading = this.heading;
+  }
+
   /** Distance down the mountain. Zig-zagging does not inflate it, which keeps seeds fair. */
   get distance(): number {
     return Math.max(0, this.z);

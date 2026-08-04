@@ -194,6 +194,10 @@ export function recordBest(
 ): boolean {
   const value = Math.floor(score);
   if (value <= 0) return false;
+  // The day was spent the moment the run was continued. Checked here rather than at every call
+  // site so there is exactly one place a score can enter storage, and one place this can be
+  // got wrong.
+  if (hasContinued(seed)) return false;
 
   const records = load();
   const existing = records.find((r) => r.seed === seed);
@@ -247,4 +251,60 @@ export function formatWhen(at: number, now: number = Date.now()): string {
  */
 export function formatDistance(distance: number | undefined): string {
   return distance === undefined ? "—" : `${Math.floor(distance).toLocaleString()}m`;
+}
+
+// --- The daily continue --------------------------------------------------------------------
+//
+// A daily run ends at the first mistake, which is what makes it a competition — but it also
+// means almost nobody ever sees the deep mountain, where the fall line has tipped over and the
+// speed is the whole point of the thing. Most attempts are over inside a kilometre.
+//
+// So a daily run can be continued from where it ended, once. The price is that the day stops
+// counting: from the moment it is used, nothing on that day's course is recorded. That keeps
+// the leaderboard honest — a continued run is not comparable with one that took the mountain
+// in a single go — while letting anyone who wants to see 5km go and see it.
+//
+// One flag per seed rather than one for the day, because a player can hold a daily code from a
+// link while the date has moved on, and the flag has to belong to the course that was ridden.
+
+const CONTINUE_KEY = "downhill.continued.v1";
+
+/** Seeds whose day has been spent, newest last. Bounded — this is a small, dull list. */
+const MAX_CONTINUED = 60;
+
+function readContinued(): string[] {
+  const s = store();
+  if (!s) return [];
+  try {
+    const raw = s.getItem(CONTINUE_KEY);
+    if (raw === null) return [];
+    const data: unknown = JSON.parse(raw);
+    return Array.isArray(data) ? data.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Has this course already been continued, so its scores no longer count? */
+export function hasContinued(seed: string): boolean {
+  return readContinued().includes(seed);
+}
+
+/**
+ * Spend the continue on a course. Idempotent — continuing twice is still one spent day.
+ *
+ * Deliberately irreversible for as long as the record lasts. The whole value of the guarantee
+ * is that a score on a daily seed means the same thing for everybody, and it would mean nothing
+ * if this could be quietly undone after a good run.
+ */
+export function markContinued(seed: string): void {
+  const s = store();
+  if (!s) return; // no storage: the flag cannot be kept, so the run simply is not recorded
+  const seeds = readContinued().filter((v) => v !== seed);
+  seeds.push(seed);
+  try {
+    s.setItem(CONTINUE_KEY, JSON.stringify(seeds.slice(-MAX_CONTINUED)));
+  } catch {
+    // Private browsing or a full quota. Nothing else to do; see the guard in `recordBest`.
+  }
 }

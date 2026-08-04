@@ -31,6 +31,8 @@ export interface HudCallbacks {
   onScoresShown(seeds: string[]): void;
   onShuffle(): void;
   onRetry(): void;
+  /** Pick the run up from where it ended, spending the day's scoring. Daily runs only. */
+  onContinue(): void;
   onShare(): void;
   onBackToMenu(): void;
   onPause(): void;
@@ -54,6 +56,8 @@ export class Hud {
   private readonly start = must("start");
   private readonly seedInput = must<HTMLInputElement>("seed-input");
   private readonly seedError = must<HTMLParagraphElement>("seed-error");
+  private readonly continueBtn = must<HTMLButtonElement>("btn-continue");
+  private readonly continueNote = must<HTMLParagraphElement>("continue-note");
   private readonly dailyLabelEl = must("daily-label");
   private readonly startBest = must("start-best");
 
@@ -96,6 +100,7 @@ export class Hud {
 
     must<HTMLButtonElement>("btn-reload").addEventListener("click", () => location.reload());
     must<HTMLButtonElement>("btn-retry").addEventListener("click", () => callbacks.onRetry());
+    this.continueBtn.addEventListener("click", () => callbacks.onContinue());
     this.shareBtn.addEventListener("click", () => callbacks.onShare());
     must<HTMLButtonElement>("btn-menu").addEventListener("click", () => callbacks.onBackToMenu());
 
@@ -150,7 +155,7 @@ export class Hud {
 
   showStart(seed: string, best: number): void {
     this.seedInput.value = seed;
-    this.startBest.textContent = best > 0 ? `Your best on this seed: ${best.toLocaleString()}` : "";
+    this.startBest.textContent = best > 0 ? `Your best on this run: ${best.toLocaleString()}` : "";
     this.start.hidden = false;
     this.end.hidden = true;
     this.paused.hidden = true;
@@ -313,6 +318,10 @@ export class Hud {
     seed: string;
     best: number;
     isRecord: boolean;
+    /** Offer to pick the run back up. Daily runs whose day is still worth something. */
+    canContinue: boolean;
+    /** The day has already been spent on this course, so nothing more will be recorded. */
+    spent: boolean;
   }): void {
     this.hud.hidden = true;
     this.oob.hidden = true;
@@ -323,11 +332,28 @@ export class Hud {
     this.endScore.textContent = opts.score.toLocaleString();
     this.endBest.textContent = opts.isRecord
       ? "New personal best!"
-      : `Best on this seed: ${opts.best.toLocaleString()}`;
+      : `Best on this run: ${opts.best.toLocaleString()}`;
 
     this.endDist.textContent = `${Math.floor(opts.distance)}m`;
     this.endTop.textContent = `${Math.round(opts.topSpeed * 3.6)}km/h`;
     this.endSeed.textContent = isDaily(opts.seed) ? "Today" : opts.seed;
+
+    // Three states, and the middle one is the one that matters: the offer has to say what it
+    // costs *before* it is taken, not after. Once spent, the button goes and the reason stays,
+    // so a score that is not being saved never looks like one that is.
+    this.continueBtn.hidden = !opts.canContinue;
+    if (opts.canContinue) {
+      this.continueNote.hidden = false;
+      this.continueNote.textContent =
+        "Keep this run going from where it ended. Use it and today's runs stop counting " +
+        "towards your best — for the rest of the day.";
+    } else if (opts.spent) {
+      this.continueNote.hidden = false;
+      this.continueNote.textContent = "Continued earlier, so today's runs no longer count.";
+    } else {
+      this.continueNote.hidden = true;
+      this.continueNote.textContent = "";
+    }
   }
 
   setSeedInput(seed: string): void {

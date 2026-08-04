@@ -14,7 +14,7 @@ import { ObstacleField, ObstacleRenderer } from "./world/obstacles";
 import { applyRamps, RampRenderer } from "./world/ramps";
 import { createBackdrop, setupSky, SnowSpray } from "./world/scenery";
 import { SnowTracks } from "./world/tracks";
-import { OUT_OF_BOUNDS_FRACTION, lateralFraction } from "./world/course";
+import { OUT_OF_BOUNDS_FRACTION, gateX, lateralFraction } from "./world/course";
 import { RiderController } from "./player/controller";
 import { Rider } from "./player/rider";
 import { ChaseCamera } from "./player/camera";
@@ -22,8 +22,8 @@ import { Wipeout, initPhysics } from "./player/wipeout";
 import { SteerInput } from "./input/steer";
 import { TouchMarkers } from "./ui/touchmarkers";
 import { Score } from "./game/score";
-import { readBest, readRecord, recordBest } from "./game/leaderboard";
-import { initialSeed, normaliseSeed, randomSeed, shareUrl, syncUrl, todaysSeed } from "./game/seed";
+import { hasContinued, markContinued, readBest, readRecord, recordBest } from "./game/leaderboard";
+import { initialSeed, isDaily, normaliseSeed, randomSeed, shareUrl, syncUrl, todaysSeed } from "./game/seed";
 import { prepareShareCard, shareMessage, shareRun } from "./game/share";
 import type { CardResult } from "./game/sharecard";
 import { Hud } from "./ui/hud";
@@ -134,6 +134,7 @@ class Game {
       onRideSeed: (raw) => this.startRun(normaliseSeed(raw) || randomSeed()),
       onShuffle: () => this.hud.setSeedInput(randomSeed()),
       onRetry: () => this.startRun(this.seed),
+      onContinue: () => this.continueRun(),
       // Nothing is awaited before shareRun runs, because `navigator.share` needs the user
       // activation this click carries and awaiting spends it on iOS. The card was drawn when
       // the end screen appeared, precisely so there is nothing left to wait for here.
@@ -290,7 +291,7 @@ class Game {
       distance: record.distance,
       topSpeed: record.topSpeed,
       seed,
-      strap: "My best on this seed",
+      strap: "My best on this run",
       url: shareUrl(seed),
     };
   }
@@ -550,6 +551,46 @@ class Game {
     this.wipeout.start(this.controller, hitX, hitZ);
   }
 
+  /**
+   * Pick the run back up from where it ended, at the price of the day.
+   *
+   * Only reachable on a daily course. Almost every attempt at one is over inside a kilometre,
+   * which means almost nobody ever sees the part of the mountain this game is actually about —
+   * the fall line past 3km, tipped over and quick. This is how they get to look at it.
+   *
+   * What it costs is recorded before anything else moves: from here on nothing on this course
+   * is written to the leaderboard, including the score already earned. A continued run and a
+   * clean one are not the same achievement and must not share a column.
+   *
+   * The rider is put back on the racing line rather than exactly where they fell. Where they
+   * fell is, by definition, either inside a tree or off the course, and dropping them back into
+   * it would end the run again within the second.
+   */
+  private continueRun(): void {
+    if (this.state !== "ended") return;
+    if (!isDaily(this.seed) || hasContinued(this.seed)) return;
+
+    markContinued(this.seed);
+
+    const z = this.controller.z;
+    this.wipeout.stop();
+    this.controller.resumeAt(gateX(this.field.params, z), z);
+    this.rider.setEnabled(true);
+
+    this.terrain.prime(this.controller.z);
+    this.obstacleRenderer.update(this.controller.z);
+    this.rampRenderer.update(this.controller.z, this.controller.z);
+    this.camera.reset(this.controller);
+
+    // The ramp between here and wherever the crash left `lastRampZ` is not a ramp this run rode
+    this.lastRampZ = this.controller.z;
+    this.input.reset();
+    this.oobTimer = 0;
+    this.crashTimer = 0;
+    this.state = "playing";
+    this.hud.showPlaying();
+  }
+
   private updateCrashing(dt: number): void {
     this.crashTimer += dt;
 
@@ -603,7 +644,7 @@ class Game {
       distance: this.controller.distance,
       topSpeed: this.controller.topSpeed,
       seed: this.seed,
-      strap: isRecord ? "New personal best!" : `Best on this seed: ${best.toLocaleString()}`,
+      strap: isRecord ? "New personal best!" : `Best on this run: ${best.toLocaleString()}`,
       url: shareUrl(this.seed),
     };
     this.lastResult = result;
@@ -616,6 +657,11 @@ class Game {
       seed: this.seed,
       best,
       isRecord,
+      // Only a daily run, and only while the day is still worth something. A custom course can
+      // simply be ridden again from the top, so a continue there would be a button that saves
+      // nothing; and once the day is spent there is nothing left to warn anybody about.
+      canContinue: isDaily(this.seed) && !hasContinued(this.seed),
+      spent: hasContinued(this.seed),
     });
 
     // Drawn now, not when the button is pressed. `navigator.share` needs the activation from

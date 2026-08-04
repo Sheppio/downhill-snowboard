@@ -146,7 +146,7 @@ describe("what the card says", () => {
     // The caller knows what this share is; the card does not, and should not guess. A run that
     // just beat your best says one thing, a row on the scores list says another.
     expect(draw().said()).toContain("New personal best!");
-    expect(draw({ strap: "My best on this seed" }).said()).toContain("My best on this seed");
+    expect(draw({ strap: "My best on this run" }).said()).toContain("My best on this run");
   });
 
   it("draws a scene, not just words on nothing", () => {
@@ -156,7 +156,7 @@ describe("what the card says", () => {
 
 describe("a card made from a scores-list row", () => {
   const fromList = (over: Partial<CardResult> = {}) =>
-    draw({ strap: "My best on this seed", ...over });
+    draw({ strap: "My best on this run", ...over });
 
   it("is the same card, with the same two stats", () => {
     // The whole point of storing a top speed on the record: a best sent from the list should

@@ -4,6 +4,8 @@ import {
   COURSE_GENERATION,
   formatDistance,
   formatWhen,
+  hasContinued,
+  markContinued,
   readBest,
   readRecord,
   readScores,
@@ -355,5 +357,42 @@ describe("scores set on an earlier version of the course", () => {
   it("stamps everything it writes, so this can be done again", () => {
     recordBest("alpine", 1200, 900, SPEED, t(0));
     expect((raw()[0] as { gen: number }).gen).toBe(COURSE_GENERATION);
+  });
+});
+
+describe("the daily continue", () => {
+  it("starts unspent", () => {
+    expect(hasContinued("20260806")).toBe(false);
+  });
+
+  it("stops the course being recorded at all, once spent", () => {
+    // Not "stops improving" — stops entirely. A continued run and a clean one are not the same
+    // achievement, and the leaderboard has one column.
+    expect(recordBest("20260806", 500, 400, 30)).toBe(true);
+    markContinued("20260806");
+    expect(recordBest("20260806", 9999, 8000, 45)).toBe(false);
+    expect(readBest("20260806"), "the score set before it was spent survives").toBe(500);
+  });
+
+  it("spends one course, not the whole device", () => {
+    markContinued("20260806");
+    expect(hasContinued("20260806")).toBe(true);
+    expect(hasContinued("20260807")).toBe(false);
+    expect(recordBest("powder-chute-42", 700, 500, 30), "custom courses are unaffected").toBe(true);
+  });
+
+  it("is idempotent, so continuing twice still spends one day", () => {
+    markContinued("20260806");
+    markContinued("20260806");
+    expect(hasContinued("20260806")).toBe(true);
+  });
+
+  it("survives rubbish in storage rather than throwing", () => {
+    localStorage.setItem("downhill.continued.v1", "{not json");
+    expect(hasContinued("20260806")).toBe(false);
+    localStorage.setItem("downhill.continued.v1", JSON.stringify({ seed: true }));
+    expect(hasContinued("20260806")).toBe(false);
+    localStorage.setItem("downhill.continued.v1", JSON.stringify([1, null, "20260806"]));
+    expect(hasContinued("20260806")).toBe(true);
   });
 });
