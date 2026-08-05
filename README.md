@@ -161,6 +161,20 @@ like nothing at all. It is its own terrain-hugging ribbon instead.
 
 ## What you collide with
 
+Boulders wear a snow cap, and it is a small dome sunk into the stone rather than a layer lying on
+it. Sink it too far and the rock's own summit surfaces in the middle of its hat as a grey speck —
+on one of the five shapes the cap's apex sat 5mm *below* the stone's, so the stone came through by
+construction. The caps are lifted enough to clear the stone's facets by 40–50mm, which is
+comfortably more than a three-segment sphere sags between its vertices, and every top still sits
+within the tolerance the collider heights are checked against, so nothing about clearing a rock
+changed.
+
+The check for this is in image space, not in metres: near its rim the cap is *supposed* to be
+under the stone — that is what being sunk in means — so asking "is any stone above the snow"
+reports a fault on every rock ever built. What matters is stone you can see with snow all the way
+around it, so the check renders each boulder from 36 viewpoints, floods the non-snow pixels in
+from the edge of the frame, and fails on anything the flood cannot reach.
+
 The rider is a **capsule lying along the board** — 0.225m across the direction of travel and
 0.81m along it, both taken from the mesh actually drawn. It was a 0.6m circle, which is not a
 shape a snowboard has: nearly three times too wide sideways, which is the axis you dodge on,
@@ -251,7 +265,14 @@ distance, top speed, and the slope code — with the challenge link attached. Th
 with it is picked from ten, so the same people do not read the same sentence every time. On a phone that is
 WhatsApp, Messages, or whatever else is installed.
 
-**Every row of Your scores has its own ↗**, so a best from last week can be sent as easily as
+**It is only offered for a score worth sending** — a run that beat your best on that course.
+Anything else gets the standing best instead, on a line under the score with a share mark beside
+it, and that sends the card for *that* score rather than the one just ridden. A continued run
+never offers to share itself whatever it reached, since it was never going to be recorded. The
+button was there after every run, which meant most of what it offered to send was a wipeout
+forty metres in.
+
+**Every row of Your scores has its own share mark**, so a best from last week can be sent as easily as
 the run you just finished — and it sends the same card. That is the only reason the leaderboard
 stores a run's top speed at all: nothing displays it, the rows do not show it, and it has no
 bearing on the score. It is kept so a share from the list is indistinguishable from a share the
@@ -311,7 +332,7 @@ A custom seed appears exactly as you typed it, since that is the only way back t
 Daily runs are shown as their date and tagged as dailies, so a date is never mistaken for a
 seed somebody chose.
 
-**Tap any row to ride that seed again**, or its ↗ to share it. For past dailies the row is the
+**Tap any row to ride that seed again**, or its share mark to send it. For past dailies the row is the
 only route back — once the date moves on, nothing else in the game can reach them.
 
 A run counts however it ends. Crashing, going off course, pausing and changing seed, restarting

@@ -111,7 +111,7 @@
       <div id="scores" class="panel-wrap" hidden>
         <div class="panel">
           <h2 class="scores-title">YOUR SCORES</h2>
-          <p class="tagline">Newest first. Tap one to ride it again, or ↗ to share it.</p>
+          <p class="tagline">Newest first. Tap one to ride it again, or the share mark to send it.</p>
           <ol id="scores-list" class="scores-list"></ol>
           <p class="best" id="scores-empty" hidden>
             No scores yet. Ride something and they will show up here.
@@ -126,6 +126,16 @@
           <h2 id="end-title">WIPEOUT</h2>
           <div class="final-score" id="end-score">0</div>
           <p class="best" id="end-best"></p>
+
+          <!--
+            The standing best on this course, with a share of its own. Shown when this run was
+            not one: there is nothing worth sending about a run that did not beat anything, but
+            the score that *does* stand is still worth passing on.
+          -->
+          <div class="best-row" id="end-record" hidden>
+            <span id="end-record-text"></span>
+            <button id="btn-share-best" class="share-chip" type="button"></button>
+          </div>
 
           <div class="breakdown">
             <div><span id="end-dist">0</span><small>distance</small></div>
@@ -145,7 +155,7 @@
 
           <button id="btn-retry" class="btn btn-primary">Retry this run</button>
           <button id="btn-share" class="btn btn-secondary">Copy challenge link</button>
-          <button id="btn-menu" class="btn btn-ghost">Change code</button>
+          <button id="btn-menu" class="btn btn-ghost">Main menu</button>
 
           <!-- Build stamp, filled in from __APP_VERSION__ so it tracks the commit -->
           <p class="version" data-version></p>
@@ -179,7 +189,7 @@
           </div>
           <button id="btn-resume" class="btn btn-primary">Resume</button>
           <button id="btn-restart" class="btn btn-secondary">Restart run</button>
-          <button id="btn-quit" class="btn btn-ghost">Change code</button>
+          <button id="btn-quit" class="btn btn-ghost">Main menu</button>
           <p class="version" data-version></p>
         </div>
       </div>

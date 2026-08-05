@@ -25,6 +25,51 @@ function strong(value: string): HTMLElement {
   return el;
 }
 
+/**
+ * The share mark: one dot passing to two others.
+ *
+ * Built here rather than dropped into the markup so every place that offers a share draws the
+ * same thing — the scores rows, the end screen's best, and the share button itself. It was an
+ * "↗" on the rows and a word everywhere else, which read as three unrelated affordances.
+ *
+ * `currentColor` throughout, so it takes the colour of whatever it sits in and needs no variant
+ * for the dark button, the pale row and the tinted best line.
+ */
+function shareIcon(): SVGSVGElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "share-icon");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  // The two arms first, so the dots sit on top of where they meet
+  for (const [x1, y1, x2, y2] of [
+    [8.2, 10.6, 15.8, 6.4],
+    [8.2, 13.4, 15.8, 17.6],
+  ]) {
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("x1", String(x1));
+    line.setAttribute("y1", String(y1));
+    line.setAttribute("x2", String(x2));
+    line.setAttribute("y2", String(y2));
+    line.setAttribute("stroke", "currentColor");
+    line.setAttribute("stroke-width", "2.1");
+    line.setAttribute("stroke-linecap", "round");
+    svg.append(line);
+  }
+  // The one, then the two it goes to
+  for (const [cx, cy] of [[5.5, 12], [18.5, 5], [18.5, 19]]) {
+    const dot = document.createElementNS(ns, "circle");
+    dot.setAttribute("cx", String(cx));
+    dot.setAttribute("cy", String(cy));
+    dot.setAttribute("r", "3.1");
+    dot.setAttribute("fill", "currentColor");
+    svg.append(dot);
+  }
+  return svg;
+}
+
 function must<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`missing UI element #${id}`);
@@ -109,6 +154,9 @@ export class Hud {
   private readonly endDist = must("end-dist");
   private readonly endTop = must("end-top");
   private readonly endSeed = must("end-seed");
+  private readonly endRecord = must("end-record");
+  private readonly endRecordText = must("end-record-text");
+  private readonly shareBestBtn = must<HTMLButtonElement>("btn-share-best");
 
   private readonly scores = must("scores");
   private readonly scoresList = must("scores-list");
@@ -138,6 +186,9 @@ export class Hud {
    */
   private endSpent = false;
 
+  /** The course the end screen is showing, so its best can be shared from here. */
+  private endSeedValue = "";
+
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
     must<HTMLButtonElement>("btn-daily").addEventListener("click", () => callbacks.onRideDaily());
@@ -166,6 +217,18 @@ export class Hud {
       callbacks.onContinue();
     });
     this.shareBtn.addEventListener("click", () => callbacks.onShare());
+
+    // Shares the score that *stands* on this course, not the run just finished — which is the
+    // whole reason it is offered here. Same two-step as the scores rows: the press only moves
+    // this seed to the front of the drawing queue, because a card takes longer to draw than a
+    // tap takes to happen. What buys the time is `showEnd`, which asks for it up front.
+    this.shareBestBtn.replaceChildren(shareIcon());
+    this.shareBestBtn.addEventListener("pointerdown", () => {
+      if (this.endSeedValue) callbacks.onPrepareShareSeed(this.endSeedValue);
+    });
+    this.shareBestBtn.addEventListener("click", () => {
+      if (this.endSeedValue) callbacks.onShareSeed(this.endSeedValue);
+    });
     must<HTMLButtonElement>("btn-menu").addEventListener("click", () => callbacks.onBackToMenu());
 
     must<HTMLButtonElement>("btn-pause").addEventListener("click", () => callbacks.onPause());
@@ -282,7 +345,7 @@ export class Hud {
         const share = document.createElement("button");
         share.type = "button";
         share.className = "score-share";
-        share.textContent = "↗";
+        share.replaceChildren(shareIcon());
         share.setAttribute("aria-label", `Share your best on ${label}`);
         share.dataset.shareSeed = r.seed;
         // The press only ever *reorders* the queue — it moves this seed to the front so a
@@ -451,7 +514,27 @@ export class Hud {
       ? "Continued run — doesn't count towards your best"
       : opts.isRecord
         ? "New personal best!"
-        : `Best on this run: ${opts.best.toLocaleString()}`;
+        : "";
+
+    // Sharing is for a score worth sending. A run that beat nothing has the button taken away
+    // and the standing best offered in its place — the same score the scores list would send,
+    // shared the same way — so there is still something to pass on without dressing up a run
+    // that did not earn it. A record shares itself, through the button below.
+    // Nothing to say leaves nothing behind: an empty line still holds a row's height, and on a
+    // run that beat nothing that was a blank gap under the score.
+    this.endBest.hidden = this.endBest.textContent === "";
+
+    this.endSeedValue = opts.seed;
+    const canShareBest = !opts.isRecord && opts.best > 0;
+    this.endRecord.hidden = !canShareBest;
+    this.endRecordText.textContent = canShareBest
+      ? `Your best: ${opts.best.toLocaleString()}`
+      : "";
+    this.shareBestBtn.setAttribute(
+      "aria-label",
+      `Share your best on ${seedLabel(opts.seed)}`,
+    );
+    this.shareBtn.hidden = !opts.isRecord;
 
     this.endDist.textContent = `${Math.floor(opts.distance)}m`;
     this.endTop.textContent = `${Math.round(opts.topSpeed * 3.6)}km/h`;
@@ -517,13 +600,21 @@ export class Hud {
    * player is still reading, for a message that only means "that worked".
    */
   flashScoreShare(seed: string): void {
-    const button = [...this.scoresList.querySelectorAll<HTMLButtonElement>("[data-share-seed]")]
-      .find((el) => el.dataset.shareSeed === seed);
+    // The end screen offers the same share as the row does, so it gets the same confirmation.
+    const chip =
+      !this.end.hidden && !this.endRecord.hidden && this.endSeedValue === seed
+        ? this.shareBestBtn
+        : null;
+    const button =
+      chip ??
+      [...this.scoresList.querySelectorAll<HTMLButtonElement>("[data-share-seed]")].find(
+        (el) => el.dataset.shareSeed === seed,
+      );
     if (!button) return;
     button.textContent = "✓";
     button.classList.add("is-done");
     window.setTimeout(() => {
-      button.textContent = "↗";
+      button.replaceChildren(shareIcon());
       button.classList.remove("is-done");
     }, 1600);
   }

@@ -2534,6 +2534,241 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   await rp.close();
 }
 
+// --- Sharing is offered for a score worth sending ------------------------------------------------
+// A run that beat nothing has nothing to send, so the share button goes and the standing best is
+// offered in its place — the same score the scores list would share, sent the same way. A record
+// shares itself. A continued run never shares itself at all, whatever it scored.
+{
+  const shp = await ctx.newPage();
+  await shp.addInitScript(() => {
+    localStorage.clear();
+    window.__shared = null;
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: (data) => { const f = data.files ?? []; window.__shared = { text: data.text ?? "", files: f.length, name: f[0]?.name ?? "" }; return Promise.resolve(); },
+    });
+    // Both halves. Without `canShare` the card is drawn and then thrown away — `prepareShareCard`
+    // asks before handing a file over, because desktop Chrome has `share` and refuses files —
+    // so the share sheet gets a bare link and the picture never appears.
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+  });
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  await shp.goto(`${BASE}?debug=1`, { waitUntil: "load" });
+  await shp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+
+  const endWith = async (seed, score) => {
+    await shp.evaluate((s) => window.__game.startRun(s), seed);
+    await shp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+    await shp.waitForTimeout(700);
+    await shp.evaluate((sc) => { window.__game.score.total = sc; window.__game.endRun("crash"); }, score);
+    await shp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+    return shp.evaluate(() => ({
+      shareShown: !document.getElementById("btn-share").hidden,
+      bestRowShown: !document.getElementById("end-record").hidden,
+      bestText: document.getElementById("end-record-text").textContent,
+      // The mark, not a letter. It was an "↗" on the rows and a word on the button, which read
+      // as unrelated affordances rather than one thing offered in three places.
+      chipIsIcon: !!document.querySelector("#btn-share-best svg.share-icon"),
+      menuLabel: document.getElementById("btn-menu").textContent.trim(),
+    }));
+  };
+
+  const record = await endWith("powder-chute-42", 12000);
+  const beaten = await endWith("powder-chute-42", 400);
+
+  // The chip shares the score that stands, not the run that just failed to beat it. Waited for,
+  // because the card for the best is drawn when the end screen appears rather than on the press.
+  // Waited for softly. A card that never gets drawn is a real failure of this rule — the icon is
+  // there and sends nothing — and it should be reported as that rather than as a locator that
+  // ran out of time.
+  const cardReady = await shp
+    .waitForFunction(() => window.__game.listCards.get("powder-chute-42") != null, { timeout: 25000 })
+    .then(() => true, () => false);
+  await shp.click("#btn-share-best");
+  await shp.waitForTimeout(1200);
+  const sentFromChip = await shp.evaluate(() => window.__shared);
+
+  // A continued run: never shares itself, whatever it reached
+  await shp.evaluate((s) => window.__game.startRun(s), today);
+  await shp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+  await shp.waitForTimeout(700);
+  await shp.evaluate(() => { window.__game.score.total = 3000; window.__game.endRun("crash"); });
+  await shp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+  await shp.click("#btn-continue");
+  await shp.waitForTimeout(250);
+  await shp.click("#btn-confirm-continue");
+  await shp.waitForFunction(() => window.__game.state === "playing", { timeout: 10000 });
+  await shp.waitForTimeout(700);
+  await shp.evaluate(() => { window.__game.score.total = 99999; window.__game.endRun("crash"); });
+  await shp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+  const continued = await shp.evaluate(() => ({
+    shareShown: !document.getElementById("btn-share").hidden,
+    bestRowShown: !document.getElementById("end-record").hidden,
+    bestText: document.getElementById("end-record-text").textContent,
+  }));
+
+  // The scores rows carry the same mark, and the pause screen the same wording
+  const elsewhere = await shp.evaluate(async () => {
+    document.getElementById("btn-menu").click();
+    await new Promise((r) => setTimeout(r, 60));
+    document.getElementById("btn-scores").click();
+    await new Promise((r) => setTimeout(r, 120));
+    return {
+      rowIcons: document.querySelectorAll("#scores-list .score-share svg.share-icon").length,
+      rows: document.querySelectorAll("#scores-list .score-share").length,
+      arrows: /↗/.test(document.getElementById("scores-list").textContent ?? ""),
+      quitLabel: document.getElementById("btn-quit").textContent.trim(),
+    };
+  });
+
+  const problems = [];
+  if (!record.shareShown) problems.push("a personal best was not offered a share");
+  if (record.bestRowShown)
+    problems.push("a personal best also offered its own best to share — one or the other");
+  if (beaten.shareShown) problems.push("a run that beat nothing still offered to share itself");
+  if (!beaten.bestRowShown) problems.push("a beaten run did not offer the standing best instead");
+  if (!/12,000/.test(beaten.bestText ?? ""))
+    problems.push(`the best on offer reads "${beaten.bestText}", not the stored 12,000`);
+  if (!beaten.chipIsIcon) problems.push("the share beside the best is not the share mark");
+  // The whole point of putting it there: it sends the 12,000 that stands, not the 400 just ridden
+  if (!cardReady) problems.push("the best's card was never drawn, so the icon had nothing to send");
+  if (!(sentFromChip && sentFromChip.files > 0))
+    problems.push("the share beside the best sent no picture");
+  // The score is on the picture rather than in the words, and the file is named for it — so the
+  // filename is what says which run's card actually went. 12,000 stands; 400 was just ridden.
+  if (sentFromChip && !/12000/.test(sentFromChip.name ?? ""))
+    problems.push(`the best's share sent "${sentFromChip.name}" — not the score that stands`);
+  if (continued.shareShown) problems.push("a continued run offered to share itself");
+  if (!continued.bestRowShown) problems.push("a continued run did not offer the standing best");
+  if (record.menuLabel !== "Main menu")
+    problems.push(`the end screen still says "${record.menuLabel}"`);
+  if (elsewhere.quitLabel !== "Main menu")
+    problems.push(`the pause screen still says "${elsewhere.quitLabel}"`);
+  if (elsewhere.rows === 0) problems.push("no scores rows to check the mark on");
+  else if (elsewhere.rowIcons !== elsewhere.rows)
+    problems.push(`${elsewhere.rowIcons} of ${elsewhere.rows} scores rows carry the share mark`);
+  if (elsewhere.arrows) problems.push("a scores row is still using the old arrow");
+
+  if (problems.length) fail(`sharing what is worth sending — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ sharing is offered for a score worth sending: a record shares itself, a beaten run ` +
+        `offers "${beaten.bestText}" instead and sends that score's card, a continued run ` +
+        `offers neither of its own; the share mark on all ${elsewhere.rows} scores rows and ` +
+        `beside the best; "Main menu" on the end and pause screens`,
+    );
+  await shp.close();
+}
+
+// --- No stone showing through the snow -----------------------------------------------------
+// A boulder's snow cap is a small dome sunk into the stone, and the stone is a three-segment
+// sphere whose facets sag well inside it. Get the cap barely proud of the stone and a facet
+// corner surfaces in the middle of the snow as a grey speck. On one shape the cap's apex sat 5mm
+// *below* the stone's, so the rock's own summit came through the middle of its hat.
+//
+// Deliberately last in the file. It renders 180 frames on a page of its own, and while it does
+// the shared page goes on riding — which moved the rider into a different pose by the time the
+// collider section measured it, and made that section fail on the shape of a rider mid-carve.
+//
+// Measured in image space rather than in metres, because the geometric version of this question
+// is the wrong one: near its rim the cap is *supposed* to be under the stone — that is what
+// being sunk in means — so "is any stone above the snow" reports a fault on every rock ever
+// built. What matters is stone you can see with snow all the way around it.
+{
+  // Its own page, and closed at the end. This stops the render loop and disables every mesh in
+  // the scene to get a clean look at one boulder; doing that to the shared page would leave
+  // every section after it photographing a dead game.
+  const sp = await ctx.newPage();
+  await sp.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+  await sp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+  await sp.evaluate(() => window.__game.startRun("alpine"));
+  await sp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+  await sp.waitForTimeout(600);
+
+  const holes = await sp.evaluate(async () => {
+    const g = window.__game, scene = g.scene, cam = scene.activeCamera;
+    g.engine.stopRenderLoop();
+    await new Promise((r) => setTimeout(r, 150));
+    cam.parent = null;
+    const V = cam.position.constructor;
+    const was = scene.meshes.map((m) => [m, m.isEnabled()]);
+    for (const m of scene.meshes) m.setEnabled(false);
+    const W = g.engine.getRenderWidth(), H = g.engine.getRenderHeight();
+
+    // Flood the non-snow pixels inwards from the border. Everything reached is the sky and the
+    // rock's own flanks; anything left over is an island of stone enclosed by snow.
+    const enclosedStone = (px) => {
+      const snow = new Uint8Array(W * H);
+      for (let i = 0, k = 0; i < px.length; i += 4, k++)
+        snow[k] = px[i] > 215 && px[i + 1] > 215 && px[i + 2] > 215 ? 1 : 0;
+      const seen = new Uint8Array(W * H);
+      const stack = [];
+      for (let x = 0; x < W; x++) stack.push(x, (H - 1) * W + x);
+      for (let y = 0; y < H; y++) stack.push(y * W, y * W + W - 1);
+      while (stack.length) {
+        const k = stack.pop();
+        if (k < 0 || k >= W * H || seen[k] || snow[k]) continue;
+        seen[k] = 1;
+        const x = k % W, y = (k - x) / W;
+        if (x > 0) stack.push(k - 1);
+        if (x < W - 1) stack.push(k + 1);
+        if (y > 0) stack.push(k - W);
+        if (y < H - 1) stack.push(k + W);
+      }
+      let enclosed = 0, snowPx = 0;
+      for (let k = 0; k < W * H; k++) { if (snow[k]) snowPx++; else if (!seen[k]) enclosed++; }
+      return { enclosed, snowPx };
+    };
+
+    const out = [];
+    for (let v = 0; v < 5; v++) {
+      const m = scene.meshes.find((mm) => mm.name === `rock${v}`);
+      if (!m) continue;
+      m.setEnabled(true);
+      const mat = new Float32Array(16);
+      mat[0] = mat[5] = mat[10] = mat[15] = 1;
+      m.thinInstanceSetBuffer("matrix", mat, 16, true);
+      m.thinInstanceCount = 1;
+      let worst = 0, snowSeen = 0;
+      // All the way round and from three heights: a speck hides behind the silhouette from most
+      // angles and shows from one, which is exactly how it survived being looked at.
+      for (let a = 0; a < 12; a++) {
+        for (const h of [1.2, 2.0, 3.2]) {
+          const th = (a / 12) * Math.PI * 2;
+          cam.position.set(Math.sin(th) * 3.2, h, Math.cos(th) * 3.2);
+          cam.setTarget(new V(0, 0.35, 0));
+          cam.fov = 0.8;
+          scene.render();
+          const r = enclosedStone(await g.engine.readPixels(0, 0, W, H));
+          worst = Math.max(worst, r.enclosed);
+          snowSeen = Math.max(snowSeen, r.snowPx);
+        }
+      }
+      m.setEnabled(false);
+      out.push({ v, worst, snowSeen });
+    }
+    for (const [m, on] of was) m.setEnabled(on);
+    return out;
+  });
+  await sp.close();
+
+  const bad = holes.filter((h) => h.worst > 0);
+  // A rock with no cap has nothing to test; one that lost its cap would pass silently otherwise.
+  const capped = holes.filter((h) => h.snowSeen > 200);
+  if (capped.length < 4)
+    fail(`the snow caps — only ${capped.length} of 5 boulders show any snow at all`);
+  else if (bad.length)
+    fail(
+      `stone showing through the snow — ` +
+        bad.map((h) => `rock${h.v}: ${h.worst}px enclosed by snow`).join("; "),
+    );
+  else
+    console.log(
+      `✓ no stone comes through a snow cap, from 36 viewpoints each ` +
+        `(${capped.map((h) => `rock${h.v} ${h.snowSeen}px of snow`).join(", ")})`,
+    );
+}
+
 if (errors.length) process.exitCode = 1;
 
 await browser.close();

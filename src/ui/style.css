@@ -628,6 +628,65 @@ body {
   color: var(--ink);
 }
 
+/*
+ * The share mark, wherever it appears. One size, one colour rule: it inherits `currentColor`
+ * from whatever it sits in, so the pale scores row and the tinted best line need no variants.
+ *
+ * `display: block` and a fixed box, because an inline SVG otherwise sits on the text baseline
+ * and leaves a few pixels of descender gap under it that only shows on one of the two.
+ */
+.share-icon {
+  display: block;
+  width: 21px;
+  height: 21px;
+  margin: 0 auto;
+}
+
+/*
+ * The standing best on the end screen, with a share of its own.
+ *
+ * Shown when the run just finished did not beat it. The score worth sending is the one that
+ * stands, so that is what gets the icon — and the run that beat nothing loses the big share
+ * button entirely rather than offering to send a picture of itself.
+ */
+.best-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: -4px 0 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+
+.share-chip {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: rgba(79, 195, 247, 0.16);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    background-color 0.08s ease,
+    transform 0.06s ease;
+}
+
+.share-chip:active {
+  background: rgba(79, 195, 247, 0.34);
+  transform: scale(0.94);
+}
+
+.share-chip.is-done {
+  background: rgba(6, 214, 160, 0.3);
+  color: var(--ink);
+}
+
 .score-go {
   grid-area: go;
   font-size: 26px;

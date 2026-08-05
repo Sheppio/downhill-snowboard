@@ -772,6 +772,10 @@ class Game {
     // Drawn now, not when the button is pressed. `navigator.share` needs the activation from
     // that press, and awaiting a canvas render inside the handler spends it on iOS — the one
     // platform where a share sheet is the whole point.
+    //
+    // A run that beat nothing offers the standing best instead, so it is that card that has to
+    // exist by the time the icon is pressed. Same reasoning, different score.
+    if (!isRecord && best > 0) this.prepareListCard(this.seed);
     this.shareCard = null;
     void prepareShareCard(result).then((card) => {
       // A newer run may have ended while this was drawing; only the current card is any use.
