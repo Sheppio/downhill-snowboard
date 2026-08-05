@@ -97,10 +97,13 @@ body {
 
 .hud-row-bottom {
   align-items: baseline;
+  /* The three readouts must not touch. In landscape the row packs to `auto 1fr auto` and the
+     distance is pushed hard against the code beside it, which read as "34 mcornice-traverse-88".
+     A column gap costs the centred layout nothing: it comes off the two 1fr tracks equally. */
+  column-gap: 14px;
 }
 
-/* Frame rate, deliberately small and quiet — a diagnostic, not a stat to play against.
-   The spacer opposite keeps the distance readout optically centred. */
+/* Frame rate, deliberately small and quiet — a diagnostic, not a stat to play against. */
 .stat-fps {
   -webkit-text-stroke: 0.06em var(--ink);
   font-size: 13px;
@@ -112,6 +115,29 @@ body {
 
 .stat-fps .unit {
   font-size: 9px;
+}
+
+/*
+ * The slope code, in the corner opposite the frame rate and dressed to match it.
+ *
+ * Right-aligned and capped, because a custom code can be 24 characters and this corner is not
+ * where a long one should push the layout around — it ellipsises instead. `min-width` mirrors the
+ * frame rate's, which is what keeps the distance readout between them optically centred.
+ */
+.stat-code {
+  -webkit-text-stroke: 0.06em var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.75;
+  min-width: 58px;
+  max-width: 40vw;
+  justify-content: flex-end;
+}
+
+.stat-code span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stat {
@@ -328,6 +354,37 @@ body {
   font-weight: 900;
   letter-spacing: 0.05em;
   color: var(--berry);
+}
+
+/*
+ * The rule between the daily and the code box.
+ *
+ * Two different offers sit on this panel — ride the run everybody is racing, or ride a code — and
+ * with nothing between them they read as one stack of four buttons. Dashed and in the same soft
+ * ink as the end screen's breakdown, so the panels share a vocabulary.
+ */
+.menu-divide {
+  height: 0;
+  margin: 4px 2px 2px;
+  border-top: 3px dashed rgba(42, 111, 151, 0.3);
+}
+
+/*
+ * The heading on the code box. Small caps in soft ink, matching the labels under the end
+ * screen's numbers — this is the same kind of thing: a word telling you what the value beside
+ * it is. Left-aligned against a centred panel, because it belongs to the field under it rather
+ * than to the panel.
+ */
+.field-label {
+  /* Pulled down onto its box. The panel's own 12px gap between children is right between two
+     buttons and much too much between a word and the thing it names. */
+  margin: 0 0 -7px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
 }
 
 .tagline {
@@ -783,6 +840,20 @@ body {
   .tagline {
     margin-bottom: 0;
     font-size: 13px;
+  }
+
+  /*
+   * The rule goes, the heading stays. In a panel this short the two cost about 28px between
+   * them and push the menu past the viewport — and of the pair the rule is decoration where the
+   * heading is the thing that says what the box is. The heading alone still breaks the stack.
+   */
+  .menu-divide {
+    display: none;
+  }
+
+  .field-label {
+    font-size: 10px;
+    margin-bottom: -8px;
   }
 
   .btn {

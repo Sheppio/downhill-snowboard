@@ -43,6 +43,10 @@ Speed and score are the two big numbers, each with a quieter line beneath it.
 - **A wedge and an angle** under that is the fall line where you are — 22° at the top, tipping
   toward 45° deep down. The wedge is drawn *at* that angle rather than filled like a meter, so
   the picture is the hill and it reads without the number beside it.
+- **The slope code, bottom right**, opposite the frame rate. It never changes mid-run, so it is
+  there to be read out rather than watched — the code is the whole competitive premise and it
+  was nowhere on screen once a run had started. The raw code, not the friendly date a daily gets
+  everywhere else, because that is the string you would type or send.
 - **`best N` under the score** is the target on this course. Hidden when there is not one yet,
   and once the run has passed it — at which point it has nothing left to say. It keeps its
   normal colour through a continued run: the target has not moved just because this run will

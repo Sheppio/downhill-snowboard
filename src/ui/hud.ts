@@ -132,6 +132,7 @@ export class Hud {
   private readonly boostFill = must("hud-boost-fill");
   private readonly dist = must("hud-dist");
   private readonly fps = must("hud-fps");
+  private readonly code = must("hud-code");
 
   private readonly oob = must("oob");
   private readonly oobFill = must("oob-fill");
@@ -283,7 +284,10 @@ export class Hud {
 
   showStart(seed: string, best: number): void {
     this.seedInput.value = seed;
+    // Hidden rather than blank when there is no best yet: an empty line still holds a row's
+    // height, which left a gap above Your scores on a first visit.
     this.startBest.textContent = best > 0 ? `Your best on this run: ${best.toLocaleString()}` : "";
+    this.startBest.hidden = this.startBest.textContent === "";
     this.start.hidden = false;
     this.end.hidden = true;
     this.confirmContinue.hidden = true;
@@ -575,6 +579,17 @@ export class Hud {
       text(". Nothing you ride on this code counts towards your best after that, "),
       text("including fresh runs from the top."),
     );
+  }
+
+  /**
+   * Name the course in the corner of the HUD.
+   *
+   * The raw code, not the friendly date a daily gets everywhere else. This is the string you
+   * would read out to somebody or type in yourself, and "Today" is no use to either — the point
+   * of having it on screen is being able to say which mountain you are on.
+   */
+  setSlopeCode(seed: string): void {
+    this.code.textContent = seed;
   }
 
   setSeedInput(seed: string): void {

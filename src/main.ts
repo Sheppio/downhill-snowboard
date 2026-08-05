@@ -405,6 +405,9 @@ class Game {
     // Restarting from the pause panel abandons a live run, so it banks first
     this.bankScore();
     this.bestAtStart = readBest(seed);
+    // Set here rather than per frame: the course cannot change mid-run, and this covers every
+    // way in — the daily button, a typed code, a scores row, Retry, and a continue.
+    this.hud.setSlopeCode(seed);
 
     if (seed !== this.seed) {
       this.seed = seed;

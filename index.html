@@ -62,7 +62,13 @@
           <div class="stat stat-dist">
             <span class="value" id="hud-dist">0</span><span class="unit">m</span>
           </div>
-          <div aria-hidden="true"></div>
+          <!--
+            Which mountain this is. Quiet, in the opposite corner to the frame rate: it never
+            changes mid-run, so it is something to glance at and read out rather than a readout
+            to watch. It also fills a corner that was an empty spacer holding the distance
+            centred, so the row still balances.
+          -->
+          <div class="stat stat-code"><span id="hud-code"></span></div>
         </div>
       </div>
 
@@ -83,6 +89,14 @@
             <span class="btn-sub" id="daily-label">daily</span>
           </button>
 
+          <!--
+            Everything below the rule is the other way in: ride a code somebody sent you, or one
+            of your own. A real <label>, so the box says what it is to a screen reader as well as
+            on screen — the placeholder alone said it only until the moment anything was typed.
+          -->
+          <div class="menu-divide" aria-hidden="true"></div>
+
+          <label class="field-label" for="seed-input">Slope code</label>
           <div class="seed-row">
             <input
               id="seed-input"
@@ -92,8 +106,7 @@
               autocapitalize="off"
               spellcheck="false"
               maxlength="24"
-              aria-label="Slope code"
-              placeholder="slope code"
+              placeholder="e.g. powder-chute-42"
             />
             <button id="btn-shuffle" class="btn btn-icon" aria-label="Random slope code">🎲</button>
           </div>

@@ -2660,6 +2660,98 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   await shp.close();
 }
 
+// --- Saying which mountain you are on -----------------------------------------------------------
+// The code is the whole competitive premise and it was nowhere on screen once a run started, and
+// unlabelled on the menu — a box with a number in it, above a button. Both fixed; both checked,
+// because a heading and a corner readout are exactly the sort of thing that gets lost in a
+// refactor without anything failing.
+{
+  const cp = await ctx.newPage();
+  await cp.addInitScript(() => localStorage.clear());
+  await cp.goto(`${BASE}?debug=1`, { waitUntil: "load" });
+  await cp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+  await cp.waitForSelector("#start:not([hidden])", { timeout: 20000 });
+
+  const menu = await cp.evaluate(() => {
+    const label = document.querySelector('label.field-label[for="seed-input"]');
+    const divide = document.querySelector(".menu-divide");
+    const daily = document.getElementById("btn-daily");
+    const row = document.querySelector(".seed-row");
+    const r = (el) => el.getBoundingClientRect();
+    return {
+      labelText: label?.textContent?.trim() ?? null,
+      // A label the input is actually wired to, not just a word floating above it
+      labels: document.getElementById("seed-input").labels?.length ?? 0,
+      hasDivide: !!divide,
+      // The rule has to sit between the daily and the code box to be separating anything
+      divideBelowDaily: divide ? r(divide).top >= r(daily).bottom - 1 : false,
+      divideAboveField: divide && label ? r(divide).bottom <= r(label).top + 1 : false,
+    };
+  });
+
+  // Riding a code puts it in the corner, and it survives every way of starting a run
+  const codes = [];
+  for (const seed of ["powder-chute-42", "avalanche-7"]) {
+    await cp.evaluate((s) => window.__game.startRun(s), seed);
+    await cp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+    await cp.waitForTimeout(400);
+    codes.push(
+      await cp.evaluate(() => {
+        const el = document.getElementById("hud-code");
+        const dist = document.querySelector(".stat-dist").getBoundingClientRect();
+        const box = el.getBoundingClientRect();
+        return {
+          text: el.textContent.trim(),
+          // Bottom right, opposite the frame rate — and not on top of the distance readout
+          onScreen: box.width > 0 && box.height > 0,
+          // Clear of it, not merely after it — the two ran together in landscape
+          rightOfDistance: box.left >= dist.right + 5,
+          nearBottom: box.top > window.innerHeight * 0.8,
+        };
+      }),
+    );
+  }
+
+  // Turned on its side the bottom row packs differently, and that is where the distance and the
+  // code ended up touching. Same question, asked in the layout that got it wrong.
+  await cp.setViewportSize({ width: 844, height: 390 });
+  await cp.waitForTimeout(300);
+  const landscape = await cp.evaluate(() => {
+    const box = document.getElementById("hud-code").getBoundingClientRect();
+    const dist = document.querySelector(".stat-dist").getBoundingClientRect();
+    return { gap: Math.round(box.left - dist.right), text: document.getElementById("hud-code").textContent.trim() };
+  });
+
+  const problems = [];
+  if (!(landscape.gap >= 5))
+    problems.push(`in landscape the code sits ${landscape.gap}px from the distance readout`);
+  if (menu.labelText !== "Slope code")
+    problems.push(`the code box is headed "${menu.labelText}"`);
+  if (menu.labels !== 1) problems.push("the heading is not wired to the box as a label");
+  if (!menu.hasDivide) problems.push("nothing separates the daily from the code box");
+  if (!menu.divideBelowDaily || !menu.divideAboveField)
+    problems.push("the separator is not between the daily and the code box");
+  const [first, second] = codes;
+  if (first.text !== "powder-chute-42")
+    problems.push(`the corner reads "${first.text}" on powder-chute-42`);
+  if (second.text !== "avalanche-7")
+    problems.push(`the corner still reads "${second.text}" after changing course`);
+  for (const c of codes) {
+    if (!c.onScreen) problems.push(`"${c.text}" is not drawn at all`);
+    if (!c.rightOfDistance) problems.push(`"${c.text}" is not right of the distance readout`);
+    if (!c.nearBottom) problems.push(`"${c.text}" is not down at the bottom of the screen`);
+  }
+
+  if (problems.length) fail(`saying which mountain you are on — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ the course names itself: "SLOPE CODE" over the box with a rule above it, and the code ` +
+        `in the bottom-right corner while riding ("${first.text}", then "${second.text}"), ` +
+        `clear of the distance by ${landscape.gap}px turned on its side`,
+    );
+  await cp.close();
+}
+
 // --- No stone showing through the snow -----------------------------------------------------
 // A boulder's snow cap is a small dome sunk into the stone, and the stone is a three-segment
 // sphere whose facets sag well inside it. Get the cap barely proud of the stone and a facet
