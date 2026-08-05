@@ -2714,13 +2714,30 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
 
   // Turned on its side the bottom row packs differently, and that is where the distance and the
   // code ended up touching. Same question, asked in the layout that got it wrong.
-  await cp.setViewportSize({ width: 844, height: 390 });
-  await cp.waitForTimeout(300);
-  const landscape = await cp.evaluate(() => {
-    const box = document.getElementById("hud-code").getBoundingClientRect();
-    const dist = document.querySelector(".stat-dist").getBoundingClientRect();
-    return { gap: Math.round(box.left - dist.right), text: document.getElementById("hud-code").textContent.trim() };
+  //
+  // A whole context born landscape rather than `setViewportSize` on this one. Resizing works on
+  // a desktop-shaped window and fails on CI's — "to resize minimized/maximized/fullscreen window,
+  // restore it to normal state first" — so the version that passed here crashed there, and took
+  // the deploy with it. Every other landscape section in this file already does it this way.
+  const landCtx = await browser.newContext({
+    viewport: { width: 844, height: 390 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
   });
+  const lcp = await landCtx.newPage();
+  await lcp.goto(`${BASE}?debug=1`, { waitUntil: "load" });
+  await lcp.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+  await lcp.evaluate(() => window.__game.startRun("cornice-traverse-88"));
+  await lcp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+  await lcp.waitForTimeout(500);
+  const landscape = await lcp.evaluate(() => {
+    const el = document.getElementById("hud-code");
+    const box = el.getBoundingClientRect();
+    const dist = document.querySelector(".stat-dist").getBoundingClientRect();
+    return { gap: Math.round(box.left - dist.right), text: el.textContent.trim() };
+  });
+  await landCtx.close();
 
   const problems = [];
   if (!(landscape.gap >= 5))
