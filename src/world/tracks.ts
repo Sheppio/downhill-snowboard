@@ -25,6 +25,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { clamp01 } from "../core/math";
 import type { TerrainField } from "./terrain";
+import type { WorldOrigin } from "./origin";
 
 /** How many positions to remember. At 0.7m spacing this is a trail about 170m long. */
 const MAX_SAMPLES = 240;
@@ -68,9 +69,13 @@ export class SnowTracks {
   private readonly positions = new Float32Array(MAX_SAMPLES * 2 * 3);
   private readonly colors = new Float32Array(MAX_SAMPLES * 2 * 4);
 
+  /** The drawing frame the ribbon was last written in. */
+  private originVersion = -1;
+
   constructor(
     scene: Scene,
     private readonly field: TerrainField,
+    private readonly origin: WorldOrigin,
   ) {
     const mesh = new Mesh("tracks", scene);
     const vd = new VertexData();
@@ -128,6 +133,10 @@ export class SnowTracks {
    * has covered enough ground for another sample.
    */
   update(x: number, z: number, heading: number, steer: number, airborne: boolean): void {
+    // A trail already laid still has to move with the frame, and it goes on doing so while the
+    // rider is in the air laying nothing — so this is checked before the airborne bail-out.
+    if (this.originVersion !== this.origin.version) this.rebuild();
+
     if (airborne) {
       this.wasAirborne = true;
       return;
@@ -169,6 +178,11 @@ export class SnowTracks {
   private rebuild(): void {
     const { positions, colors, count } = this;
     const oldest = (this.head - count + MAX_SAMPLES) % MAX_SAMPLES;
+    // Samples are remembered in absolute metres — a trail is laid where the rider actually was —
+    // and moved into the drawing frame only here, on the way into the vertex buffer. A rebase
+    // therefore needs nothing but another pass of this.
+    const ox = this.origin.x, oy = this.origin.y, oz = this.origin.z;
+    this.originVersion = this.origin.version;
 
     for (let i = 0; i < MAX_SAMPLES; i++) {
       const out = i * 2;
@@ -185,9 +199,9 @@ export class SnowTracks {
         const src = count > 0 ? ((oldest + count - 1) % MAX_SAMPLES) * 2 : -1;
         for (let k = 0; k < 2; k++) {
           const dst = out + k;
-          positions[dst * 3] = src < 0 ? 0 : this.px[src + k]!;
-          positions[dst * 3 + 1] = src < 0 ? 0 : this.py[src + k]!;
-          positions[dst * 3 + 2] = src < 0 ? 0 : this.pz[src + k]!;
+          positions[dst * 3] = src < 0 ? 0 : this.px[src + k]! - ox;
+          positions[dst * 3 + 1] = src < 0 ? 0 : this.py[src + k]! - oy;
+          positions[dst * 3 + 2] = src < 0 ? 0 : this.pz[src + k]! - oz;
           colors[dst * 4 + 3] = 0;
         }
         continue;
@@ -205,9 +219,9 @@ export class SnowTracks {
       for (let k = 0; k < 2; k++) {
         const src = slot * 2 + k;
         const dst = out + k;
-        positions[dst * 3] = this.px[src]!;
-        positions[dst * 3 + 1] = this.py[src]!;
-        positions[dst * 3 + 2] = this.pz[src]!;
+        positions[dst * 3] = this.px[src]! - ox;
+        positions[dst * 3 + 1] = this.py[src]! - oy;
+        positions[dst * 3 + 2] = this.pz[src]! - oz;
         colors[dst * 4] = 1;
         colors[dst * 4 + 1] = 1;
         colors[dst * 4 + 2] = 1;

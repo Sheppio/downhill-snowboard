@@ -28,6 +28,7 @@ import havokWasmUrl from "@babylonjs/havok/lib/esm/HavokPhysics.wasm?url";
 
 import type { TerrainField } from "../world/terrain";
 import type { RiderController } from "./controller";
+import type { WorldOrigin } from "../world/origin";
 
 /** Radius of the terrain patch built as a collider at the crash site, in metres. */
 const PATCH_RADIUS = 26;
@@ -60,6 +61,7 @@ export class Wipeout {
   constructor(
     private readonly scene: Scene,
     private readonly field: TerrainField,
+    private readonly origin: WorldOrigin,
   ) {}
 
   get active(): boolean {
@@ -74,13 +76,26 @@ export class Wipeout {
    * than a scripted animation.
    */
   start(rider: RiderController, impactX: number, impactZ: number): void {
+    // Everything below this line is in the drawing frame, not absolute metres — the body, the
+    // ground it lands on, and the focus the camera follows.
+    //
+    // Havok stores positions as floats too, and a tumble 11km from the origin is exactly where
+    // a contact solver runs out of precision: the body jitters against the ground it is resting
+    // on. Running the crash where everything else is drawn costs one subtraction here and keeps
+    // the numbers small for the one part of the game that is doing continuous collision.
+    //
+    // Nothing rebases mid-crash. The origin only follows a rider who is still riding.
     this.buildGroundPatch(rider.x, rider.z);
 
     const proxy = new Mesh("crashProxy", this.scene);
     const vd = VertexData.CreateBox({ width: 0.7, height: 1.5, depth: 1.7 });
     vd.applyToMesh(proxy);
     proxy.isVisible = false;
-    proxy.position.set(rider.x, rider.y + 0.75, rider.z);
+    proxy.position.set(
+      rider.x - this.origin.x,
+      rider.y + 0.75 - this.origin.y,
+      rider.z - this.origin.z,
+    );
     proxy.rotationQuaternion = Quaternion.RotationYawPitchRoll(rider.heading, 0, 0);
     this.proxy = proxy;
 
@@ -152,7 +167,12 @@ export class Wipeout {
       for (let i = 0; i <= PATCH_SUBDIV; i++) {
         const x = x0 + i * step;
         const z = z0 + j * step;
-        positions.push(x, this.field.heightAt(x, z), z);
+        // Sampled in absolute metres, written in the drawing frame
+        positions.push(
+          x - this.origin.x,
+          this.field.heightAt(x, z) - this.origin.y,
+          z - this.origin.z,
+        );
       }
     }
 

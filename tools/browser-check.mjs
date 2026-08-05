@@ -1623,8 +1623,11 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     const cam = g.camera.camera;
     const e = g.engine;
     const ar = e.getRenderWidth() / e.getRenderHeight();
-    const p = cam.position;
-    const t = cam.getTarget();
+    // Absolute metres on both sides. `cam.position` is the camera's place in the frame the
+    // world is *drawn* in, which is hundreds of metres from where it actually is; mixing that
+    // with the rider's real position measures a camera on a different mountain.
+    const p = g.camera.worldPosition;
+    const t = g.camera.lookAt;
     const c = g.controller;
     const ry = g.field.heightAt(c.renderX, c.renderZ) + 0.9; // mid-torso
     const pitch = (x, y, z) => Math.atan2(y, Math.hypot(x, z));
@@ -1864,8 +1867,9 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
       const cam = g.camera.camera;
       const e = g.engine;
       const ar = e.getRenderWidth() / e.getRenderHeight();
-      const p = cam.position;
-      const t = cam.getTarget();
+      // Absolute metres, not the drawing frame — see the note in the landscape section
+      const p = g.camera.worldPosition;
+      const t = g.camera.lookAt;
       const ry = g.field.heightAt(c.renderX, c.renderZ) + 0.9; // mid-torso
       const pitch = (x, y, z) => Math.atan2(y, Math.hypot(x, z));
       const below =
@@ -1981,6 +1985,106 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
           )
           .join(", "),
     );
+}
+
+// --- The drawing frame --------------------------------------------------------------------------
+// The world is drawn from a frame that follows the rider, because absolute coordinates get too big
+// for a float32 to hold steady: at 9.5km the rider is 11,300m from the origin, where a float32
+// resolves to about 2mm, and every edge in the scene crawled by that much as the camera moved. It
+// showed first on the snow caps, white against grey being the highest contrast on the mountain.
+//
+// Two things have to hold, and the second is the one that bites. The numbers must stay small — and
+// everything must be in the *same* frame, because a renderer that misses the offset does not fail
+// quietly, it silently draws its part of the world hundreds of metres from the rest.
+{
+  const op = await ctx.newPage();
+  await op.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+  await op.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+  await op.evaluate(() => window.__game.startRun("alpine"));
+  await op.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+  await op.waitForTimeout(600);
+
+  const readings = [];
+  for (const z of [500, 3000, 6000, 9500]) {
+    readings.push(
+      await op.evaluate(async (z) => {
+        const g = window.__game;
+        g.controller.resumeAt(0, z);
+        await new Promise((r) => setTimeout(r, 700)); // let the game's own loop place everything
+
+        const cam = g.camera.camera;
+        const world = g.camera.worldPosition;
+        const drawn = cam.position;
+        const rider = g.rider.root.position;
+        const c = g.controller;
+
+        // Terrain is drawn as chunk-local geometry on a transform, so the transform is where the
+        // chunk has been put. The far one is the furthest thing in shot.
+        let farthestChunk = 0;
+        for (const m of g.scene.meshes) {
+          if (!m.name.startsWith("chunk") || !m.isEnabled()) continue;
+          const p = m.position;
+          farthestChunk = Math.max(farthestChunk, Math.hypot(p.x, p.y, p.z));
+        }
+
+        return {
+          z,
+          origin: [Math.round(g.origin.x), Math.round(g.origin.y), Math.round(g.origin.z)],
+          // How far from the origin the world really is, and how far it is being drawn from
+          absolute: Math.hypot(world.x, world.y, world.z),
+          drawn: Math.hypot(drawn.x, drawn.y, drawn.z),
+          farthestChunk,
+          // The rider and the camera must be the same distance apart in either frame. They are
+          // placed by different code down different paths, so this is the join between them.
+          gapDrawn: Math.hypot(rider.x - drawn.x, rider.y - drawn.y, rider.z - drawn.z),
+          gapWorld: Math.hypot(
+            c.renderX - world.x,
+            c.renderY - world.y,
+            c.renderZ - world.z,
+          ),
+          chunks: g.scene.meshes.filter((m) => m.name.startsWith("chunk") && m.isEnabled()).length,
+        };
+      }, z),
+    );
+  }
+
+  const problems = [];
+  for (const r of readings) {
+    if (!(r.chunks > 0)) problems.push(`no terrain built at ${r.z}m`);
+    // The bound the precision rests on. 1km is generous: the rebase happens at 512m of drift and
+    // the terrain reaches 260m past the rider.
+    if (!(r.drawn < 1000))
+      problems.push(`at ${r.z}m the camera is drawn ${r.drawn.toFixed(0)}m from the origin`);
+    if (!(r.farthestChunk < 1200))
+      problems.push(
+        `at ${r.z}m the furthest chunk is drawn ${r.farthestChunk.toFixed(0)}m from the origin`,
+      );
+    // Everything in one frame. A renderer left in absolute metres shows up here as a rider
+    // hundreds of metres from the camera that is supposed to be nine metres behind them.
+    if (!(Math.abs(r.gapDrawn - r.gapWorld) < 1))
+      problems.push(
+        `at ${r.z}m the rider is ${r.gapDrawn.toFixed(1)}m from the camera as drawn but ` +
+          `${r.gapWorld.toFixed(1)}m in the world — something is in the wrong frame`,
+      );
+  }
+  // ...and it has to actually be doing something. If the origin never moved, every number above
+  // would pass on a run that had not gone anywhere.
+  const deepest = readings[readings.length - 1];
+  if (!(deepest.absolute > 8000))
+    problems.push(`the deep reading is only ${deepest.absolute.toFixed(0)}m out — nothing was tested`);
+  if (readings[0].origin[2] === deepest.origin[2])
+    problems.push("the drawing frame never moved between the top of the run and 9.5km");
+
+  if (problems.length) fail(`the drawing frame — ${problems.join("; ")}`);
+  else
+    console.log(
+      `✓ the world is drawn from beside the rider: ` +
+        readings
+          .map((r) => `${r.z}m ${r.absolute.toFixed(0)}m out drawn at ${r.drawn.toFixed(0)}m`)
+          .join(", ") +
+        `, everything in one frame`,
+    );
+  await op.close();
 }
 
 // --- The daily continue ------------------------------------------------------------------------

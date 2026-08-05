@@ -6,6 +6,7 @@ import { ChaseCamera } from "./camera";
 import { RiderController } from "./controller";
 import { TerrainField } from "../world/terrain";
 import { hashString } from "../core/rng";
+import { WorldOrigin } from "../world/origin";
 
 /**
  * A camera on a headless engine, at a given screen shape.
@@ -25,7 +26,9 @@ function rig(renderWidth: number, renderHeight: number) {
   const scene = new Scene(engine);
   const field = new TerrainField(hashString("alpine"));
   const rider = new RiderController(field);
-  const camera = new ChaseCamera(scene, null as unknown as HTMLCanvasElement);
+  // A camera whose origin never moves, so the framing assertions below read absolute metres
+  // exactly as they always have.
+  const camera = new ChaseCamera(scene, null as unknown as HTMLCanvasElement, new WorldOrigin());
 
   // Get the rider moving, then leave it alone: the render transform it exposes is frozen from
   // here on, so anything that moves afterwards is the camera's own doing and nothing else's.

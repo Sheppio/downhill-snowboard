@@ -401,7 +401,8 @@ on an uncommitted tree, which is how you tell a phone is showing a local build.
 ```
 src/
   core/       seeded RNG and noise — everything deterministic starts here
-  world/      the gulley, the terrain height field, obstacles, speed ramps, sky
+  world/      the gulley, the terrain height field, obstacles, speed ramps, sky,
+              and the frame it is all drawn in
   player/     rider physics, the visual rider, camera, wipeout
   input/      touch and keyboard steering
   game/       scoring, seeds, the local leaderboard, the share card
@@ -424,6 +425,32 @@ real dynamic body carrying its own momentum and tumbles across terrain built at 
 **Course boundaries are terrain, not collision.** The gulley walls are part of the height
 field, so riding up one is riding uphill — the existing slope term bleeds speed and gravity
 pulls you back. There is no boundary-collision code anywhere in the project.
+
+**The world is not drawn where it is.** The simulation runs in absolute metres — distance is the
+score, the course is a function of `z`, a rider 9km down really is at `z=9000` — but those numbers
+are too big to hand to a GPU. By 9.5km the rider is 11,300m from the origin, 9,500 along and 6,100
+below, and a float32 there resolves to about 2mm. A vertex shader computes `viewProjection *
+(world * position)` through a float32 intermediate, so every vertex is snapped to a 2mm lattice
+and *then* has the camera — a number just as large — subtracted from it. What survives is a few
+metres of view space carrying the full rounding error, and as the camera moves each vertex lands on
+a different lattice point. Edges crawl.
+
+So `world/origin.ts` holds a drawing frame that follows the rider, rebasing every 512m onto a
+256m grid, and every renderer subtracts it on the way into a vertex buffer or an instance matrix.
+The difference — all the GPU ever sees — stays under a kilometre, where a float32 resolves to
+0.06mm.
+
+Measured on one boulder over sixteen frames of camera drift, counting pixels that swap between
+reading as snow and reading as stone and swap back: **133 flickering pixels at 9.5km before,
+19 after** — the same as at the top of the mountain, where it was 20 either way. What it looked
+like was the snow caps on the rocks shimmering against the stone, which is where the highest
+contrast in the scene is.
+
+Two things to know if you add a renderer. Subtract the origin from anything you put in the world,
+and watch `origin.version` if you cache positions in a buffer — a renderer that misses either does
+not fail quietly, it draws its part of the world hundreds of metres from everything else. The
+browser check has a section that catches exactly that, and the crash physics runs in the drawing
+frame too, so Havok's contact solver gets small numbers as well.
 
 ## Tests
 

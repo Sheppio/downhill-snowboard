@@ -18,6 +18,7 @@ import { clamp01, dampAngle, expDamp, lerp, wrapAngle } from "../core/math";
 import { centreX, type CourseParams } from "../world/course";
 import type { RiderController } from "./controller";
 import type { TerrainField } from "../world/terrain";
+import type { WorldOrigin } from "../world/origin";
 
 const BASE_DISTANCE = 9.5;
 const BASE_HEIGHT = 3.9;
@@ -58,6 +59,9 @@ function fitToScreen(verticalFov: number, aspect: number): number {
 const YAW_SMOOTHING = 0.00002;
 const POS_SMOOTHING = 0.0000005;
 
+/** Scratch for the aim point, so the per-frame conversion allocates nothing. */
+const AIM = new Vector3();
+
 export class ChaseCamera {
   readonly camera: UniversalCamera;
   /**
@@ -91,7 +95,33 @@ export class ChaseCamera {
   private desiredFov = BASE_FOV;
   private initialised = false;
 
-  constructor(scene: Scene, canvas: HTMLCanvasElement) {
+  /**
+   * Where the camera is, in absolute metres.
+   *
+   * Held here rather than read back off `camera.position`, because that now carries the
+   * *drawing* position — the same point with the origin taken off it. The damping, the look
+   * target and the terrain lookup behind the rider all work in absolute metres, and only the
+   * last step converts. Damping in drawing coordinates would have jerked the camera sideways by
+   * a whole rebase every time the origin moved.
+   */
+  private readonly world = new Vector3();
+
+  /**
+   * Where the camera is in absolute metres.
+   *
+   * `camera.position` answers a different question now — it is the point in the frame the world
+   * is being drawn in — and the two are hundreds of metres apart. Anything reasoning about the
+   * camera against the height field, the course or the rider wants this one.
+   */
+  get worldPosition(): Vector3 {
+    return this.world;
+  }
+
+  constructor(
+    scene: Scene,
+    canvas: HTMLCanvasElement,
+    private readonly origin: WorldOrigin,
+  ) {
     const cam = new UniversalCamera("chase", new Vector3(0, 5, -10), scene);
     cam.fov = BASE_FOV;
     cam.minZ = 0.4;
@@ -140,15 +170,16 @@ export class ChaseCamera {
     const wantY = Math.max(ry, groundBehind) + height;
 
     if (!this.initialised) {
-      this.camera.position.set(wantX, wantY, wantZ);
+      this.world.set(wantX, wantY, wantZ);
       this.initialised = true;
     } else {
-      const p = this.camera.position;
+      const p = this.world;
       p.x = expDamp(p.x, wantX, POS_SMOOTHING, dt);
       p.z = expDamp(p.z, wantZ, POS_SMOOTHING, dt);
       // Vertical follows faster, or landings feel like the camera is on elastic
       p.y = expDamp(p.y, wantY, POS_SMOOTHING * 0.02, dt);
     }
+    this.place();
 
     // Widening the FOV with speed is the cheapest possible sense of rush
     this.desiredFov = lerp(
@@ -164,7 +195,32 @@ export class ChaseCamera {
       this.lookHeight(rx, ry, rz, this.desiredFov, fov),
       rz + cos * LOOK_AHEAD,
     );
-    this.camera.setTarget(this.lookAt);
+    this.aim();
+  }
+
+  /** Put the camera where it is, in the frame the world is being drawn in. */
+  private place(): void {
+    this.camera.position.set(
+      this.world.x - this.origin.x,
+      this.world.y - this.origin.y,
+      this.world.z - this.origin.z,
+    );
+  }
+
+  /**
+   * Aim at `lookAt`, which is in absolute metres like everything else here.
+   *
+   * `setTarget` builds the view matrix from the camera's own position, so the target has to be
+   * given in the same frame the position is in — mixing the two aims the camera at a point
+   * hundreds of metres away and points it at the sky.
+   */
+  private aim(): void {
+    AIM.set(
+      this.lookAt.x - this.origin.x,
+      this.lookAt.y - this.origin.y,
+      this.lookAt.z - this.origin.z,
+    );
+    this.camera.setTarget(AIM);
   }
 
   /**
@@ -182,7 +238,7 @@ export class ChaseCamera {
    * untouched, including as the FOV pulses with speed.
    */
   private lookHeight(rx: number, ry: number, rz: number, wanted: number, capped: number): number {
-    const p = this.camera.position;
+    const p = this.world;
     const behind = Math.hypot(p.x - rx, p.z - rz);
     const run = behind + LOOK_AHEAD;
     if (run < 1e-3) return ry + LOOK_HEIGHT;
@@ -196,14 +252,15 @@ export class ChaseCamera {
 
   /** Pull back and stop leading once the rider has crashed, so the tumble stays in frame. */
   watchCrash(x: number, y: number, z: number, dt: number): void {
-    const p = this.camera.position;
+    const p = this.world;
     const wantX = x - Math.sin(this.yaw) * 11;
     const wantZ = z - Math.cos(this.yaw) * 11;
     p.x = expDamp(p.x, wantX, 0.0001, dt);
     p.z = expDamp(p.z, wantZ, 0.0001, dt);
     p.y = expDamp(p.y, y + 5, 0.0001, dt);
+    this.place();
     this.lookAt.set(x, y + 0.6, z);
-    this.camera.setTarget(this.lookAt);
+    this.aim();
     // Damped from the uncapped value here too, or landscape settles against the cap instead of
     // against BASE_FOV and the pull-back never happens.
     this.desiredFov = expDamp(this.desiredFov, BASE_FOV, 0.02, dt);

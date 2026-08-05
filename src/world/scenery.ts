@@ -21,6 +21,7 @@ import { Scene as SceneCtor } from "@babylonjs/core/scene";
 
 import { makeRng } from "../core/rng";
 import { clamp01 } from "../core/math";
+import type { WorldOrigin } from "./origin";
 
 export const SKY_COLOUR = new Color3(0.31, 0.76, 0.97);
 
@@ -191,7 +192,10 @@ export class SnowSpray {
   private readonly system: ParticleSystem;
   private readonly emitter: Mesh;
 
-  constructor(scene: Scene) {
+  constructor(
+    scene: Scene,
+    private readonly origin: WorldOrigin,
+  ) {
     this.emitter = new Mesh("sprayEmitter", scene);
     this.emitter.isPickable = false;
 
@@ -241,7 +245,7 @@ export class SnowSpray {
     // Checking for exactly 0 matters: a burst queued earlier this frame is still pending.
     if (this.system.manualEmitCount === 0) this.system.manualEmitCount = -1;
 
-    this.emitter.position.set(x, y, z);
+    this.emitter.position.set(x - this.origin.x, y - this.origin.y, z - this.origin.z);
     this.emitter.rotation.y = heading;
 
     const bias = clamp01(Math.abs(edge)) * Math.sign(edge) * 0.5;
@@ -256,7 +260,7 @@ export class SnowSpray {
   }
 
   burst(x: number, y: number, z: number): void {
-    this.emitter.position.set(x, y, z);
+    this.emitter.position.set(x - this.origin.x, y - this.origin.y, z - this.origin.z);
     this.system.manualEmitCount = 160;
   }
 

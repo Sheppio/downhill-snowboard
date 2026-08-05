@@ -20,6 +20,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 
 import { clamp, clamp01, expDamp, lerp } from "../core/math";
 import type { RiderController } from "./controller";
+import type { WorldOrigin } from "../world/origin";
 
 /** Bright, saturated, cartoon. Nothing muddy. */
 const PALETTE = {
@@ -197,7 +198,10 @@ export class Rider {
   private absorb = 0;
   private prevVy = 0;
 
-  constructor(scene: Scene) {
+  constructor(
+    scene: Scene,
+    private readonly origin: WorldOrigin,
+  ) {
     this.root = new TransformNode("rider", scene);
     this.body = new TransformNode("riderBody", scene);
     this.body.parent = this.root;
@@ -366,7 +370,11 @@ export class Rider {
     if (this.root.rotationQuaternion) this.root.rotationQuaternion = null;
 
     // Interpolated position, not the raw stepped one — see RiderController.renderX
-    this.root.position.set(rider.renderX, rider.renderY, rider.renderZ);
+    this.root.position.set(
+      rider.renderX - this.origin.x,
+      rider.renderY - this.origin.y,
+      rider.renderZ - this.origin.z,
+    );
     this.root.rotation.y = rider.renderHeading; // mesh forward is +z; heading 0 = downhill
 
     // Lean into the carve
@@ -450,7 +458,7 @@ export class Rider {
     // between a shadow and a grey semicircle. The fall line is 0.40, so across a blob a metre
     // wide the snow rises and falls about 0.2m; a horizontal disc lifted 0.06m therefore had
     // its uphill half buried in the hill and only its downhill half showing.
-    this.shadow.position.set(x, groundY + 0.05, z);
+    this.shadow.position.set(x - this.origin.x, groundY + 0.05 - this.origin.y, z - this.origin.z);
 
     // Basis from the surface normal and the direction of travel: y to the normal, z along the
     // board, x across it. Built as axes rather than Euler angles so the blob cannot twist as

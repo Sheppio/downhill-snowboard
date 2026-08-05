@@ -30,6 +30,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { hashInts, makeRng } from "../core/rng";
 import { gateX, type CourseParams } from "./course";
 import type { TerrainField } from "./terrain";
+import type { WorldOrigin } from "./origin";
 
 /** How long a ramp is, in metres down the mountain. */
 export const RAMP_LENGTH = 4;
@@ -328,12 +329,15 @@ export class RampRenderer {
   private readonly material: StandardMaterial;
   private readonly texture: DynamicTexture;
   private drawn: number[] = [];
+  /** The drawing frame the ribbons were baked in. */
+  private originVersion = -1;
 
   constructor(
     private readonly scene: Scene,
     private readonly params: CourseParams,
     private readonly seed: number,
     private readonly field: TerrainField,
+    private readonly origin: WorldOrigin,
   ) {
     this.texture = createChevronTexture(scene);
     const mat = new StandardMaterial("rampMat", scene);
@@ -355,8 +359,18 @@ export class RampRenderer {
 
     const near = rampsBetween(this.params, this.seed, playerZ - VIEW_BEHIND, playerZ + VIEW_AHEAD);
     const wanted = near.map((r) => r.index);
-    if (wanted.length === this.drawn.length && wanted.every((v, i) => v === this.drawn[i])) return;
+    // Ribbon vertices are baked in the drawing frame, so a rebase means rebuilding them even
+    // though the same ramps are still the visible ones.
+    const moved = this.originVersion !== this.origin.version;
+    if (
+      !moved &&
+      wanted.length === this.drawn.length &&
+      wanted.every((v, i) => v === this.drawn[i])
+    ) {
+      return;
+    }
     this.drawn = wanted;
+    this.originVersion = this.origin.version;
 
     while (this.meshes.length < near.length) {
       const mesh = new Mesh(`ramp${this.meshes.length}`, this.scene);
@@ -389,9 +403,9 @@ export class RampRenderer {
       for (let side = 0; side < 2; side++) {
         const x = cx + (side === 0 ? -RAMP_WIDTH / 2 : RAMP_WIDTH / 2);
         const i = (s * 2 + side) * 3;
-        positions[i] = x;
-        positions[i + 1] = this.field.heightAt(x, z) + lift;
-        positions[i + 2] = z;
+        positions[i] = x - this.origin.x;
+        positions[i + 1] = this.field.heightAt(x, z) + lift - this.origin.y;
+        positions[i + 2] = z - this.origin.z;
         const u = (s * 2 + side) * 2;
         uvs[u] = side;
         uvs[u + 1] = t * CHEVRONS;

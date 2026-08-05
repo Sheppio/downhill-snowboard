@@ -21,6 +21,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { fbm2 } from "../core/noise";
 import { clamp01, lerp } from "../core/math";
+import type { WorldOrigin } from "./origin";
 import {
   dropTo,
   bankProfile,
@@ -153,6 +154,15 @@ interface Chunk {
   cx: number;
   cz: number;
   key: string;
+  /**
+   * The height the chunk's own geometry is measured from.
+   *
+   * Vertices are stored local to the chunk — x and z from its corner, y from this — so the
+   * numbers in the buffer stay inside a chunk's own span whatever the mountain is doing
+   * underneath. All that remains for the rebase to move is the mesh's transform, which is one
+   * vector per live chunk instead of a rewrite of every vertex.
+   */
+  baseY: number;
 }
 
 function chunkKey(cx: number, cz: number): string {
@@ -164,6 +174,8 @@ export class TerrainRenderer {
   private readonly live = new Map<string, Chunk>();
   private readonly pool: Chunk[] = [];
   private readonly pending: { cx: number; cz: number }[] = [];
+  /** The drawing frame the live chunks were last placed in. */
+  private originVersion = -1;
 
   // Scratch buffers, reused for every chunk build so streaming allocates nothing
   private readonly heights = new Float32Array((CHUNK_SUBDIV + 1) * (CHUNK_SUBDIV + 1));
@@ -174,6 +186,7 @@ export class TerrainRenderer {
   constructor(
     private readonly scene: Scene,
     private readonly field: TerrainField,
+    private readonly origin: WorldOrigin,
   ) {
     const mat = new StandardMaterial("snow", scene);
     // Vertex colours carry all the shading detail; the material just needs to not fight them.
@@ -191,6 +204,8 @@ export class TerrainRenderer {
    * where the player happens to be standing.
    */
   update(playerZ: number): void {
+    if (this.originVersion !== this.origin.version) this.rebase();
+
     const czNear = Math.floor((playerZ - VIEW_BEHIND) / CHUNK_SIZE);
     const czFar = Math.floor((playerZ + VIEW_AHEAD) / CHUNK_SIZE);
 
@@ -256,13 +271,36 @@ export class TerrainRenderer {
     }
   }
 
+  /**
+   * Move every live chunk into the new drawing frame.
+   *
+   * Only the transforms move. The vertices are stored relative to each chunk's own corner, so
+   * they are already right in any frame — which is the whole reason for storing them that way.
+   */
+  rebase(): void {
+    for (const chunk of this.live.values()) this.placeChunk(chunk);
+    this.originVersion = this.origin.version;
+  }
+
+  private placeChunk(chunk: Chunk): void {
+    chunk.mesh.position.set(
+      chunk.cx * CHUNK_SIZE - this.origin.x,
+      chunk.baseY - this.origin.y,
+      chunk.cz * CHUNK_SIZE - this.origin.z,
+    );
+  }
+
   private buildChunk(cx: number, cz: number): void {
     const chunk = this.pool.pop() ?? this.createChunk();
     chunk.cx = cx;
     chunk.cz = cz;
     chunk.key = chunkKey(cx, cz);
+    // The chunk's own reference height, taken at its centre so the local heights either side of
+    // it stay small. Sampled before the geometry, which is written relative to it.
+    chunk.baseY = this.field.heightAt((cx + 0.5) * CHUNK_SIZE, (cz + 0.5) * CHUNK_SIZE);
 
-    this.fillGeometry(cx, cz);
+    this.fillGeometry(cx, cz, chunk.baseY);
+    this.placeChunk(chunk);
 
     const mesh = chunk.mesh;
     // Rewriting the existing buffers rather than rebuilding the mesh is what keeps streaming
@@ -293,13 +331,15 @@ export class TerrainRenderer {
 
     vd.applyToMesh(mesh, true); // updatable
     mesh.material = this.material;
+    // Geometry is chunk-local now, so the transform is no longer identity — but it is still
+    // never frozen, for the bounding-box reason spelled out below.
     mesh.isPickable = false;
     // Deliberately NOT freezing the world matrix. The transform is identity — geometry is
     // baked in world space — so freezing looks free, but it also stops Babylon refreshing the
     // mesh's *world* bounding box when the vertex buffers are rewritten. Chunks then keep the
     // empty origin-point bounds they were created with and get frustum-culled: the mountain
     // renders as a couple of stray slivers and nothing else.
-    return { mesh, cx: 0, cz: 0, key: "" };
+    return { mesh, cx: 0, cz: 0, key: "", baseY: 0 };
   }
 
   /**
@@ -309,7 +349,15 @@ export class TerrainRenderer {
    * art direction. Heights are sampled once onto a grid and shared between the triangles
    * that reference them, so we do (n+1)^2 height samples rather than 6*n^2.
    */
-  private fillGeometry(cx: number, cz: number): void {
+  /**
+   * Emit the chunk's geometry, local to its own corner and to `baseY`.
+   *
+   * Heights are still sampled in absolute metres — the mountain is a function of where you
+   * really are — and only subtracted at the point of writing. Normals and colours come from
+   * differences between vertices, which a shared offset leaves untouched, so nothing about the
+   * shading changes.
+   */
+  private fillGeometry(cx: number, cz: number, baseY: number): void {
     const { heights, positions, normals, colors, field } = this;
     const step = CHUNK_SIZE / CHUNK_SUBDIV;
     const originX = cx * CHUNK_SIZE;
@@ -319,7 +367,7 @@ export class TerrainRenderer {
     for (let j = 0; j <= CHUNK_SUBDIV; j++) {
       const z = originZ + j * step;
       for (let i = 0; i <= CHUNK_SUBDIV; i++) {
-        heights[j * stride + i] = field.heightAt(originX + i * step, z);
+        heights[j * stride + i] = field.heightAt(originX + i * step, z) - baseY;
       }
     }
 
@@ -328,9 +376,9 @@ export class TerrainRenderer {
 
     for (let j = 0; j < CHUNK_SUBDIV; j++) {
       for (let i = 0; i < CHUNK_SUBDIV; i++) {
-        const x0 = originX + i * step;
+        const x0 = i * step;
         const x1 = x0 + step;
-        const z0 = originZ + j * step;
+        const z0 = j * step;
         const z1 = z0 + step;
 
         const h00 = heights[j * stride + i]!;

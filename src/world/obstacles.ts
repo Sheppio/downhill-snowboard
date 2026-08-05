@@ -35,6 +35,7 @@ import {
   type CourseParams,
 } from "./course";
 import type { TerrainField } from "./terrain";
+import type { WorldOrigin } from "./origin";
 
 /** Length of one generation slice, in metres. */
 export const SLICE_LENGTH = 12;
@@ -645,10 +646,13 @@ export class ObstacleRenderer {
   private readonly rocks: Mesh[] = [];
   private lastFirstSlice = Number.NaN;
   private lastLastSlice = Number.NaN;
+  /** The drawing frame the instance matrices were written in. */
+  private originVersion = -1;
 
   constructor(
     scene: Scene,
     private readonly obstacles: ObstacleField,
+    private readonly origin: WorldOrigin,
   ) {
     // Ten templates rather than two, so ten draw calls rather than two. That is still nothing
     // next to the hundreds it would take to draw each tree as its own mesh, and it is what
@@ -673,9 +677,13 @@ export class ObstacleRenderer {
   update(playerZ: number): void {
     const first = Math.floor((playerZ - VIEW_BEHIND) / SLICE_LENGTH);
     const last = Math.floor((playerZ + VIEW_AHEAD) / SLICE_LENGTH);
-    if (first === this.lastFirstSlice && last === this.lastLastSlice) return;
+    // The instance matrices hold positions in the drawing frame, so a rebase invalidates every
+    // one of them — the same slice window has to be written out again against the new origin.
+    const moved = this.originVersion !== this.origin.version;
+    if (!moved && first === this.lastFirstSlice && last === this.lastLastSlice) return;
     this.lastFirstSlice = first;
     this.lastLastSlice = last;
+    this.originVersion = this.origin.version;
 
     const treeBuckets: Obstacle[][] = this.trees.map(() => []);
     const rockBuckets: Obstacle[][] = this.rocks.map(() => []);
@@ -709,7 +717,7 @@ export class ObstacleRenderer {
     for (let i = 0; i < list.length; i++) {
       const o = list[i]!;
       scale.set(o.scale, o.scale, o.scale);
-      translation.set(o.x, o.y, o.z);
+      translation.set(o.x - this.origin.x, o.y - this.origin.y, o.z - this.origin.z);
       Quaternion.RotationYawPitchRollToRef(o.spin, 0, 0, rotation);
       Matrix.ComposeToRef(scale, rotation, translation, matrix);
       matrix.copyToArray(data, i * 16);

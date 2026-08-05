@@ -27,6 +27,7 @@ import { initialSeed, isDaily, normaliseSeed, randomSeed, shareUrl, syncUrl, tod
 import { prepareShareCard, shareMessage, shareRun } from "./game/share";
 import type { CardResult } from "./game/sharecard";
 import { Hud, type ScoreDisplay } from "./ui/hud";
+import { WorldOrigin } from "./world/origin";
 
 /** Seconds off course before the run is ended. */
 const OUT_OF_BOUNDS_GRACE = 3;
@@ -51,6 +52,15 @@ class Game {
   private readonly score = new Score();
 
   // Rebuilt per seed
+  /**
+   * The frame the world is drawn in.
+   *
+   * Created once and shared by every renderer, and deliberately not rebuilt per seed: it is a
+   * property of where the camera is, not of which mountain is under it. See `world/origin.ts`
+   * for why the drawing frame is not the world frame.
+   */
+  private readonly origin = new WorldOrigin();
+
   private field!: TerrainField;
   private terrain!: TerrainRenderer;
   private obstacles!: ObstacleField;
@@ -137,9 +147,9 @@ class Game {
 
     setupSky(this.scene);
 
-    this.camera = new ChaseCamera(this.scene, canvas);
-    this.rider = new Rider(this.scene);
-    this.spray = new SnowSpray(this.scene);
+    this.camera = new ChaseCamera(this.scene, canvas, this.origin);
+    this.rider = new Rider(this.scene, this.origin);
+    this.spray = new SnowSpray(this.scene, this.origin);
     this.input = new SteerInput(canvas);
     // Parented to the UI overlay so it sits above the canvas and inherits its safe areas.
     this.markers = new TouchMarkers(document.getElementById("ui") ?? document.body);
@@ -253,17 +263,24 @@ class Game {
     const numeric = hashString(seed);
     this.seedHash = numeric;
     this.field = new TerrainField(numeric);
-    this.terrain = new TerrainRenderer(this.scene, this.field);
+    this.terrain = new TerrainRenderer(this.scene, this.field, this.origin);
     this.obstacles = new ObstacleField(numeric, this.field.params, this.field);
-    this.obstacleRenderer = new ObstacleRenderer(this.scene, this.obstacles);
-    this.rampRenderer = new RampRenderer(this.scene, this.field.params, numeric, this.field);
+    this.obstacleRenderer = new ObstacleRenderer(this.scene, this.obstacles, this.origin);
+    this.rampRenderer = new RampRenderer(
+      this.scene,
+      this.field.params,
+      numeric,
+      this.field,
+      this.origin,
+    );
     this.controller = new RiderController(this.field);
-    this.wipeout = new Wipeout(this.scene, this.field);
+    this.wipeout = new Wipeout(this.scene, this.field, this.origin);
     // Rebuilt per seed: the trail is baked in world space against a specific height field
     this.tracks?.dispose();
-    this.tracks = new SnowTracks(this.scene, this.field);
+    this.tracks = new SnowTracks(this.scene, this.field, this.origin);
     this.backdrop = createBackdrop(this.scene, numeric);
 
+    this.origin.reset(0, this.field.heightAt(0, 0), 0);
     this.terrain.prime(0);
     this.obstacleRenderer.update(0);
     this.rampRenderer.update(0, 0);
@@ -396,6 +413,7 @@ class Game {
     } else {
       this.controller.reset();
       this.wipeout.stop();
+      this.origin.reset(0, this.field.heightAt(0, 0), 0);
       this.terrain.prime(0);
       this.obstacleRenderer.update(0);
       this.rampRenderer.update(0, 0);
@@ -485,6 +503,10 @@ class Game {
     // overshooting the bonus ceiling and buying almost nothing.
     const earned = applyRamps(c, this.field, this.seedHash, wasAt);
     if (earned.boost > 0) this.score.awardBoost();
+
+    // Before anything is placed for this frame. Every renderer below reads the origin, so
+    // moving it afterwards would leave the frame half-drawn in each of two frames.
+    this.origin.follow(c.renderX, c.renderY, c.renderZ);
 
     this.terrain.update(c.z);
     this.obstacleRenderer.update(c.z);
@@ -660,14 +682,21 @@ class Game {
       // The shadow is not parented to the rider — it lies on the snow with its own
       // orientation — so it has to be driven here too. Without this it stayed where the
       // crash began while the rider tumbled off down the hill.
+      // The tumble is simulated in the drawing frame, so the body's position goes straight
+      // onto the rider's node — but the height field and the shadow both speak absolute
+      // metres, and putting a drawing-frame position into either asks about a point on a
+      // different part of the mountain.
       const p = transform.position;
-      const [gx, gz] = this.field.gradientAt(p.x, p.z);
+      const wx = p.x + this.origin.x;
+      const wy = p.y + this.origin.y;
+      const wz = p.z + this.origin.z;
+      const [gx, gz] = this.field.gradientAt(wx, wz);
       const yaw = transform.rotation.toEulerAngles().y;
       this.rider.placeShadow(
-        p.x,
-        p.y,
-        p.z,
-        this.field.heightAt(p.x, p.z),
+        wx,
+        wy,
+        wz,
+        this.field.heightAt(wx, wz),
         gx,
         gz,
         Math.sin(yaw),
@@ -676,7 +705,7 @@ class Game {
     }
 
     const f = this.wipeout.focus;
-    this.camera.watchCrash(f.x, f.y, f.z, dt);
+    this.camera.watchCrash(f.x + this.origin.x, f.y + this.origin.y, f.z + this.origin.z, dt);
 
     if (this.crashTimer >= CRASH_DURATION) this.endRun("crash");
   }
