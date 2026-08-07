@@ -25,6 +25,7 @@ import { Score } from "./game/score";
 import { hasContinued, markContinued, readBest, readRecord, recordBest } from "./game/leaderboard";
 import { initialSeed, isDaily, normaliseSeed, randomSeed, shareUrl, syncUrl, todaysSeed } from "./game/seed";
 import { prepareShareCard, shareMessage, shareRun } from "./game/share";
+import { CardCache } from "./game/cardcache";
 import { strapFor, type CardResult } from "./game/sharecard";
 import { Hud } from "./ui/hud";
 import { outcomeOf, scoreDisplay, type ScoreDisplay } from "./game/outcome";
@@ -110,19 +111,16 @@ class Game {
   private lastResult: CardResult | null = null;
   private shareCard: File | null = null;
   /**
-   * Cards for the scores list, by seed. A stored `null` is a seed whose card could not be
-   * drawn at all — recorded so it is not attempted again on every press.
+   * Cards for the scores list, drawn before anybody asks for them.
    *
-   * Drawn ahead of being needed, because they cannot be drawn on demand: `navigator.share`
-   * needs the activation the tap carries and awaiting spends it, so whatever the tap sends has
-   * to already exist. A card takes ~1.5s to render and a tap lasts a tenth of that, which is
-   * why hanging this off the press — as it first did — meant the share sheet opened with no
-   * picture in it every time.
+   * The queueing, the skipping and the eviction live in `game/cardcache.ts`, along with why any
+   * of it is necessary. What stays here is the two things it needs from the game: what a card
+   * for a seed would say, and how to draw one.
    */
-  private listCards = new Map<string, File | null>();
-  /** Seeds still to draw, in the order they will be drawn. */
-  private cardQueue: string[] = [];
-  private drawingCard = false;
+  private readonly cards = new CardCache({
+    resultFor: (seed) => this.listResult(seed),
+    draw: (result) => prepareShareCard(result),
+  });
 
   // Adaptive resolution
   private fpsSamples: number[] = [];
@@ -183,12 +181,12 @@ class Game {
       },
       // Opening the list is what starts the cards; the press only jumps the queue. The other
       // way round does not work — see `queueListCards`.
-      onScoresShown: (seeds) => this.queueListCards(seeds),
-      onPrepareShareSeed: (seed) => this.prepareListCard(seed),
+      onScoresShown: (seeds) => this.cards.queueAll(seeds),
+      onPrepareShareSeed: (seed) => this.cards.prioritise(seed),
       onShareSeed: (seed) => {
         const result = this.listResult(seed);
         if (!result) return;
-        const card = this.listCards.get(seed) ?? null;
+        const card = this.cards.get(seed);
         void shareRun(result, card).then((outcome) => {
           if (shareMessage(outcome)) this.hud.flashScoreShare(seed);
         });
@@ -324,7 +322,7 @@ class Game {
       this.runWasSaved = true;
       // The card for this seed now shows a score that has been beaten. Dropped rather than
       // redrawn, so the next visit to the list draws it from the record that replaced it.
-      this.listCards.delete(this.seed);
+      this.cards.invalidate(this.seed);
     }
   }
 
@@ -346,70 +344,6 @@ class Game {
       strap: "My best on this run",
       url: shareUrl(seed),
     };
-  }
-
-  /**
-   * How many scores-list cards to hold at once.
-   *
-   * Each is a 1080-square PNG, a couple of hundred KB, so the whole list is not worth keeping:
-   * the list can hold two hundred rows and nobody shares from the bottom of it. Comfortably
-   * more than fits on a screen, which is what decides whether the one being reached for is
-   * already drawn.
-   */
-  private static readonly MAX_LIST_CARDS = 24;
-
-  /**
-   * Draw cards for the seeds on the scores list, in order, starting now.
-   *
-   * Called when the list opens rather than when a row is pressed. That is the whole fix: a
-   * person takes a second or two to find the row they want, a card takes about that long to
-   * render, and a press takes a tenth of a second. Drawing on the press meant the file was
-   * never ready in time and every share from this list went out as text with no picture.
-   *
-   * One at a time. Rendering thirty cards at once would tie up the main thread on a phone for
-   * as long as it takes to do them all, and the first row is the one most likely to be wanted.
-   */
-  private queueListCards(seeds: string[]): void {
-    for (const seed of seeds.slice(0, Game.MAX_LIST_CARDS)) {
-      if (!this.listCards.has(seed) && !this.cardQueue.includes(seed)) this.cardQueue.push(seed);
-    }
-    this.drawNextCard();
-  }
-
-  /** Bring one seed to the front of the queue — the press before a share. */
-  private prepareListCard(seed: string): void {
-    if (this.listCards.has(seed)) return;
-    this.cardQueue = [seed, ...this.cardQueue.filter((s) => s !== seed)];
-    this.drawNextCard();
-  }
-
-  private drawNextCard(): void {
-    if (this.drawingCard) return;
-
-    // Skips are resolved here rather than at enqueue time, since a card can arrive, or a seed
-    // can lose its record, between being queued and being reached.
-    let seed: string | undefined;
-    let result: CardResult | null = null;
-    while ((seed = this.cardQueue.shift()) !== undefined) {
-      if (this.listCards.has(seed)) continue;
-      result = this.listResult(seed);
-      if (result) break;
-    }
-    if (seed === undefined || !result) return;
-
-    this.drawingCard = true;
-    const drawing = seed;
-    void prepareShareCard(result).then((file) => {
-      // Oldest out first: the map keeps insertion order, and the oldest entry is the row
-      // furthest from the top of a list that is already sorted by how recent it is.
-      if (this.listCards.size >= Game.MAX_LIST_CARDS) {
-        const oldest = this.listCards.keys().next().value;
-        if (oldest !== undefined) this.listCards.delete(oldest);
-      }
-      this.listCards.set(drawing, file);
-      this.drawingCard = false;
-      this.drawNextCard();
-    });
   }
 
   private showMenu(): void {
@@ -789,7 +723,7 @@ class Game {
     //
     // A run that beat nothing offers the standing best instead, so it is that card that has to
     // exist by the time the icon is pressed. Same reasoning, different score.
-    if (outcome.kind !== "record" && outcome.best > 0) this.prepareListCard(this.seed);
+    if (outcome.kind !== "record" && outcome.best > 0) this.cards.prioritise(this.seed);
     this.shareCard = null;
     void prepareShareCard(result).then((card) => {
       // A newer run may have ended while this was drawing; only the current card is any use.

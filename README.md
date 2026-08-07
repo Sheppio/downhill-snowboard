@@ -295,6 +295,12 @@ A best set before those were kept shows a dash where the number would be. Not a 
 would describe a run that went nowhere at no speed — a different claim entirely, and not one to
 put on a picture people send each other.
 
+The queueing behind that lives in `game/cardcache.ts`: cards are drawn when the list *opens*,
+one at a time, oldest evicted once two dozen are held, and a press only ever moves a seed to the
+front of the queue rather than starting it. It takes its renderer and its record lookup as
+arguments, which is the whole reason any of it can be tested — the logic worth checking is the
+ordering and the eviction, and neither cares what a card actually is or needs a canvas to decide.
+
 The card is drawn on a canvas rather than screenshotted from the end screen. A screenshot would
 mean `html2canvas`, which is a large dependency that re-implements CSS layout badly; drawing it
 means the card is *deterministic* and looks the same everywhere instead of inheriting whatever

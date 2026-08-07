@@ -1423,7 +1423,7 @@ else console.log("✓ a different seed builds a different mountain");
       // Waited on because opening the list is what starts it — an earlier, separate action from
       // the tap under test. This is the window a person spends finding the row they want.
       const ready = await page
-        .waitForFunction((seed) => window.__game.listCards?.get(seed) != null, seed2, {
+        .waitForFunction((seed) => window.__game.cards?.get(seed) != null, seed2, {
           timeout: 30000,
         })
         .then(() => true)
@@ -2651,7 +2651,7 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   // there and sends nothing — and it should be reported as that rather than as a locator that
   // ran out of time.
   const cardReady = await shp
-    .waitForFunction(() => window.__game.listCards.get("powder-chute-42") != null, { timeout: 25000 })
+    .waitForFunction(() => window.__game.cards.get("powder-chute-42") != null, { timeout: 25000 })
     .then(() => true, () => false);
   await shp.click("#btn-share-best");
   await shp.waitForTimeout(1200);
