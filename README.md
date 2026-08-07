@@ -505,6 +505,20 @@ in CI**, between the unit tests and the deploy, and its screenshots are kept as 
 seven days: when it fails, "the rider is 92% down the frame" is a number, and the picture is
 what says whether that is wrong.
 
+Most of its sections share one page and run in file order, which is fast and reads well but
+means whatever ran before decides where the run has got to. Three house rules keep that honest,
+written at the top of the file and all three learned the hard way: **measure what you establish**
+rather than inherit it, **own a page if you break things** — stopping the render loop or
+flattening a rig leaves the page unusable for everyone after you — and **never trust a cached
+bound**, since `boundingBox.minimumWorld` refreshes as a side effect of other calls and describes
+whichever pose that ordering happened to catch.
+
+All three came from one section. The rider-collider measurement flattened the rig's top row of
+joints and read the cached bounds, so it was measuring a moment's pose: adding a slow section
+ahead of it made it fail twice with different numbers, on a rider mid-carve, and the same code
+read 0.225m on one run and 1.264m on another against a body 0.225m wide. It now takes a page of
+its own, stops the render loop before touching anything, and transforms the vertices itself.
+
 It earns its place. Running only by hand, it caught a ramp kicking at a twentieth of its
 intended force, a camera drifting a quarter of a metre with the frame rate, and a share card
 that rendered completely blank — each of them invisible to `npm test`, and each caught after it

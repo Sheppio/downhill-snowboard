@@ -66,6 +66,23 @@ const errors = [];
 page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
 
+/*
+ * House rules for adding a section, all three learned the hard way.
+ *
+ * **Measure what you establish.** Most sections share one page and run in file order, so
+ * whatever ran before decides where the run has got to. A section that reads a live thing —
+ * a pose, a position, a particle count — must put the game where it wants it first (`restart()`
+ * is usually enough) rather than inherit it. The rider-collider section did not, and adding a
+ * slow section ahead of it made it fail on the shape of a rider mid-carve, twice, with
+ * different numbers each time.
+ *
+ * **Own a page if you break things.** Stopping the render loop, disabling meshes or flattening
+ * a rig leaves the page unusable for everyone after you. Take `ctx.newPage()` and close it.
+ *
+ * **Never trust a cached bound.** `boundingBox.minimumWorld` and friends are refreshed as a side
+ * effect of other calls, so what they describe depends on the order you happened to call things
+ * in. Transform the vertices yourself; a vertex times a matrix has no history.
+ */
 const fail = (msg) => {
   console.error("FAIL:", msg);
   process.exitCode = 1;
@@ -931,28 +948,79 @@ else {
 //
 // Measured off the built mesh, like the obstacle silhouettes, because the unit tests read the
 // same constants the game does and cannot see the two drifting apart from the model.
-const shape = await page.evaluate(() => {
-  const g = window.__game;
-  const root = g.scene.getTransformNodeByName("rider");
-  // Flatten the rig: this is a measurement of the shape, not of a moment's lean and pitch
-  root.rotation.set(0, 0, 0);
-  root.position.set(0, 0, 0);
-  for (const child of root.getChildren()) child.rotation?.set(0, 0, 0);
+//
+// On a page of its own, and with the render loop stopped before anything is touched. This
+// section flattens the rider's joints to measure the body rather than a moment's pose, and both
+// halves of that need saying:
+//
+//  - Flattening vandalises the live rig, so it must not be done to a page other sections go on
+//    using.
+//  - `sync()` puts the pose straight back on the next frame. Flattening and measuring while the
+//    loop runs is a race, and it is one this check lost silently: the same code read 0.225m on
+//    one run and 1.264m on another, against a body 0.225m wide.
+const riderPage = await ctx.newPage();
+await riderPage.goto(`${BASE}?seed=alpine&debug=1`, { waitUntil: "load" });
+await riderPage.waitForSelector("#loading", { state: "hidden", timeout: 60000 });
+await riderPage.evaluate(() => window.__game.startRun("alpine"));
+await riderPage.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+await riderPage.waitForTimeout(600);
 
-  // Each side separately across the board, because the rider is not symmetric about its own
-  // axis — the goggles reach past the face on one side only, and the collider is deliberately
-  // sized to the body rather than to them.
+const shape = await riderPage.evaluate(async () => {
+  const g = window.__game;
+  g.engine.stopRenderLoop();
+  await new Promise((r) => setTimeout(r, 120));
+  const root = g.scene.getTransformNodeByName("rider");
+  /*
+   * Flatten the whole rig, not its first row of children.
+   *
+   * This is a measurement of the rider's *shape*, and every joint below the top is animated:
+   * the hips roll into a carve, the arms swing, and the legs are scaled on `y` as the knees
+   * absorb the ground. Zeroing one level left all of that in whatever state the frame happened
+   * to catch, so the numbers moved with the pose — the rider measured 1.31m across mid-carve
+   * and 0.86m a moment later, against a body that is 0.24m wide.
+   *
+   * That is what broke when a slow section was added ahead of this one: nothing about the
+   * rider changed, the run simply had longer to get somewhere interesting before being
+   * measured. A measurement that depends on when it is taken is not measuring the thing it
+   * names.
+   */
+  const flatten = (node) => {
+    node.rotationQuaternion = null;
+    node.rotation?.set(0, 0, 0);
+    node.scaling?.set(1, 1, 1);
+    for (const child of node.getChildren()) flatten(child);
+  };
+  flatten(root);
+  root.position.set(0, 0, 0);
+
+  /*
+   * Straight off the vertices, each one put through its mesh's world matrix by hand.
+   *
+   * Not off `boundingBox.minimumWorld`, which is what this used to read. Those are cached and
+   * only refreshed as a side effect of other calls, so whether they described the pose just set
+   * or the one before it depended on the order of `computeWorldMatrix` and `refreshBoundingInfo`
+   * — and reading them straight after flattening got the *previous* pose, which is the other
+   * half of why this measurement moved around. A vertex times a matrix has no such history.
+   *
+   * Each side separately across the board, because the rider is not symmetric about its own
+   * axis and the collider is deliberately sized to the body rather than to what sticks out.
+   */
   let left = 0;
   let right = 0;
   let along = 0;
   for (const m of root.getChildMeshes()) {
     if (m.name.includes("shadow")) continue; // a mark on the snow, not part of the rider
-    m.computeWorldMatrix(true);
-    m.refreshBoundingInfo();
-    const b = m.getBoundingInfo().boundingBox;
-    left = Math.max(left, -b.minimumWorld.x);
-    right = Math.max(right, b.maximumWorld.x);
-    along = Math.max(along, Math.abs(b.minimumWorld.z), Math.abs(b.maximumWorld.z));
+    const positions = m.getVerticesData("position");
+    if (!positions) continue;
+    const world = m.computeWorldMatrix(true);
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+      const wx = world.m[0] * x + world.m[4] * y + world.m[8] * z + world.m[12];
+      const wz = world.m[2] * x + world.m[6] * y + world.m[10] * z + world.m[14];
+      left = Math.max(left, -wx);
+      right = Math.max(right, wx);
+      along = Math.max(along, Math.abs(wz));
+    }
   }
   const across = Math.max(left, right);
   const narrower = Math.min(left, right);
@@ -995,10 +1063,10 @@ const shape = await page.evaluate(() => {
 });
 {
   const problems = [];
-  // The constants have to describe the model, not a shape it used to be. Across, the collider
-  // is allowed to sit anywhere between the rider's two sides: it is sized to the body, and the
-  // goggles are permitted to overhang it by the centimetre and a half they stick out. What it
-  // must never do is claim room outside the silhouette altogether — that is the whole fault.
+  // The constants have to describe the model, not a shape it used to be. Across, the collider is
+  // allowed to sit anywhere between the rider's two sides, measured with the rig at rest: it is
+  // sized to the body rather than to whatever a lean throws outside it. What it must never do is
+  // claim room outside the silhouette altogether — that is the whole fault.
   const SLACK = 0.02; // rounding, and the difference between a bounding box and a curve
   if (
     shape.used.across > shape.mesh.across + SLACK ||
@@ -1039,6 +1107,7 @@ const shape = await page.evaluate(() => {
         `${shape.mesh.along}m one, stopping at ${shape.side}m beside a tree and ${shape.nose}m ` +
         `ahead of one, and swapping the two when turned across the hill`,
     );
+  await riderPage.close();
 }
 
 // --- Speed ramps: drawn, and paying what they promise ---------------------------------------
