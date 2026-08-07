@@ -19,6 +19,7 @@
 import { hashString, makeRng } from "../core/rng";
 import { formatDistance } from "./leaderboard";
 import { isDaily, seedLabel } from "./seed";
+import type { RunOutcome } from "./outcome";
 
 /**
  * Square, and 1080 on a side.
@@ -157,6 +158,24 @@ export function formatSpeed(speed: number | undefined): string {
  * anyone reads the card, "today" is a different mountain. The date it encodes is the thing
  * that stays true.
  */
+/**
+ * The line under the score on a shared card.
+ *
+ * Derived from the run's outcome rather than written at the call site, so the picture cannot
+ * claim something the end screen does not. It once could: both were computing "was this a
+ * record" separately, and a continued run went out with "New personal best!" on it.
+ */
+export function strapFor(outcome: RunOutcome): string {
+  switch (outcome.kind) {
+    case "record":
+      return "New personal best!";
+    case "unrecorded":
+      return "Continued run — doesn't count";
+    case "beaten":
+      return `Best on this run: ${outcome.best.toLocaleString()}`;
+  }
+}
+
 export function cardSeedLabel(seed: string): string {
   return isDaily(seed) ? seedLabel(seed) : seed;
 }

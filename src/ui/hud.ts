@@ -7,6 +7,7 @@
 
 import { formatDistance, formatWhen, readScores } from "../game/leaderboard";
 import { dailyEntryError, dailyLabel, isDaily, normaliseSeed, seedLabel } from "../game/seed";
+import type { RunOutcome, ScoreDisplay } from "../game/outcome";
 
 /**
  * Prose built as nodes, not markup.
@@ -75,19 +76,6 @@ function must<T extends HTMLElement>(id: string): T {
   if (!el) throw new Error(`missing UI element #${id}`);
   return el as T;
 }
-
-/**
- * How the score should be drawn.
- *
- *  - `counting`   — normal. Gold, climbing, and it will be kept.
- *  - `unrecorded` — climbing exactly as normal, but greyed, because nothing on screen is going
- *                   to be saved: either the run was continued, or the day was already spent and
- *                   this run has passed the best already stored.
- *
- * The score always counts. Grey is the only difference, and it means one thing: this number is
- * not being kept.
- */
-export type ScoreDisplay = "counting" | "unrecorded";
 
 export interface HudCallbacks {
   onRideDaily(): void;
@@ -490,35 +478,45 @@ export class Hud {
 
   showEnd(opts: {
     reason: "crash" | "outOfBounds";
-    score: number;
     distance: number;
     topSpeed: number;
     seed: string;
-    best: number;
-    isRecord: boolean;
+    /**
+     * What became of the run: a record, a run that beat nothing, or one on a spent day where
+     * nothing is being kept.
+     *
+     * One value rather than the `best`/`isRecord`/`spent` it replaced. Those were correlated —
+     * a record on a spent day is not a thing that can happen — and every branch below had to be
+     * written knowing which combinations were real. Two of the three bugs this screen has had
+     * were a pair of them getting out of step.
+     */
+    outcome: RunOutcome;
     /** Offer to pick the run back up. Daily runs whose day is still worth something. */
     canContinue: boolean;
-    /** The day has already been spent on this course, so nothing more will be recorded. */
-    spent: boolean;
   }): void {
+    const { kind, score, best } = opts.outcome;
+    // Nothing on this course is being kept. The only reason this is still asked as its own
+    // question is that it is a fact about the *course*, which outlives the run showing here.
+    const spent = kind === "unrecorded";
     this.hud.hidden = true;
     this.oob.hidden = true;
     this.paused.hidden = true;
     this.end.hidden = false;
 
     this.endTitle.textContent = opts.reason === "crash" ? "WIPEOUT" : "OFF COURSE";
-    this.endScore.textContent = opts.score.toLocaleString();
+    this.endScore.textContent = score.toLocaleString();
     // Gold means kept. A spent day keeps nothing — not the continued run, and not a fresh one
     // from the top either — so the total wears the same grey it wore in the HUD on the way down.
-    this.endScore.classList.toggle("is-unrecorded", opts.spent);
+    this.endScore.classList.toggle("is-unrecorded", spent);
     // A spent day says so instead of quoting a best this run cannot have taken. Claiming a
     // record over a score that was never saved is worse than saying nothing at all, and that
     // claim also went onto the shared card — see the strap in `endRun`.
-    this.endBest.textContent = opts.spent
-      ? "Continued run — doesn't count towards your best"
-      : opts.isRecord
-        ? "New personal best!"
-        : "";
+    this.endBest.textContent =
+      kind === "unrecorded"
+        ? "Continued run — doesn't count towards your best"
+        : kind === "record"
+          ? "New personal best!"
+          : "";
 
     // Sharing is for a score worth sending. A run that beat nothing has the button taken away
     // and the standing best offered in its place — the same score the scores list would send,
@@ -529,16 +527,14 @@ export class Hud {
     this.endBest.hidden = this.endBest.textContent === "";
 
     this.endSeedValue = opts.seed;
-    const canShareBest = !opts.isRecord && opts.best > 0;
+    const canShareBest = kind !== "record" && best > 0;
     this.endRecord.hidden = !canShareBest;
-    this.endRecordText.textContent = canShareBest
-      ? `Your best: ${opts.best.toLocaleString()}`
-      : "";
+    this.endRecordText.textContent = canShareBest ? `Your best: ${best.toLocaleString()}` : "";
     this.shareBestBtn.setAttribute(
       "aria-label",
       `Share your best on ${seedLabel(opts.seed)}`,
     );
-    this.shareBtn.hidden = !opts.isRecord;
+    this.shareBtn.hidden = kind !== "record";
 
     this.endDist.textContent = `${Math.floor(opts.distance)}m`;
     this.endTop.textContent = `${Math.round(opts.topSpeed * 3.6)}km/h`;
@@ -547,14 +543,14 @@ export class Hud {
     // Three states, and the middle one is the one that matters: the offer has to say what it
     // costs *before* it is taken, not after. Once spent, the button goes and the reason stays,
     // so a score that is not being saved never looks like one that is.
-    this.continueSub.textContent = opts.spent
+    this.continueSub.textContent = spent
       ? "carry on down the mountain"
       : "today's score stops counting";
     this.continueBtn.hidden = !opts.canContinue;
     if (!opts.canContinue) {
       this.continueNote.hidden = true;
       this.continueNote.textContent = "";
-    } else if (opts.spent) {
+    } else if (spent) {
       // The price has already been paid, so the offer stops being a warning and becomes an
       // invitation. Carrying on saying "this will cost you the day" after the day is gone
       // reads as a threat the game cannot carry out.
@@ -571,7 +567,7 @@ export class Hud {
     // What the confirmation will ask, prepared here so the press itself only has to un-hide it.
     // The code is named because the cost is scoped to it: it is this course's day being spent,
     // not the game's, and the next code will still be worth riding for a score.
-    this.endSpent = opts.spent;
+    this.endSpent = spent;
     this.confirmContinue.hidden = true;
     this.confirmBody.replaceChildren(
       text("Continuing picks the run up from where it ended — but it "),

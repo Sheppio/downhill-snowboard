@@ -25,8 +25,9 @@ import { Score } from "./game/score";
 import { hasContinued, markContinued, readBest, readRecord, recordBest } from "./game/leaderboard";
 import { initialSeed, isDaily, normaliseSeed, randomSeed, shareUrl, syncUrl, todaysSeed } from "./game/seed";
 import { prepareShareCard, shareMessage, shareRun } from "./game/share";
-import type { CardResult } from "./game/sharecard";
-import { Hud, type ScoreDisplay } from "./ui/hud";
+import { strapFor, type CardResult } from "./game/sharecard";
+import { Hud } from "./ui/hud";
+import { outcomeOf, scoreDisplay, type ScoreDisplay } from "./game/outcome";
 import { WorldOrigin } from "./world/origin";
 
 /** Seconds off course before the run is ended. */
@@ -93,6 +94,15 @@ class Game {
    * the same spent day is a clean attempt and is drawn as one until it climbs past the best.
    */
   private continuedThisRun = false;
+  /**
+   * Whether storage has kept this run's score.
+   *
+   * Not a second opinion about whether it *should* have — it is `recordBest`'s own answer, kept
+   * so the end screen can report what happened rather than work it out again. Working it out
+   * again is how a continued run came to announce a personal best over a score that had just
+   * been refused.
+   */
+  private runWasSaved = false;
   private oobTimer = 0;
   private crashTimer = 0;
   private endReason: "crash" | "outOfBounds" = "crash";
@@ -299,9 +309,19 @@ class Game {
    * Safe to call as often as you like: `recordBest` only ever replaces a lower score, so
    * banking early can never cost anything, and quitting can never beat riding on.
    */
+  /**
+   * Put whatever the run has earned so far into storage, and remember whether it went in.
+   *
+   * The remembering is what the end screen's claim is built from. A run can be banked more than
+   * once — walking away banks it, and then crashing banks it again — and the second call is
+   * comparing the run against a best that may already be its own, so only the first can return
+   * true. Accumulating means a run that took the record while the tab was hidden is still a
+   * record when it finally ends.
+   */
   private bankScore(): void {
     if (this.state !== "playing" && this.state !== "paused" && this.state !== "crashing") return;
     if (recordBest(this.seed, this.score.value, this.controller.distance, this.controller.topSpeed)) {
+      this.runWasSaved = true;
       // The card for this seed now shows a score that has been beaten. Dropped rather than
       // redrawn, so the next visit to the list draws it from the record that replaced it.
       this.listCards.delete(this.seed);
@@ -432,6 +452,7 @@ class Game {
     // up to the point it passes the best already stored. See `scoreDisplay`.
     this.spentDay = hasContinued(seed);
     this.continuedThisRun = false;
+    this.runWasSaved = false;
     this.input.reset();
     this.oobTimer = 0;
     this.crashTimer = 0;
@@ -634,6 +655,12 @@ class Game {
     // The score keeps counting from here — the riding is real and worth seeing a number for —
     // but it greys from the first frame, because none of it is going to be kept.
     this.continuedThisRun = true;
+    // The run so far may well have taken the record, and it keeps it — that part was ridden
+    // clean and is already in storage. But from here nothing more can be saved, so as far as
+    // *this* run's standing goes the slate starts empty again. Without this the continued run
+    // inherits the earlier record and announces a personal best over a score that has just been
+    // refused, which is the exact fault this was pulled apart to make impossible.
+    this.runWasSaved = false;
 
     const z = this.controller.z;
     this.wipeout.stop();
@@ -654,23 +681,14 @@ class Game {
     this.hud.showPlaying();
   }
 
-  /**
-   * How the score should be drawn this frame.
-   *
-   * One rule: grey when the number on screen is not going to be kept. It always counts —
-   * stopping it made a real run look broken, and a player deep in a continued descent still
-   * wants to know what the riding was worth.
-   *
-   * A continued run greys the moment it resumes, because from there nothing can be recorded at
-   * all. A *fresh* run on the same spent day is a clean attempt from the top and is drawn as
-   * one, greying only once it passes the best already stored — that is where it crosses from
-   * "could not have been a record anyway" into "would have been, and will not be saved". Below
-   * that line there is nothing to warn anybody about.
-   */
+  /** How the score should be drawn this frame. See `game/outcome.ts` for the rule. */
   private scoreDisplay(): ScoreDisplay {
-    if (this.continuedThisRun) return "unrecorded";
-    if (this.spentDay && this.score.value > this.bestAtStart) return "unrecorded";
-    return "counting";
+    return scoreDisplay({
+      score: this.score.value,
+      bestBefore: this.bestAtStart,
+      spent: this.spentDay,
+      continued: this.continuedThisRun,
+    });
   }
 
   private updateCrashing(dt: number): void {
@@ -715,30 +733,30 @@ class Game {
 
   private endRun(reason: "crash" | "outOfBounds"): void {
     if (this.state === "ended") return;
+
+    // Banked *before* the state moves to "ended", and that order is load-bearing: `bankScore`
+    // only acts on a run that is still playing, paused or crashing, so ending first makes it a
+    // no-op and the run is never recorded at all. Through the same path as every other bank, so
+    // `runWasSaved` accumulates and the end screen has one thing to read rather than a rule to
+    // re-derive.
+    const score = this.score.value;
+    this.bankScore();
+
     this.endReason = reason;
     this.state = "ended";
     this.spray.stop();
     this.hud.setOutOfBounds(false, 1);
 
-    const score = this.score.value;
-    recordBest(this.seed, score, this.controller.distance, this.controller.topSpeed);
+    // What became of the run, taken from what storage did with it. There is no second opinion
+    // here any more: a continued run cannot come out as a record, because the only way to be a
+    // record is to have been kept, and `recordBest` refuses a spent day outright.
+    const outcome = outcomeOf({
+      score,
+      best: readBest(this.seed),
+      saved: this.runWasSaved,
+      spent: this.spentDay,
+    });
 
-    // Nothing on a continued day is recorded, so nothing on it can be a personal best.
-    //
-    // This was missed the first time and it mattered: the end screen announced a new personal
-    // best over a score the game had just refused to save, and put that claim on the card as
-    // well — so a continued run could be sent to somebody as a clean one. That is precisely the
-    // comparison the continue exists to protect.
-    //
-    // It covers every run on the day, not only the continued one. Once the day is spent, a
-    // fresh attempt on that course is not recorded either, and would have made the same claim.
-    const spent = this.spentDay;
-    // Compared against the best as it stood when this run *began*, not against what is in
-    // storage now: banking mid-run means the run's own score may already be in there, and
-    // asking storage would then deny the run the record it just set.
-    const isRecord = !spent && score > this.bestAtStart;
-
-    const best = readBest(this.seed);
     const result: CardResult = {
       score,
       distance: this.controller.distance,
@@ -747,29 +765,22 @@ class Game {
       // The card is the one thing here that travels to other people, so a continued run has to
       // say so on its face. Everything else about the picture is identical, which is the point:
       // it can still be shared, it just cannot be passed off.
-      strap: spent
-        ? "Continued run — doesn't count"
-        : isRecord
-          ? "New personal best!"
-          : `Best on this run: ${best.toLocaleString()}`,
+      strap: strapFor(outcome),
       url: shareUrl(this.seed),
     };
     this.lastResult = result;
 
     this.hud.showEnd({
       reason: this.endReason,
-      score,
       distance: this.controller.distance,
       topSpeed: this.controller.topSpeed,
       seed: this.seed,
-      best,
-      isRecord,
+      outcome,
       // Every time, on any daily run. The first press is what costs the day; after that there
       // is nothing left to spend, so there is no reason to stop offering it — the point of the
       // feature is seeing the mountain, and one continue rarely gets anybody to the bottom.
       // A custom course still never offers it: it can simply be ridden again from the top.
       canContinue: isDaily(this.seed),
-      spent,
     });
 
     // Drawn now, not when the button is pressed. `navigator.share` needs the activation from
@@ -778,7 +789,7 @@ class Game {
     //
     // A run that beat nothing offers the standing best instead, so it is that card that has to
     // exist by the time the icon is pressed. Same reasoning, different score.
-    if (!isRecord && best > 0) this.prepareListCard(this.seed);
+    if (outcome.kind !== "record" && outcome.best > 0) this.prepareListCard(this.seed);
     this.shareCard = null;
     void prepareShareCard(result).then((card) => {
       // A newer run may have ended while this was drawing; only the current card is any use.

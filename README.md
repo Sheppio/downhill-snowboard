@@ -249,6 +249,15 @@ already stored, which is where it crosses from "could not have been a record any
 
 Grey means one thing everywhere: **this number is not being kept.**
 
+**One place decides whether a score counts.** `recordBest` refuses outright on a course whose day
+has been spent, and the end screen reports what it did rather than working it out again — a run is
+a record because storage kept it, which is not an opinion. That rule used to be written down in
+four places and they drifted: the end screen once announced a new personal best over a score the
+game had just refused to save, and put the claim on the shared card too, so a continued run could
+be sent to somebody as a clean one. `game/outcome.ts` holds the three states a finished run can be
+in — `record`, `beaten`, `unrecorded` — and the pairs that used to be expressible, like a record
+on a spent day, no longer are.
+
 **The first continue on a code asks first.** It sits directly above Retry, it cannot be undone,
 and what it costs is not obvious from the button — so it opens a confirmation naming the code and
 saying what will be spent. Only the first: every press after it on the same code costs nothing, so
