@@ -1722,10 +1722,45 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
         view: window.innerHeight,
         scrolls: wrap.scrollHeight > wrap.clientHeight + 1,
         belowFold: Math.round(lowest - window.innerHeight),
-        // Two columns, not one stack: the buttons must start to the right of the numbers
-        twoColumns:
-          document.querySelector("#end .breakdown").getBoundingClientRect().right <=
-          document.getElementById("btn-retry").getBoundingClientRect().left + 1,
+        // The result leads and the buttons share a row beneath it. Both halves matter: a stack
+        // fits too, and puts the score in a narrow column no more prominent than a button.
+        buttonRows: [...document.querySelectorAll("#end .btn")]
+          .filter((e) => e.offsetParent !== null)
+          .reduce((rows, e) => rows.add(Math.round(e.getBoundingClientRect().top)), new Set())
+          .size,
+        buttons: [...document.querySelectorAll("#end .btn")].filter((e) => e.offsetParent !== null)
+          .length,
+        // The score across most of the panel, above every button
+        scoreWidth: Math.round(
+          document.getElementById("end-score").getBoundingClientRect().width,
+        ),
+        panelWidth: Math.round(document.querySelector("#end .panel").getBoundingClientRect().width),
+        scoreAboveButtons: [...document.querySelectorAll("#end .btn")]
+          .filter((e) => e.offsetParent !== null)
+          .every(
+            (e) =>
+              e.getBoundingClientRect().top >=
+              document.getElementById("end-score").getBoundingClientRect().bottom,
+          ),
+        /*
+         * How much daylight the build stamp has above it.
+         *
+         * Measured against whatever is nearest above — the button row, or the continue's note
+         * where there is one — not against the buttons alone. Measuring only the buttons reads
+         * 60px on the state that happens to have a note between them and never sees the fault.
+         *
+         * The bar is 12 rather than any positive number: every button casts a 6px shadow drawn
+         * outside its box, and the panel's own gap alone clears that by two pixels, which is
+         * exactly what "the version overlaps the button shadow" looked like.
+         */
+        versionClear: Math.round(
+          document.querySelector("#end .version").getBoundingClientRect().top -
+            Math.max(
+              ...[...document.querySelectorAll("#end .btn, #end .continue-note")]
+                .filter((e) => e.offsetParent !== null)
+                .map((e) => e.getBoundingClientRect().bottom),
+            ),
+        ),
       };
     });
     await lp.screenshot({ path: `${OUT}/08-landscape-end.png` });
@@ -1804,8 +1839,21 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     fail("the distance readout sits over the rider, who is centred in landscape");
   else if (menu.panel > menu.view)
     fail(`the menu is ${menu.panel}px tall in a ${menu.view}px viewport, so it has to be scrolled`);
-  else if (!ended.twoColumns)
-    fail("the end screen is still one column in landscape");
+  else if (ended.buttonRows !== 1)
+    fail(
+      `the end screen's ${ended.buttons} buttons are on ${ended.buttonRows} rows in landscape, ` +
+        `not spread across one`,
+    );
+  else if (ended.scoreWidth < ended.panelWidth * 0.7 || !ended.scoreAboveButtons)
+    fail(
+      `the score is ${ended.scoreWidth}px across a ${ended.panelWidth}px panel and ` +
+        `${ended.scoreAboveButtons ? "above" : "beside"} the buttons — it should lead`,
+    );
+  else if (ended.versionClear < 12)
+    fail(
+      `the build stamp is only ${ended.versionClear}px under the buttons — their shadow takes 6 ` +
+        `of that`,
+    );
   else if (ended.scrolls || ended.belowFold > 0)
     fail(
       `the end screen is ${ended.panel}px tall in a ${ended.view}px viewport — ` +
@@ -1817,7 +1865,8 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
       `✓ landscape plays: no orientation lock, ${view.horizFov.toFixed(0)}° wide, rider ` +
         `${(view.riderDownFrame * 100).toFixed(0)}% down the frame and steady across frame ` +
         `times (${(view.frameRateShift * 1000).toFixed(2)}mm), menu ${menu.panel}/${menu.view}px, ` +
-        `end screen ${ended.panel}/${ended.view}px in two columns`,
+        `end screen ${ended.panel}/${ended.view}px, score ${ended.scoreWidth}px wide over ` +
+        `${ended.buttons} buttons in one row`,
     );
 }
 
