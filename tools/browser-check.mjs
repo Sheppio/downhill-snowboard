@@ -1687,6 +1687,55 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
   await lp.waitForTimeout(700);
   await lp.screenshot({ path: `${OUT}/08-landscape.png` });
 
+  /*
+   * The end screen has to fit too, and it is the tallest panel in the game.
+   *
+   * Measured on a daily, which is the tall case: it alone carries the continue offer and its
+   * two-line warning on top of the title, score, best line, three numbers and three buttons.
+   * Stacked in one column that was 483px in a 390px viewport — it scrolled, and Main menu sat
+   * below the fold. Landscape splits it into two columns; this is what says it still does.
+   *
+   * `belowFold` rather than only the panel height, because a panel that fits can still be
+   * pushed off the bottom, and a button you cannot reach is the actual complaint.
+   */
+  const ended = await (async () => {
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    await lp.evaluate((seed) => window.__game.startRun(seed), today);
+    await lp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+    await lp.waitForTimeout(600);
+    await lp.evaluate(() => {
+      window.__game.score.total = 3083;
+      window.__game.endRun("crash");
+    });
+    await lp.waitForSelector("#end:not([hidden])", { timeout: 10000 });
+    await lp.waitForTimeout(300);
+    const m = await lp.evaluate(() => {
+      const wrap = document.getElementById("end");
+      const r = document.querySelector("#end .panel").getBoundingClientRect();
+      const lowest = Math.max(
+        ...[...document.querySelectorAll("#end .btn, #end .version")]
+          .filter((e) => e.offsetParent !== null)
+          .map((e) => e.getBoundingClientRect().bottom),
+      );
+      return {
+        panel: Math.round(r.height),
+        view: window.innerHeight,
+        scrolls: wrap.scrollHeight > wrap.clientHeight + 1,
+        belowFold: Math.round(lowest - window.innerHeight),
+        // Two columns, not one stack: the buttons must start to the right of the numbers
+        twoColumns:
+          document.querySelector("#end .breakdown").getBoundingClientRect().right <=
+          document.getElementById("btn-retry").getBoundingClientRect().left + 1,
+      };
+    });
+    await lp.screenshot({ path: `${OUT}/08-landscape-end.png` });
+    return m;
+  })();
+
+  await lp.evaluate(() => window.__game.startRun("alpine"));
+  await lp.waitForFunction(() => window.__game.state === "playing", { timeout: 15000 });
+  await lp.waitForTimeout(700);
+
   const view = await lp.evaluate(() => {
     const g = window.__game;
     const cam = g.camera.camera;
@@ -1755,12 +1804,20 @@ console.log(errors.length ? `\nCONSOLE ERRORS:\n${errors.join("\n")}` : "\n✓ n
     fail("the distance readout sits over the rider, who is centred in landscape");
   else if (menu.panel > menu.view)
     fail(`the menu is ${menu.panel}px tall in a ${menu.view}px viewport, so it has to be scrolled`);
+  else if (!ended.twoColumns)
+    fail("the end screen is still one column in landscape");
+  else if (ended.scrolls || ended.belowFold > 0)
+    fail(
+      `the end screen is ${ended.panel}px tall in a ${ended.view}px viewport — ` +
+        `${ended.belowFold}px of it below the fold`,
+    );
   else if (errs.length) fail(`landscape console errors: ${errs.join("; ")}`);
   else
     console.log(
       `✓ landscape plays: no orientation lock, ${view.horizFov.toFixed(0)}° wide, rider ` +
         `${(view.riderDownFrame * 100).toFixed(0)}% down the frame and steady across frame ` +
-        `times (${(view.frameRateShift * 1000).toFixed(2)}mm), menu ${menu.panel}/${menu.view}px`,
+        `times (${(view.frameRateShift * 1000).toFixed(2)}mm), menu ${menu.panel}/${menu.view}px, ` +
+        `end screen ${ended.panel}/${ended.view}px in two columns`,
     );
 }
 

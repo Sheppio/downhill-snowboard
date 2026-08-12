@@ -395,6 +395,20 @@ body {
   font-weight: 600;
 }
 
+/*
+ * The end screen's two halves: what the run was, and what to do next.
+ *
+ * `display: contents` in portrait, so the wrappers are not there at all as far as layout is
+ * concerned and the panel goes on being the single flex column it has always been — same
+ * children, same gaps between them. They exist only to be grabbed as two columns when the screen
+ * is short. Without this the panel sees three children instead of eleven, loses eight of its
+ * gaps, and portrait quietly tightens by 84px.
+ */
+.end-result,
+.end-actions {
+  display: contents;
+}
+
 .final-score {
   font-size: clamp(46px, 15vw, 68px);
   font-weight: 900;
@@ -840,6 +854,44 @@ body {
   .tagline {
     margin-bottom: 0;
     font-size: 13px;
+  }
+
+  /*
+   * The end screen goes two-up.
+   *
+   * It is the tallest panel in the game — a daily record shows a title, a score, a best line,
+   * three numbers, the continue offer, its two-line warning and four buttons — and stacked in one
+   * column that came to 483px in a 390px viewport. It scrolled, and "Main menu" sat 13px below
+   * the fold.
+   *
+   * Split by kind rather than by height: what the run was on the left, what to do next on the
+   * right. Splitting to balance the columns instead would put a button in among the numbers, and
+   * then the panel stops reading as two things.
+   */
+  .end-panel {
+    width: min(94vw, 680px);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 20px;
+  }
+
+  .end-result,
+  .end-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* The result is the shorter of the two, so it sits against the middle of the buttons rather
+     than leaving the bottom-left corner of the panel empty. */
+  .end-result {
+    justify-content: center;
+  }
+
+  /* The build stamp belongs to the panel, not to either half */
+  .end-panel > .version {
+    grid-column: 1 / -1;
   }
 
   /*

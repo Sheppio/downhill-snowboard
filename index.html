@@ -135,8 +135,14 @@
 
       <!-- End-of-run screen -->
       <div id="end" class="panel-wrap" hidden>
-        <div class="panel">
-          <h2 id="end-title">WIPEOUT</h2>
+        <!--
+          Two groups: what the run was, and what to do next. In portrait they are `display:
+          contents` and the panel lays out exactly as it always has, one column of everything.
+          Turned on its side they become the two columns — see `.end-panel` in the stylesheet.
+        -->
+        <div class="panel end-panel">
+          <div class="end-result">
+            <h2 id="end-title">WIPEOUT</h2>
           <div class="final-score" id="end-score">0</div>
           <p class="best" id="end-best"></p>
 
@@ -155,7 +161,9 @@
             <div><span id="end-top">0</span><small>top speed</small></div>
             <div><span id="end-seed">—</span><small>slope code</small></div>
           </div>
+          </div>
 
+          <div class="end-actions">
           <!--
             Daily runs only, and only once a day. Placed above Retry because it is the offer
             worth reading, and carries its own warning: pressing it spends the day.
@@ -169,6 +177,7 @@
           <button id="btn-retry" class="btn btn-primary">Retry this run</button>
           <button id="btn-share" class="btn btn-secondary">Copy challenge link</button>
           <button id="btn-menu" class="btn btn-ghost">Main menu</button>
+          </div>
 
           <!-- Build stamp, filled in from __APP_VERSION__ so it tracks the commit -->
           <p class="version" data-version></p>

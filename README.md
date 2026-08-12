@@ -16,6 +16,12 @@ Portrait or landscape, whichever you prefer — the game does not lock the orien
 to 105°, which is a different game rather than the same one rotated; the camera caps the
 horizontal view at 80° and aims lower to keep the rider in the same place in the frame.
 
+The end screen goes two-up on its side — what the run was on the left, what to do next on the
+right. It is the tallest panel in the game and stacked in one column it was 483px in a 390px
+viewport: it scrolled, with Main menu below the fold. The two halves are `display: contents` in
+portrait, so that layout is untouched — the panel sees the same eleven children with the same
+gaps, and dropping the wrappers in without that quietly tightened it by 84px.
+
 Follow the gulley down the mountain, dodge the trees and rocks, and go as far as you can. Score
 is the distance you cover, with a small multiplier for speed — so a fast clean line beats a
 cautious one, but not by enough to make straight-lining into a tree a good idea.
